@@ -74,6 +74,7 @@ Open <http://localhost:4100>. Without `DATABASE_URL`, data is kept in
 | `ADMIN_PASSWORD` | Opens `/admin`. Changing it signs out every admin. Without it the admin console is off. |
 | `TEAM_EMAIL_DOMAINS` | Optional, comma-separated, e.g. `tropicaldistillery.com`. Only these email addresses may sign in. Leave it empty if brand ambassadors use personal email. |
 | `DATABASE_URL` | Optional Postgres connection string. When set, everything is stored in one table (`tropical_merch_store`) that the app creates itself. **Required on any host without a permanent disk**, Render and Replit included. Run `npm install` once to fetch the driver. |
+| `REQUIRE_DATABASE` | Set to `1` on any host without a permanent disk. The site then refuses to start without `DATABASE_URL`, instead of keeping orders in a file that vanishes on the next restart. |
 | `DATA_DIR` | Where `store.json` lives when there's no database. Default `./data`. |
 | `ORDER_WEBHOOK_URL` | Optional. Every new order and status change is POSTed here as JSON with a ready-made `text` summary. A Slack incoming webhook works as-is; a Zapier or Make webhook can turn it into emails to the requester. |
 | `PUBLIC_URL` | Optional. The site's address, e.g. `https://merch.tropicaldistillery.com`, so notifications link straight to the order. |

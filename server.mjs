@@ -9,6 +9,9 @@
  *   ADMIN_PASSWORD      opens /admin (the admin console is off without it)
  *   TEAM_EMAIL_DOMAINS  optional, comma-separated: only these email domains may sign in
  *   DATABASE_URL        optional Postgres URL; otherwise data is a JSON file in DATA_DIR
+ *   REQUIRE_DATABASE    set to 1 on hosts without a permanent disk: refuse to start
+ *                       without DATABASE_URL rather than keep orders in a file
+ *                       that disappears on the next restart
  *   DATA_DIR            where the JSON store lives (default ./data)
  *   ORDER_WEBHOOK_URL   optional Slack/Zapier webhook for new orders and status changes
  *   PUBLIC_URL          optional, this site's address, used for links in notifications
@@ -54,6 +57,10 @@ try {
 
 const orderPrefix = (env.ORDER_PREFIX || "TD").trim().toUpperCase();
 if (!/^[A-Z0-9]{1,6}$/.test(orderPrefix)) fail("ORDER_PREFIX must be 1–6 letters or digits.");
+
+if (/^(1|true|yes)$/i.test(env.REQUIRE_DATABASE || "") && !env.DATABASE_URL) {
+  fail("REQUIRE_DATABASE is set but DATABASE_URL is missing. Add the database's connection string as DATABASE_URL.");
+}
 
 const cookieSecure = env.COOKIE_SECURE || "auto";
 if (!["auto", "always", "never"].includes(cookieSecure)) fail("COOKIE_SECURE must be auto, always or never.");
