@@ -1,0 +1,29 @@
+# Render Blueprint: one web service and the Postgres database it keeps orders
+# in. In Render choose New → Blueprint, pick this repository, and fill in the
+# two codes when asked. See README.md, "Putting it online".
+services:
+  - type: web
+    name: tropical-merch
+    runtime: node
+    plan: starter
+    buildCommand: npm ci --no-audit --no-fund
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tropical-merch-db
+          property: connectionString
+      - key: TEAM_ACCESS_CODE
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: TEAM_EMAIL_DOMAINS
+        value: tropicaldistillery.com
+      - key: COOKIE_SECURE
+        value: always
+
+databases:
+  - name: tropical-merch-db
+    plan: basic-256mb
+    databaseName: tropical_merch

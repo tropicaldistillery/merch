@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin · Tropical Distillery Team Merch</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand" href="/admin">
+        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#135E52"/><ellipse cx="31" cy="37" rx="14" ry="16.5" transform="rotate(-22 31 37)" fill="#F29E38"/><path d="M33 21c4-8 11-10 17-8-3 6-9 9-17 8Z" fill="#8DBF3F"/><path d="M32 22c-1-4 0-7 2-10" stroke="#FBF8F2" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
+        <span class="brand-name">Tropical Distillery<span class="brand-sub">Merch admin</span></span>
+      </a>
+      <span class="admin-badge">Admin</span>
+      <nav class="site-nav" aria-label="Main">
+        <a href="/shop">Open the store</a>
+      </nav>
+      <div class="header-actions">
+        <div class="user-chip" id="admin-chip" hidden><span class="who">Signed in as <strong data-admin-name></strong></span><button type="button" class="link-button" data-admin-sign-out>Sign out</button></div>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="page">
+    <section id="admin-signin" hidden>
+      <form class="card signin-card center-card" id="admin-signin-form" novalidate>
+        <div>
+          <p class="eyebrow">Merch admin</p>
+          <h2>Sign in to the admin console</h2>
+        </div>
+        <p class="muted">Approve and ship orders, keep stock levels current and tidy the account list.</p>
+        <div class="form-alert" role="alert" hidden></div>
+        <div class="field">
+          <label for="admin-name">Your name</label>
+          <input id="admin-name" name="name" type="text" autocomplete="name" maxlength="80">
+          <p class="hint">Shown in each order's history when you change it.</p>
+        </div>
+        <div class="field">
+          <label for="admin-password">Admin password</label>
+          <input id="admin-password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn-block" type="submit">Sign in</button>
+      </form>
+    </section>
+
+    <section id="admin-app" hidden>
+      <div class="page-head">
+        <div>
+          <p class="eyebrow">Merch admin</p>
+          <h1>Orders &amp; inventory</h1>
+        </div>
+        <button type="button" class="btn btn-secondary" id="refresh">Refresh</button>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="tabs" role="tablist" aria-label="Admin sections">
+        <button type="button" class="tab" role="tab" id="tab-orders" aria-controls="panel-orders" data-tab="orders">Orders</button>
+        <button type="button" class="tab" role="tab" id="tab-catalog" aria-controls="panel-catalog" data-tab="catalog">Catalog &amp; stock</button>
+        <button type="button" class="tab" role="tab" id="tab-accounts" aria-controls="panel-accounts" data-tab="accounts">Accounts</button>
+      </div>
+
+      <section role="tabpanel" id="panel-orders" aria-labelledby="tab-orders">
+        <div class="toolbar">
+          <label class="search">
+            <span class="sr-only">Search orders</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="order-search" type="search" placeholder="Order number, name, account, city or item" autocomplete="off">
+          </label>
+          <a class="btn btn-secondary" id="export-csv" href="/api/admin/orders.csv">Export CSV</a>
+        </div>
+        <div class="chips" id="status-chips" role="group" aria-label="Status"></div>
+        <p class="result-count" id="order-count" aria-live="polite"></p>
+        <div class="card table-wrap"><table class="table" id="orders-table"></table></div>
+      </section>
+
+      <section role="tabpanel" id="panel-catalog" aria-labelledby="tab-catalog" hidden>
+        <div class="toolbar">
+          <label class="search">
+            <span class="sr-only">Search the catalog</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="catalog-search" type="search" placeholder="Item name or SKU" autocomplete="off">
+          </label>
+          <label class="sr-only" for="catalog-category">Category</label>
+          <select id="catalog-category"></select>
+          <label class="check"><input id="show-hidden" type="checkbox"> Show hidden items</label>
+          <button type="button" class="btn" id="add-item">Add item</button>
+        </div>
+        <p class="result-count" id="catalog-count" aria-live="polite"></p>
+        <div class="card table-wrap"><table class="table" id="catalog-table"></table></div>
+        <p class="fine panel-note">“Available” is what's left to promise: submitted and approved orders already count against it, and cancelling or declining an order puts its units back.</p>
+      </section>
+
+      <section role="tabpanel" id="panel-accounts" aria-labelledby="tab-accounts" hidden>
+        <div class="toolbar">
+          <label class="search">
+            <span class="sr-only">Search accounts</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="account-search" type="search" placeholder="Account, city or contact" autocomplete="off">
+          </label>
+        </div>
+        <p class="result-count" id="account-count" aria-live="polite"></p>
+        <div class="card table-wrap"><table class="table" id="accounts-table"></table></div>
+        <p class="fine panel-note">Accounts are saved automatically the first time someone ships an order to them, and offered to the whole team at checkout.</p>
+      </section>
+    </section>
+  </main>
+
+  <aside class="drawer wide" id="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="detail-title" hidden>
+    <div class="drawer-head">
+      <h2 id="detail-title" tabindex="-1"></h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body" id="detail-body"></div>
+    <div class="drawer-foot" id="detail-foot"></div>
+  </aside>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script type="module" src="/assets/admin.js"></script>
+</body>
+</html>

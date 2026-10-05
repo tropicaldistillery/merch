@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Checkout · Tropical Distillery Team Merch</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand" href="/shop">
+        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#135E52"/><ellipse cx="31" cy="37" rx="14" ry="16.5" transform="rotate(-22 31 37)" fill="#F29E38"/><path d="M33 21c4-8 11-10 17-8-3 6-9 9-17 8Z" fill="#8DBF3F"/><path d="M32 22c-1-4 0-7 2-10" stroke="#FBF8F2" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
+        <span class="brand-name">Tropical Distillery<span class="brand-sub">Team merch store</span></span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="/shop">Shop</a>
+        <a href="/orders">My orders</a>
+      </nav>
+      <div class="header-actions">
+        <div class="user-chip"><span class="who">Signed in as <strong data-user-name></strong></span><button type="button" class="link-button" data-sign-out>Sign out</button></div>
+        <a class="cart-button" href="/shop?cart=open" data-cart-open><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14l-1.2 11.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8Z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/></svg><span>Order</span><span class="cart-count" data-cart-count>0</span></a>
+      </div>
+    </div>
+  </header>
+  <main id="main" class="page">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Checkout</p>
+        <h1>Where should this ship?</h1>
+        <p class="lede">Send it to yourself, or straight to the account that needs it. Orders are reviewed by the merch admin before they ship.</p>
+      </div>
+    </div>
+
+    <div id="checkout-empty" hidden></div>
+
+    <form class="checkout" id="checkout-form" novalidate hidden>
+      <div class="checkout-main">
+        <div class="form-alert" id="checkout-alert" role="alert" tabindex="-1" hidden></div>
+
+        <section class="card card-pad" aria-labelledby="step-ship">
+          <div class="section-title"><span class="step-num" aria-hidden="true">1</span><h2 id="step-ship">Ship to</h2></div>
+          <fieldset>
+            <legend class="sr-only">Ship to</legend>
+            <div class="choice-grid">
+              <label class="choice">
+                <input type="radio" name="shipTo.type" value="self">
+                <span class="choice-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></span>
+                <span><span class="choice-title">Ship to me</span><span class="choice-text">For your own use: team gear, your sales kit, samples for an upcoming tasting.</span></span>
+                <span class="choice-tick" aria-hidden="true"></span>
+              </label>
+              <label class="choice">
+                <input type="radio" name="shipTo.type" value="account">
+                <span class="choice-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9 5 4h14l2 5"/><path d="M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0Z"/><path d="M5 13v7h14v-7"/><path d="M10 20v-4h4v4"/></svg></span>
+                <span><span class="choice-title">Ship to an account</span><span class="choice-text">Delivered to a bar, restaurant, store or event — ideal for POS and glassware.</span></span>
+                <span class="choice-tick" aria-hidden="true"></span>
+              </label>
+            </div>
+          </fieldset>
+        </section>
+
+        <section class="card card-pad" id="address-section" aria-labelledby="step-address" hidden>
+          <div class="section-title"><span class="step-num" aria-hidden="true">2</span><h2 id="step-address">Delivery address</h2></div>
+
+          <div class="form-grid">
+            <div class="span-6 saved-account" data-show="account">
+              <div class="field">
+                <label for="saved-account">Saved accounts</label>
+                <select id="saved-account"></select>
+                <p class="hint">Accounts anyone on the team has shipped to before. Pick one to fill in the address.</p>
+              </div>
+            </div>
+            <div class="field span-3" data-show="account">
+              <label for="accountName">Account name</label>
+              <input id="accountName" name="shipTo.accountName" type="text" maxlength="120" autocomplete="organization">
+            </div>
+            <div class="field span-3" data-show="account">
+              <label for="accountType">Kind of account</label>
+              <select id="accountType" name="shipTo.accountType"></select>
+            </div>
+            <div class="field span-3">
+              <label for="attention" id="attention-label">Recipient name</label>
+              <input id="attention" name="shipTo.attention" type="text" maxlength="100" autocomplete="name">
+            </div>
+            <div class="field span-3">
+              <label for="phone"><span id="phone-label">Phone</span> <span class="optional" id="phone-optional">(optional)</span></label>
+              <input id="phone" name="shipTo.phone" type="tel" maxlength="40" autocomplete="tel">
+            </div>
+            <div class="field span-6">
+              <label for="address1">Street address</label>
+              <input id="address1" name="shipTo.address1" type="text" maxlength="120" autocomplete="address-line1">
+            </div>
+            <div class="field span-6">
+              <label for="address2">Suite, unit or floor <span class="optional">(optional)</span></label>
+              <input id="address2" name="shipTo.address2" type="text" maxlength="120" autocomplete="address-line2">
+            </div>
+            <div class="field span-3">
+              <label for="city">City</label>
+              <input id="city" name="shipTo.city" type="text" maxlength="80" autocomplete="address-level2">
+            </div>
+            <div class="field span-2">
+              <label for="state">State</label>
+              <select id="state" name="shipTo.state" autocomplete="address-level1"></select>
+            </div>
+            <div class="field span-1">
+              <label for="postalCode">ZIP</label>
+              <input id="postalCode" name="shipTo.postalCode" type="text" inputmode="numeric" maxlength="10" autocomplete="postal-code">
+            </div>
+            <div class="field span-6">
+              <label for="deliveryNotes">Delivery notes <span class="optional">(optional)</span></label>
+              <textarea id="deliveryNotes" name="shipTo.deliveryNotes" maxlength="300" rows="2"></textarea>
+              <p class="hint" id="delivery-hint">Anything the carrier should know.</p>
+            </div>
+            <div class="span-6" data-show="self">
+              <label class="check"><input id="save-address" type="checkbox" checked> Save as my default shipping address</label>
+            </div>
+          </div>
+        </section>
+
+        <section class="card card-pad" aria-labelledby="step-details">
+          <div class="section-title"><span class="step-num" aria-hidden="true">3</span><h2 id="step-details">Order details</h2></div>
+          <div class="form-grid">
+            <div class="field span-3">
+              <label for="purpose">What's it for?</label>
+              <select id="purpose" name="purpose"></select>
+            </div>
+            <div class="field span-3">
+              <label for="neededBy">Needed by <span class="optional">(optional)</span></label>
+              <input id="neededBy" name="neededBy" type="date">
+            </div>
+            <fieldset class="span-6">
+              <legend>Shipping speed</legend>
+              <div class="choice-grid" id="speed-choices"></div>
+            </fieldset>
+            <div class="field span-6" id="rush-field" hidden>
+              <label for="rushReason">Why does it need to rush?</label>
+              <input id="rushReason" name="rushReason" type="text" maxlength="300" placeholder="e.g. Tasting at Total Wine on Friday">
+            </div>
+            <div class="field span-6">
+              <label for="notes">Notes for the merch admin <span class="optional">(optional)</span></label>
+              <textarea id="notes" name="notes" maxlength="1000" rows="3" placeholder="Sizes for the event staff, which shelf the talkers go on…"></textarea>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="card card-pad summary" aria-labelledby="summary-title">
+        <div class="section-title"><h2 id="summary-title">Order summary</h2><a class="fine" href="/shop?cart=open">Edit</a></div>
+        <ul class="summary-lines" id="summary-lines"></ul>
+        <div class="form-alert" id="lines-alert" hidden></div>
+        <div class="totals"><span id="summary-units"></span><span>Estimated cost <strong id="summary-total"></strong></span></div>
+        <div class="stack">
+          <button class="btn btn-block" type="submit" id="place-order">Place order</button>
+          <p class="fine">Internal cost, for budgeting only. You'll see the order's progress under My orders.</p>
+        </div>
+      </aside>
+    </form>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script type="module" src="/assets/checkout.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# Orders, accounts and team addresses live here. Never commit them.
+data/
+node_modules/
+.env

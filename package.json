@@ -1,0 +1,16 @@
+{
+  "name": "tropical-merch",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tropical Distillery team merch store: order merchandise and POS shipped to yourself or to an account",
+  "type": "module",
+  "engines": { "node": ">=20.12" },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test"
+  },
+  "optionalDependencies": {
+    "pg": "^8.23.1"
+  }
+}
