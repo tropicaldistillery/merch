@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { acceptProductImage, fetchRemoteImage, imageInfo } from "../src/images.mjs";
+import { acceptProductImage, imageInfo } from "../src/images.mjs";
 import { ValidationError } from "../src/validation.mjs";
 
 // Minimal headers: enough for the size check, which is all the server reads.
@@ -67,30 +67,5 @@ describe("product photos", () => {
     assert.equal(acceptProductImage(png(1200, 900)).id, ok.id, "same bytes, same name");
     assert.throws(() => acceptProductImage(png(1201, 900)), ValidationError);
     assert.throws(() => acceptProductImage(Buffer.alloc(64)), (e) => e.status === 415);
-  });
-
-  it("refuses links that aren't public https", async () => {
-    const neverCalled = () => assert.fail("must not fetch");
-    for (const url of ["http://example.com/a.png", "https://127.0.0.1/a.png", "https://10.1.2.3/a.png", "https://[::1]/a.png", "https://169.254.169.254/latest", "not a url"]) {
-      await assert.rejects(fetchRemoteImage(url, { fetchImpl: neverCalled }), ValidationError, url);
-    }
-  });
-
-  it("follows a redirect, checks the type, and caps the size", async () => {
-    const calls = [];
-    const fake = async (url) => {
-      calls.push(String(url));
-      if (calls.length === 1) return new Response(null, { status: 302, headers: { location: "https://93.184.216.34/photo.png" } });
-      return new Response(png(10, 10), { status: 200, headers: { "content-type": "image/png" } });
-    };
-    const got = await fetchRemoteImage("https://93.184.216.34/start", { fetchImpl: fake });
-    assert.equal(got.contentType, "image/png");
-    assert.equal(calls.length, 2);
-
-    const html = async () => new Response("<html>", { status: 200, headers: { "content-type": "text/html" } });
-    await assert.rejects(fetchRemoteImage("https://93.184.216.34/page", { fetchImpl: html }), /isn't an image/);
-
-    const toPrivate = async () => new Response(null, { status: 301, headers: { location: "https://192.168.1.1/x.png" } });
-    await assert.rejects(fetchRemoteImage("https://93.184.216.34/x", { fetchImpl: toPrivate }), /private/);
   });
 });

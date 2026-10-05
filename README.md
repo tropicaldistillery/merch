@@ -19,7 +19,12 @@ shares nothing with SipScale.
 - Browse the catalog by category, brand or search, with live stock, sizes and a
   per-order limit on each item. Every item shows what it costs Tropical
   Distillery and that it's **free to them**; the cart and checkout show the
-  order's value and "You pay $0.00".
+  order's value and "You pay $0.00". Small, cheap items can have a **minimum
+  per order** (a jigger comes in threes), and the quantity picker starts there.
+- Use the **ROI calculator** in the cart: enter the cases the order should help
+  sell and see the projected profit (at an average of $75 a case, set as
+  `PROFIT_PER_CASE_CENTS` in `public/assets/shared.js`), the net return, the
+  ROI and how many cases pay for the order.
 - At checkout, choose **Ship to me** (your address is remembered) or **Ship to
   an account**. Any account someone on the team has shipped to before can be
   picked from a list, which fills in its address, receiving contact and
@@ -39,16 +44,18 @@ shares nothing with SipScale.
 - Print a packing slip, copy the delivery address, keep internal notes.
 - Export orders to CSV, one row per item, for fulfilment or budgeting.
 - Edit the catalog: add items, change cost, stock, sizes, per-order limits and
-  photos, or hide an item from the store. As the cost is typed, a **suggested
-  max per order** appears (1 for $100+, 2 for $50+, 4 for $25+, 6 for $10+,
-  otherwise 12); new items take it automatically.
-- **Upload a photo, or paste a link to one.** Either way it's resized in the
-  browser to 1200 × 900, so every product card matches: "Show the whole photo"
-  fits it on white, "Fill the frame" crops the edges. Photos are stored with
-  the rest of the data (in Postgres, or `DATA_DIR/images`).
+  photos, hide an item from the store, or delete it (past orders keep their
+  details). As the cost is typed, a **suggested max per order** appears (1 for
+  $100+, 2 for $50+, 4 for $25+, 6 for $10+, otherwise 12) and a **suggested
+  minimum** for small items (10 under $5, 3 under $10, 2 under $15; clothing
+  always 1); new items take both automatically.
+- **Upload a photo** with the button or by dragging it onto the editor. It's
+  resized in the browser to 1200 × 900, so every product card matches: "Show
+  the whole photo" fits it on white, "Fill the frame" crops the edges. Photos
+  are stored with the rest of the data (in Postgres, or `DATA_DIR/images`).
 - Manage the **team list** (Team tab): paste names and emails, straight from a
-  spreadsheet if you like, and everyone gets a personal code like
-  `mango-pelican-sunset-42`. Look up or copy a code, issue a new one (the old
+  spreadsheet if you like, and everyone gets a personal code built from their
+  first name, like `jane-tropical-mango-42`. Look up or copy a code, issue a new one (the old
   one stops working at once), download every code as a CSV, and see each
   person's orders, units and order value this month and overall. People who
   have used the shared code but aren't on the list yet are listed so they can
@@ -191,8 +198,10 @@ that, the next step is real tables.
 
 - With **personal codes** on, each order is tied to the person whose code was
   used, and one person can be locked out without affecting anyone else. Codes
-  are three words and a number (nearly 900 million combinations), and wrong
-  guesses are throttled. They are kept retrievable so the admin can look one
+  are meant to be easy (first name, "tropical", a word and a number: about
+  9,000 possibilities per name), so wrong guesses are limited per email as
+  well as per address, and every order still needs the admin's approval.
+  Codes are kept retrievable so the admin can look one
   up again; anyone who can read the database can already read every order, so
   hashing them would add little.
 - The **shared** team code, by contrast, lets anyone who has it order under any
@@ -204,8 +213,7 @@ that, the next step is real tables.
 - Wrong codes and passwords are throttled per address, with an overall
   ceiling as well.
 - Uploaded photos must already be 1200 × 900 JPG, PNG or WebP (checked from
-  the file itself) and under 3 MB. "Get photo" only fetches public `https`
-  addresses, never anything on a private network.
+  the file itself) and under 3 MB.
 - Pages are served with a strict Content-Security-Policy; everything people
   type is rendered as text, never as HTML; CSV exports defuse spreadsheet
   formulas.
@@ -234,7 +242,7 @@ src/app.mjs             routes, sign-in, security headers, static pages
 src/orders.mjs          order validation, stock, account directory, status changes, CSV
 src/catalog.mjs         starter catalog and item editing rules
 src/team.mjs            team list, personal codes, per-person tracking
-src/images.mjs          photo checks and fetching linked photos
+src/images.mjs          photo checks for uploads
 src/auth.mjs            signed sessions and sign-in throttling
 src/notify.mjs          webhook messages
 src/store/              JSON-file and Postgres stores

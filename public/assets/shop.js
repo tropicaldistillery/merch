@@ -11,7 +11,7 @@ import {
   toast,
   wireHeader,
 } from "./core.js";
-import { BRANDS, CATEGORIES, formatMoney, labelFor } from "./shared.js";
+import { BRANDS, CATEGORIES, PROFIT_PER_CASE_CENTS, formatMoney, labelFor, minPerOrder, roiFor } from "./shared.js";
 
 const grid = $("#product-grid");
 const chips = $("#category-chips");
@@ -56,6 +56,22 @@ function roomFor(item, variant) {
 function lineLimit(item, variant, line) {
   const othersOfItem = cart.quantityOf(item.id) - line.quantity;
   return Math.min(item.maxPerOrder - othersOfItem, variantStock(variant));
+}
+
+// The fewest this cart line may hold so the item still meets its minimum.
+function lineFloor(item, line) {
+  const othersOfItem = cart.quantityOf(item.id) - line.quantity;
+  return Math.max(1, minPerOrder(item) - othersOfItem);
+}
+
+// How many more of an item must be added to reach its minimum.
+function stillNeeded(item) {
+  return Math.max(1, minPerOrder(item) - cart.quantityOf(item.id));
+}
+
+function limitText(item) {
+  const min = minPerOrder(item);
+  return min > 1 ? `Min ${min} · up to ${item.maxPerOrder} per order` : `Up to ${item.maxPerOrder} per order`;
 }
 
 function optionLabel(variant) {
@@ -120,7 +136,7 @@ function productCard(item) {
       )
     : null;
 
-  const stepper = quantityStepper({ value: 1, max: item.maxPerOrder, label: `Quantity of ${item.name}` });
+  const stepper = quantityStepper({ value: stillNeeded(item), min: stillNeeded(item), max: item.maxPerOrder, label: `Quantity of ${item.name}` });
   const addButton = el("button", { type: "button", class: "btn", text: "Add" });
 
   function selectedVariant() {
@@ -132,9 +148,14 @@ function productCard(item) {
     const room = variant
       ? roomFor(item, variant)
       : Math.max(0, item.maxPerOrder - cart.quantityOf(item.id));
-    stepper.setMax(Math.max(1, room));
-    addButton.disabled = availability.available === 0 || room === 0;
-    addButton.textContent = availability.available === 0 ? "Out of stock" : room === 0 && variant ? "Limit reached" : "Add";
+    const need = stillNeeded(item);
+    stepper.setMin(need);
+    stepper.setMax(Math.max(need, room));
+    // Too few left to make up the minimum counts as unavailable.
+    const short = room > 0 && room < need;
+    addButton.disabled = availability.available === 0 || room === 0 || short;
+    addButton.textContent =
+      availability.available === 0 ? "Out of stock" : short ? "Not enough left" : room === 0 && variant ? "Limit reached" : "Add";
   }
 
   select?.addEventListener("change", () => {
@@ -161,8 +182,12 @@ function productCard(item) {
       return;
     }
     const quantity = Math.min(stepper.value, room);
+    if (quantity < stillNeeded(item)) {
+      toast(`${item.name} is ordered in at least ${minPerOrder(item)}, and there aren't that many left.`, { tone: "error" });
+      return;
+    }
     cart.add(item.id, variant.id, quantity);
-    stepper.setValue(1);
+    stepper.setValue(stillNeeded(item));
     toast(`Added ${quantity} × ${item.name}${variant.label ? ` (${variant.label})` : ""}`, {
       action: { label: "View order", onClick: () => openCart() },
     });
@@ -192,7 +217,7 @@ function productCard(item) {
         el("span", { class: `stock ${availability.tone}`.trim(), text: availability.label })
       ),
       el("div", { class: "product-actions" }, select, stepper.element, addButton),
-      el("p", { class: "product-limit", text: `Up to ${item.maxPerOrder} per order` })
+      el("p", { class: "product-limit", text: limitText(item) })
     )
   );
 
@@ -265,8 +290,11 @@ function cartLine(line) {
   }
 
   const limit = lineLimit(item, variant, line);
+  const floor = Math.min(lineFloor(item, line), line.quantity);
+  const belowMin = cart.quantityOf(item.id) < minPerOrder(item);
   const stepper = quantityStepper({
     value: line.quantity,
+    min: floor,
     max: Math.max(1, Math.max(limit, line.quantity)),
     label: `Quantity of ${item.name}`,
     onChange: (n) => cart.set(item.id, variant.id, n),
@@ -289,7 +317,9 @@ function cartLine(line) {
             class: "warn",
             text: limit <= 0 ? "No longer available in this quantity — remove it." : `Only ${limit} can be ordered — lower the quantity.`,
           })
-        : null,
+        : belowMin
+          ? el("p", { class: "warn", text: `Order at least ${minPerOrder(item)} of this item — raise the quantity.` })
+          : null,
       el(
         "div",
         { class: "cart-line-controls" },
@@ -307,6 +337,69 @@ function cartLine(line) {
     )
   );
 }
+
+/* --------------------------------------------------------- ROI calculator */
+
+// Built once and kept, so the number typed survives the cart re-rendering.
+const ROI_KEY = "tdmerch:roi-cases";
+const roiCases = el("input", {
+  id: "roi-cases",
+  type: "number",
+  min: "0",
+  max: "100000",
+  step: "1",
+  inputmode: "numeric",
+  placeholder: "0",
+  "aria-describedby": "roi-basis",
+});
+try {
+  roiCases.value = localStorage.getItem(ROI_KEY) ?? "";
+} catch {
+  // storage unavailable: start empty
+}
+const roiResults = el("div", { class: "roi-results", "aria-live": "polite" });
+const roiPanel = el(
+  "section",
+  { class: "roi", "aria-labelledby": "roi-title" },
+  el("h3", { id: "roi-title", text: "ROI calculator" }),
+  el("label", { class: "roi-input", for: "roi-cases" }, el("span", { text: "Cases you expect this order to help sell" }), roiCases),
+  el("p", { class: "hint", id: "roi-basis", text: `Based on an average profit of ${formatMoney(PROFIT_PER_CASE_CENTS)} per case.` }),
+  roiResults
+);
+let roiCost = 0;
+
+function renderRoi() {
+  const typed = Number.parseInt(roiCases.value, 10);
+  const cases = Number.isFinite(typed) && typed > 0 ? Math.min(typed, 100000) : 0;
+  const { profitCents, netCents, roiPercent, breakEvenCases } = roiFor(roiCost, cases);
+  const breakEven = roiCost > 0 ? `This order pays for itself at ${plural(breakEvenCases, "case")} sold.` : "";
+  if (!cases) {
+    clear(roiResults, el("p", { class: "roi-note", text: breakEven || "Enter cases to see the return." }));
+    return;
+  }
+  const stat = (label, value, extra = "") => el("div", { class: `roi-stat ${extra}`.trim() }, el("span", { text: label }), el("strong", { text: value }));
+  clear(
+    roiResults,
+    el(
+      "div",
+      { class: "roi-grid" },
+      stat("Projected profit", formatMoney(profitCents)),
+      stat("Merch cost", formatMoney(roiCost)),
+      stat("Net return", `${netCents < 0 ? "−" : "+"}${formatMoney(Math.abs(netCents))}`, netCents < 0 ? "loss" : "gain"),
+      stat("ROI", roiPercent === null ? "—" : `${roiPercent.toLocaleString("en-US")}%`, netCents < 0 ? "loss big" : "gain big")
+    ),
+    breakEven ? el("p", { class: "roi-note", text: breakEven }) : null
+  );
+}
+
+roiCases.addEventListener("input", () => {
+  try {
+    localStorage.setItem(ROI_KEY, roiCases.value);
+  } catch {
+    // storage unavailable: nothing to remember
+  }
+  renderRoi();
+});
 
 function renderCart() {
   const lines = cart.lines();
@@ -328,7 +421,7 @@ function renderCart() {
       )
     );
   } else {
-    clear(cartBody, lines.map(cartLine));
+    clear(cartBody, lines.map(cartLine), roiPanel);
   }
 
   let total = 0;
@@ -344,8 +437,11 @@ function renderCart() {
     total += item.costCents * line.quantity;
     units += line.quantity;
     if (line.quantity > lineLimit(item, variant, line)) blocked = true;
+    if (cart.quantityOf(item.id) < minPerOrder(item)) blocked = true;
   }
   $("#cart-total").textContent = formatMoney(total);
+  roiCost = total;
+  renderRoi();
   $("#cart-units").textContent = plural(units, "unit");
 
   const disabled = !lines.length || blocked;

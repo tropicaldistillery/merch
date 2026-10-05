@@ -407,12 +407,12 @@ export function plural(n, one, many = `${one}s`) {
 }
 
 /** − [n] + quantity control. */
-export function quantityStepper({ value = 1, min = 1, max = 99, label = "Quantity", onChange }) {
+export function quantityStepper({ value = 1, min: initialMin = 1, max = 99, label = "Quantity", onChange }) {
   // data-role lets a list that re-renders put focus back on the same control.
   const input = el("input", {
     type: "number",
     inputmode: "numeric",
-    min,
+    min: initialMin,
     max,
     value: String(value),
     "aria-label": label,
@@ -424,6 +424,7 @@ export function quantityStepper({ value = 1, min = 1, max = 99, label = "Quantit
 
   let current = value;
   let limit = max;
+  let min = initialMin;
 
   function set(next, notify = true) {
     const n = Math.max(min, Math.min(limit, Math.round(Number(next) || min)));
@@ -448,6 +449,12 @@ export function quantityStepper({ value = 1, min = 1, max = 99, label = "Quantit
     setMax(nextMax) {
       limit = Math.max(min, nextMax);
       input.max = String(limit);
+      set(current, false);
+    },
+    setMin(nextMin) {
+      min = Math.max(1, nextMin);
+      input.min = String(min);
+      limit = Math.max(min, limit);
       set(current, false);
     },
     setValue: (n) => set(n, false),

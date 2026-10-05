@@ -13,6 +13,7 @@ import {
   TRANSITIONS,
   US_STATES,
   labelFor,
+  minPerOrder,
 } from "../public/assets/shared.js";
 import {
   ValidationError,
@@ -137,6 +138,9 @@ function readLines(rawLines, catalog, errors) {
     const item = catalog.find((entry) => entry.id === itemId);
     if (total > item.maxPerOrder) {
       problems.push(`You can order up to ${item.maxPerOrder} of ${item.name} per order.`);
+    }
+    if (total < minPerOrder(item)) {
+      problems.push(`${item.name} is ordered in at least ${minPerOrder(item)} per order.`);
     }
   }
 

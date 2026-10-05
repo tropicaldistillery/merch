@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { SEED_CATALOG } from "../catalog.mjs";
+import { SEED_CATALOG, SEED_PHOTOS_VERSION } from "../catalog.mjs";
 
 export const STATE_VERSION = 1;
 
@@ -15,6 +15,7 @@ export function initialState() {
       createdAt: new Date().toISOString(),
       nextOrderNumber: 1001,
       sessionSecret: randomBytes(32).toString("base64url"),
+      seedPhotos: SEED_PHOTOS_VERSION,
     },
     catalog: structuredClone(SEED_CATALOG),
     orders: [],

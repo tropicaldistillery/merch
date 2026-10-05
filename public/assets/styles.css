@@ -2594,17 +2594,21 @@ dialog.confirm .dialog-actions {
   margin-top: 6px;
 }
 
-.photo-actions {
+.photo-drop {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  padding: 18px;
+  border: 2px dashed var(--line-strong, #c9c1b6);
+  border-radius: 14px;
+  background: var(--surface, #fff);
+  transition: border-color 0.15s, background-color 0.15s;
 }
 
-.photo-actions input[type="url"] {
-  flex: 1 1 220px;
-  width: auto;
-  min-height: 38px;
+.photo-drop.over {
+  border-color: var(--pink, #E84890);
+  background: var(--blush, #FDEDF4);
 }
 
 .photo-picker .chips {
@@ -2616,4 +2620,91 @@ dialog.confirm .dialog-actions {
   padding-left: 0;
   justify-self: start;
   align-self: flex-start;
+}
+
+/* ------------------------------------------------------- ROI calculator */
+
+.roi {
+  margin-top: 18px;
+  padding: 16px 18px 14px;
+  border-radius: var(--radius-card);
+  background: var(--sky-surface);
+  border: 1px solid rgba(80, 176, 224, 0.35);
+}
+
+.roi h3 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+
+.roi-input {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.roi-input input {
+  width: 96px;
+  flex: none;
+  text-align: right;
+  font-size: 16px;
+}
+
+.roi .hint {
+  margin: 6px 0 0;
+}
+
+.roi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.roi-stat {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.roi-stat span {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.roi-stat strong {
+  font-family: var(--font-heading);
+  font-size: 18px;
+}
+
+.roi-stat.big strong {
+  font-size: 22px;
+}
+
+.roi-stat.gain strong {
+  color: var(--ok);
+}
+
+.roi-stat.loss strong {
+  color: var(--error);
+}
+
+.roi-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.inline-actions .push-end {
+  margin-left: auto;
 }

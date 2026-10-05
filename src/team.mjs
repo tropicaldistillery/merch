@@ -20,34 +20,41 @@ import { ValidationError, cleanLine, isValidEmail, normalizeEmail } from "./vali
 export const MODES = ["shared", "personal"];
 export const MAX_PEOPLE = 1000;
 
-// Easy to say over the phone and type on one: three words and a number,
-// about 870 million possibilities. Sign-in throttling does the rest.
+// Codes are easy to remember: the person's first name, "tropical", a
+// tropical word and a number, like jane-tropical-mango-42. That is about
+// 9,000 possible codes for each name; sign-in throttling, per address and per
+// email, keeps guessing one impractical, and every order still needs approval.
 const WORDS = [...new Set(`
-  mango papaya guava coconut lychee citrus lime lemon orange cherry berry melon
-  peach plum apricot kiwi banana palm coral reef lagoon island beach shore dune
-  tide wave surf breeze sunset sunrise sunny tropic harbor marina anchor sail
-  compass beacon pelican heron egret flamingo dolphin marlin tarpon snapper
-  turtle manatee parrot toucan gecko iguana orchid hibiscus jasmine lotus fern
-  mangrove cypress banyan cedar maple willow aspen spruce olive sage mint basil
-  ginger cinnamon vanilla cocoa espresso latte mocha honey sugar caramel toffee
-  velvet amber copper bronze silver golden cobalt indigo violet scarlet crimson
-  emerald jade ivory pearl shell starfish driftwood lantern cabana hammock porch
-  patio garden meadow prairie canyon mesa valley river creek delta bayou glade
-  grove orchard vineyard barrel cask oak rye barley malt toast cheers shaker
-  jigger garnish twist splash sparkle fizz tonic mojito daiquiri julep martini
-  spritz punch rumba salsa mambo conga bongo guitar piano jazz rhythm melody
-  chorus encore fiesta carnival parade festival holiday weekend morning evening
-  midnight twilight dawn dusk starlight moonlight comet meteor planet galaxy
-  nebula orbit rocket voyage journey ticket postcard atlas globe pier dock
-  boardwalk ocean bay inlet cove sand pebble stone marble granite crystal prism
-  rainbow cloud thunder gust mist summer spring autumn solstice equinox kayak
-  paddle snorkel lifeguard seagull sandal visor bonfire skyline rooftop
+  mango papaya guava coconut lychee citrus lime lemon orange cherry melon peach
+  pineapple passion kiwi banana plantain tamarind palm coral reef lagoon island
+  beach shore tide wave surf breeze sunset sunrise sunny harbor marina anchor
+  sail pelican heron flamingo dolphin marlin tarpon turtle manatee parrot toucan
+  gecko iguana orchid hibiscus jasmine mangrove banyan ginger cinnamon vanilla
+  cocoa espresso honey sugar caramel toffee amber coral jade pearl shell
+  starfish driftwood lantern cabana hammock patio garden bayou grove orchard
+  cask oak barrel cheers shaker jigger garnish twist splash fizz tonic mojito
+  daiquiri julep spritz punch rumba salsa mambo conga bongo calypso fiesta
+  carnival parade holiday weekend twilight moonlight ocean bay cove sand
+  rainbow summer kayak paddle snorkel sandal visor bonfire skyline rooftop
+  miami biscayne keywest everglades sundown seabreeze
 `.trim().split(/\s+/))];
 
-export function generateCode(taken = new Set()) {
+/** The first name, as plain lowercase letters, to start someone's code. */
+function codeName(name, email) {
+  const plain = (text) =>
+    String(text ?? "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  const first = plain(name).split(/[^a-z]+/).find((part) => part.length >= 2);
+  const fromEmail = plain(String(email ?? "").split("@")[0]).split(/[^a-z]+/).find((part) => part.length >= 2);
+  return (first || fromEmail || "team").slice(0, 12);
+}
+
+export function generateCode(taken = new Set(), { name = "", email = "" } = {}) {
+  const who = codeName(name, email);
   for (;;) {
-    const pick = () => WORDS[randomInt(WORDS.length)];
-    const code = `${pick()}-${pick()}-${pick()}-${randomInt(10, 100)}`;
+    const code = `${who}-tropical-${WORDS[randomInt(WORDS.length)]}-${randomInt(10, 100)}`;
     if (!taken.has(code)) return code;
   }
 }
@@ -136,11 +143,12 @@ export function addPeople(db, text, { by, at }) {
       already.push(email);
       continue;
     }
-    const code = generateCode(taken);
+    const personName = name || db.members?.[email]?.name || "";
+    const code = generateCode(taken, { name: personName, email });
     taken.add(code);
     const person = {
       id: randomUUID(),
-      name: name || db.members?.[email]?.name || "",
+      name: personName,
       email,
       code,
       codeSetAt: at,
@@ -176,7 +184,7 @@ export function updatePerson(db, id, patch, { at }) {
   if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
 
   if (src.resetCode === true) {
-    person.code = generateCode(new Set(team.people.map((p) => p.code)));
+    person.code = generateCode(new Set(team.people.map((p) => p.code)), person);
     person.codeSetAt = at;
   }
   return person;

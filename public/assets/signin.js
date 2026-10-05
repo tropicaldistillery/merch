@@ -52,7 +52,7 @@ async function init() {
       codeInput.type = "text";
       codeInput.autocomplete = "off";
       const hint = $("#code-hint");
-      hint.textContent = "It looks like mango-pelican-sunset-42. Ask the merch admin if you don't have one.";
+      hint.textContent = "It starts with your first name, like jane-tropical-mango-42. Ask the merch admin if you don't have one.";
       hint.hidden = false;
       $("#signin-intro").textContent = "Use your email and the personal code from your merch admin. You'll stay signed in on this device for 30 days.";
     }

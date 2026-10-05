@@ -134,3 +134,34 @@ export function suggestedMaxPerOrder(costCents) {
   if (costCents >= 1000) return 6;
   return 12;
 }
+
+// A sensible minimum for small, cheap items, so nobody ships a single jigger
+// across the state. Clothing is ordered per person, so it stays at one.
+export function suggestedMinPerOrder(costCents, category) {
+  if (!Number.isFinite(costCents) || costCents < 0) return null;
+  if (category === "Apparel") return 1;
+  if (costCents < 500) return 10;
+  if (costCents < 1000) return 3;
+  if (costCents < 1500) return 2;
+  return 1;
+}
+
+// What a case of product sold earns on average, for the ROI calculator in
+// the cart.
+export const PROFIT_PER_CASE_CENTS = 7500;
+
+/** Return on an order's merch spend if it helps sell `cases` cases. */
+export function roiFor(costCents, cases) {
+  const profitCents = cases * PROFIT_PER_CASE_CENTS;
+  return {
+    profitCents,
+    netCents: profitCents - costCents,
+    roiPercent: costCents > 0 ? Math.round(((profitCents - costCents) / costCents) * 100) : null,
+    breakEvenCases: Math.ceil(costCents / PROFIT_PER_CASE_CENTS),
+  };
+}
+
+/** The minimum for an item; items saved before minimums existed have none. */
+export function minPerOrder(item) {
+  return Number.isInteger(item?.minPerOrder) && item.minPerOrder > 1 ? item.minPerOrder : 1;
+}

@@ -4,7 +4,7 @@
 // console (Catalog tab) with real numbers. The seed is only used when a store
 // is created for the first time; after that the catalog lives in the store.
 
-import { BRANDS, CATEGORIES, TONES } from "../public/assets/shared.js";
+import { BRANDS, CATEGORIES, TONES, suggestedMinPerOrder } from "../public/assets/shared.js";
 import { IMAGE_PATH_RE } from "./images.mjs";
 import { ValidationError, cleanText } from "./validation.mjs";
 
@@ -14,6 +14,12 @@ export const ART_KINDS = [
   "shaker", "jigger", "kit", "cups", "table-throw", "banner", "sheets", "cards",
   "sticker", "bottle",
 ];
+
+// Product photos for the starter items, in public/assets/merch. Bump the
+// version when photos are added so existing stores pick them up once.
+export const SEED_PHOTOS_VERSION = 0;
+const SEED_PHOTO_IDS = [];
+export const SEED_PHOTOS = Object.fromEntries(SEED_PHOTO_IDS.map((id) => [id, `/assets/merch/${id}.jpg`]));
 
 const SIZES = ["S", "M", "L", "XL", "2XL", "3XL"];
 
@@ -181,7 +187,12 @@ export const SEED_CATALOG = [
     description: "3 in die-cut vinyl stickers.",
     costCents: 2500, maxPerOrder: 4, variants: single(20),
   },
-].map((item) => ({ ...item, image: "", active: true }));
+].map((item) => ({
+  ...item,
+  minPerOrder: Math.min(suggestedMinPerOrder(item.costCents, item.category), item.maxPerOrder),
+  image: SEED_PHOTOS[item.id] ?? "",
+  active: true,
+}));
 
 /* ------------------------------------------------------- seed corrections */
 
@@ -232,6 +243,47 @@ export function applySeedTextFixes(db) {
     db.catalog.find((item) => item.id === fix.id)[fix.field] = fix.to;
   }
   return pending.length;
+}
+
+/**
+ * Give starter items their product photo, once per SEED_PHOTOS_VERSION. Only
+ * items with no photo are touched, so an admin's own photos stay, and a photo
+ * an admin removes doesn't come back on the next restart.
+ */
+export function needsSeedPhotos(db) {
+  return (db.meta?.seedPhotos ?? 0) < SEED_PHOTOS_VERSION;
+}
+
+export function applySeedPhotos(db) {
+  let changed = 0;
+  for (const item of db.catalog) {
+    const photo = SEED_PHOTOS[item.id];
+    if (photo && !item.image) {
+      item.image = photo;
+      changed += 1;
+    }
+  }
+  db.meta.seedPhotos = SEED_PHOTOS_VERSION;
+  return changed;
+}
+
+/**
+ * Items saved before per-order minimums existed have none. Give the starter
+ * items their suggested minimum and everything else a minimum of one, once.
+ */
+export function needsMinimums(db) {
+  return db.catalog.some((item) => item.minPerOrder === undefined);
+}
+
+export function applyMinimums(db) {
+  let raised = 0;
+  for (const item of db.catalog) {
+    if (item.minPerOrder !== undefined) continue;
+    const seed = SEED_CATALOG.find((s) => s.id === item.id);
+    item.minPerOrder = seed ? Math.min(seed.minPerOrder, item.maxPerOrder) : 1;
+    if (item.minPerOrder > 1) raised += 1;
+  }
+  return raised;
 }
 
 /* ------------------------------------------------------------ admin edits */
@@ -305,7 +357,7 @@ export function normalizeItem(input, { catalog, existing = null }) {
   if (!ART_KINDS.includes(art)) errors.art = "Choose an illustration.";
 
   const image = cleanImage(src.image);
-  if (image === null) errors.image = "Use an https:// image URL, or leave this blank.";
+  if (image === null) errors.image = "That photo couldn't be used. Upload it again.";
 
   const costCents = parseCents(src.costCents);
   if (costCents === null || costCents > 10_000_000) errors.costCents = "Enter a cost of $0 or more.";
@@ -313,6 +365,12 @@ export function normalizeItem(input, { catalog, existing = null }) {
   const maxPerOrder = Number(src.maxPerOrder);
   if (!Number.isInteger(maxPerOrder) || maxPerOrder < 1 || maxPerOrder > 999) {
     errors.maxPerOrder = "Enter a whole number from 1 to 999.";
+  }
+  const minPerOrder = src.minPerOrder === undefined || src.minPerOrder === null || src.minPerOrder === "" ? 1 : Number(src.minPerOrder);
+  if (!Number.isInteger(minPerOrder) || minPerOrder < 1 || minPerOrder > 999) {
+    errors.minPerOrder = "Enter a whole number from 1 to 999.";
+  } else if (!errors.maxPerOrder && minPerOrder > maxPerOrder) {
+    errors.minPerOrder = "The minimum can't be more than the max per order.";
   }
 
   const rawVariants = Array.isArray(src.variants) ? src.variants : [];
@@ -371,6 +429,7 @@ export function normalizeItem(input, { catalog, existing = null }) {
     unit: cleanText(src.unit, 40) || "Each",
     description: cleanText(src.description, 600),
     costCents,
+    minPerOrder,
     maxPerOrder,
     variants,
     active: src.active !== false,
@@ -391,6 +450,7 @@ export function publicItem(item) {
     unit: item.unit,
     description: item.description,
     costCents: item.costCents,
+    minPerOrder: item.minPerOrder ?? 1,
     maxPerOrder: item.maxPerOrder,
     variants: item.variants.map((v) => ({ id: v.id, label: v.label, stock: v.stock })),
   };

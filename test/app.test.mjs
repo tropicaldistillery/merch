@@ -316,6 +316,33 @@ describe("merch store over HTTP", () => {
     assert.equal((await admin("/api/admin/accounts")).data.accounts.length, 0);
   });
 
+  it("deletes an item without touching past orders", async () => {
+    const admin = await signedInAdmin(app);
+    const created = await admin("/api/admin/catalog", {
+      method: "POST",
+      body: {
+        name: "Retired Coaster", sku: "TD-OLD-001", brand: "tropical-distillery", category: "Point of Sale",
+        tone: "palm", art: "bar-mat", unit: "Pack of 50", costCents: 2000, maxPerOrder: 4,
+        variants: [{ label: "", stock: 5 }],
+      },
+    });
+    const itemId = created.data.item.id;
+    const jane = await signedInTeam(app);
+    const placed = await jane("/api/orders", { method: "POST", body: { ...ACCOUNT_ORDER, lines: [{ itemId, variantId: "default", quantity: 2 }] } });
+    assert.equal(placed.status, 201, JSON.stringify(placed.data));
+
+    assert.equal((await admin(`/api/admin/catalog/${itemId}`, { method: "DELETE" })).status, 200);
+    assert.equal((await admin(`/api/admin/catalog/${itemId}`, { method: "DELETE" })).status, 404);
+    assert.ok(!(await admin("/api/admin/catalog")).data.items.some((i) => i.id === itemId));
+    assert.ok(!(await jane("/api/catalog")).data.items.some((i) => i.id === itemId));
+
+    const mine = await jane("/api/orders");
+    assert.equal(mine.data.orders.find((o) => o.id === placed.data.order.id).lines[0].name, "Retired Coaster");
+    const cancelled = await admin(`/api/admin/orders/${placed.data.order.id}`, { method: "PATCH", body: { status: "cancelled" } });
+    assert.equal(cancelled.status, 200, "an open order for a deleted item can still be cancelled");
+    assert.equal((await jane("/api/admin/catalog/x", { method: "DELETE" })).status, 401);
+  });
+
   it("sells the last unit exactly once under concurrent orders", async () => {
     const admin = await signedInAdmin(app);
     const { data } = await admin("/api/admin/catalog");
@@ -452,6 +479,27 @@ describe("personal codes", () => {
       assert.match(csv.data, /^name,email,personal_code,sign_in_link/);
       assert.match(csv.data, new RegExp(reset.data.person.code));
       assert.equal((await janeClient("/api/admin/team")).status, 401, "team sessions can't read the list");
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("counts wrong codes per email, so one person's code can't be worked out", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const app = await start(dir, { throttle: createThrottle({ max: 100 }), emailThrottle: createThrottle({ max: 2 }) });
+    try {
+      const admin = await signedInAdmin(app);
+      const { added } = (await admin("/api/admin/team", { method: "POST", body: { entries: "Jane Rep, jane@tropicaldistillery.com\nSam, sam@tropicaldistillery.com" } })).data;
+      const [jane, sam] = added;
+      assert.match(jane.code, /^jane-tropical-[a-z]+-\d{2}$/);
+      await admin("/api/admin/team/mode", { method: "PUT", body: { mode: "personal" } });
+      const anon = app.client();
+      const attempt = (email, code) => anon("/api/session", { method: "POST", body: { email, code } });
+      assert.equal((await attempt("jane@tropicaldistillery.com", "jane-tropical-mango-10")).status, 401);
+      assert.equal((await attempt("jane@tropicaldistillery.com", "jane-tropical-mango-11")).status, 401);
+      assert.equal((await attempt("jane@tropicaldistillery.com", jane.code)).status, 429, "even the right code waits");
+      assert.equal((await attempt("sam@tropicaldistillery.com", sam.code)).status, 200, "other people are unaffected");
     } finally {
       await app.close();
       await fs.rm(dir, { recursive: true, force: true });

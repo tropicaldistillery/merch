@@ -157,6 +157,23 @@ describe("placing an order", () => {
     assert.match(errors.lines, /up to 6 of J\.F\. Haden's Logo Tee/);
   });
 
+  it("enforces an item's minimum across its lines", () => {
+    const db = initialState();
+    const jigger = db.catalog.find((i) => i.id === "jfh-jigger");
+    assert.equal(jigger.minPerOrder, 3, "the starter jigger has a minimum");
+    const errors = fieldErrors(() => place(db, order({ lines: [{ itemId: "jfh-jigger", variantId: "default", quantity: 2 }] })));
+    assert.match(errors.lines, /Japanese Jigger is ordered in at least 3/);
+    const placed = place(db, order({ lines: [{ itemId: "jfh-jigger", variantId: "default", quantity: 3 }] }));
+    assert.equal(placed.totalUnits, 3);
+  });
+
+  it("treats items saved before minimums existed as minimum one", () => {
+    const db = initialState();
+    delete db.catalog.find((i) => i.id === "jfh-jigger").minPerOrder;
+    const placed = place(db, order({ lines: [{ itemId: "jfh-jigger", variantId: "default", quantity: 1 }] }));
+    assert.equal(placed.totalUnits, 1);
+  });
+
   it("merges repeated lines before checking stock", () => {
     const errors = fieldErrors(() =>
       place(

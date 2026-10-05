@@ -1,8 +1,22 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { createThrottle, parseCookies, signSession, verifySession } from "../src/auth.mjs";
-import { SEED_CATALOG, SEED_TEXT_FIXES, applySeedTextFixes, needsSeedTextFixes, normalizeItem } from "../src/catalog.mjs";
+import {
+  SEED_CATALOG,
+  SEED_PHOTOS,
+  SEED_PHOTOS_VERSION,
+  SEED_TEXT_FIXES,
+  applyMinimums,
+  applySeedPhotos,
+  applySeedTextFixes,
+  needsMinimums,
+  needsSeedPhotos,
+  needsSeedTextFixes,
+  normalizeItem,
+} from "../src/catalog.mjs";
+import { initialState } from "../src/store/initial-state.mjs";
 import { ValidationError } from "../src/validation.mjs";
 
 const VALID = {
@@ -108,6 +122,67 @@ describe("starter catalog corrections", () => {
 
   it("has nothing to do for a fresh store", () => {
     assert.equal(needsSeedTextFixes({ catalog: structuredClone(SEED_CATALOG) }), false);
+  });
+});
+
+describe("per-order minimums", () => {
+  it("defaults to one and can't exceed the max", () => {
+    const item = normalizeItem({ ...VALID }, { catalog: [] });
+    assert.equal(item.minPerOrder, 1);
+    assert.equal(normalizeItem({ ...VALID, minPerOrder: 4 }, { catalog: [] }).minPerOrder, 4);
+    assert.throws(() => normalizeItem({ ...VALID, minPerOrder: VALID.maxPerOrder + 1 }, { catalog: [] }), (e) => /more than the max/.test(e.fieldErrors.minPerOrder));
+    assert.throws(() => normalizeItem({ ...VALID, minPerOrder: 0 }, { catalog: [] }), (e) => Boolean(e.fieldErrors.minPerOrder));
+  });
+
+  it("suggests minimums for the small, cheap items only", () => {
+    const mins = Object.fromEntries(SEED_CATALOG.map((i) => [i.id, i.minPerOrder]));
+    assert.equal(mins["jfh-jigger"], 3);
+    assert.equal(mins["td-sample-cups"], 2);
+    assert.equal(mins["jfh-logo-tee"], 1, "clothing stays at one");
+    assert.equal(mins["jfh-led-sign"], 1);
+    for (const item of SEED_CATALOG) assert.ok(item.minPerOrder <= item.maxPerOrder, item.id);
+  });
+
+  it("gives older stores their minimums once, within each item's max", () => {
+    const catalog = structuredClone(SEED_CATALOG).map(({ minPerOrder, ...rest }) => rest);
+    catalog.find((i) => i.id === "td-sample-cups").maxPerOrder = 1;
+    catalog.push({ ...structuredClone(catalog[0]), id: "custom-item" });
+    const db = { catalog };
+    assert.equal(needsMinimums(db), true);
+    assert.equal(applyMinimums(db), 1);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-jigger").minPerOrder, 3);
+    assert.equal(db.catalog.find((i) => i.id === "td-sample-cups").minPerOrder, 1);
+    assert.equal(db.catalog.find((i) => i.id === "custom-item").minPerOrder, 1);
+    assert.equal(needsMinimums(db), false);
+  });
+});
+
+describe("starter catalog photos", () => {
+  it("has a photo file for every starter item that names one", () => {
+    for (const item of SEED_CATALOG) {
+      assert.equal(item.image, SEED_PHOTOS[item.id] ?? "");
+      if (!SEED_PHOTOS[item.id]) continue;
+      assert.ok(existsSync(new URL(`../public${SEED_PHOTOS[item.id]}`, import.meta.url)), `${SEED_PHOTOS[item.id]} is missing`);
+      assert.equal(normalizeItem(structuredClone(item), { catalog: SEED_CATALOG, existing: item }).image, item.image);
+    }
+  });
+
+  it("fills in photos once, keeping the admin's own and respecting removals", { skip: !Object.keys(SEED_PHOTOS).length && "no starter photos yet" }, () => {
+    const catalog = structuredClone(SEED_CATALOG).map((i) => ({ ...i, image: "" }));
+    catalog.find((i) => i.id === "jfh-cap").image = "/images/0123456789abcdef0123456789abcdef.webp";
+    const db = { meta: {}, catalog };
+    assert.equal(needsSeedPhotos(db), true);
+    assert.equal(applySeedPhotos(db), SEED_CATALOG.length - 1);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-cap").image, "/images/0123456789abcdef0123456789abcdef.webp");
+    assert.equal(db.catalog.find((i) => i.id === "jfh-logo-tee").image, "/assets/merch/jfh-logo-tee.jpg");
+    assert.equal(db.meta.seedPhotos, SEED_PHOTOS_VERSION);
+
+    db.catalog.find((i) => i.id === "jfh-logo-tee").image = "";
+    assert.equal(needsSeedPhotos(db), false);
+  });
+
+  it("has nothing to do for a fresh store", () => {
+    assert.equal(needsSeedPhotos(initialState()), false);
   });
 });
 

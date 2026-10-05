@@ -20,8 +20,17 @@ import {
   signSession,
   verifySession,
 } from "./auth.mjs";
-import { applySeedTextFixes, needsSeedTextFixes, normalizeItem, publicItem } from "./catalog.mjs";
-import { IMAGE_PATH_RE, MAX_IMAGE_BYTES, acceptProductImage, fetchRemoteImage } from "./images.mjs";
+import {
+  applyMinimums,
+  applySeedPhotos,
+  applySeedTextFixes,
+  needsMinimums,
+  needsSeedPhotos,
+  needsSeedTextFixes,
+  normalizeItem,
+  publicItem,
+} from "./catalog.mjs";
+import { IMAGE_PATH_RE, MAX_IMAGE_BYTES, acceptProductImage } from "./images.mjs";
 import {
   cancelOwnOrder,
   csvCell,
@@ -208,6 +217,16 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     console.log(`[catalog] brought ${changed} starter-catalog field(s) in line with tropicaldistillery.com`);
     initial = await store.read();
   }
+  if (needsSeedPhotos(initial)) {
+    const changed = await store.mutate((db) => applySeedPhotos(db));
+    console.log(`[catalog] added product photos to ${changed} starter item(s)`);
+    initial = await store.read();
+  }
+  if (needsMinimums(initial)) {
+    const raised = await store.mutate((db) => applyMinimums(db));
+    console.log(`[catalog] set per-order minimums (${raised} item(s) above one)`);
+    initial = await store.read();
+  }
   const secret = config.sessionSecret || initial.meta.sessionSecret;
   const teamCode = String(config.teamAccessCode || "").trim();
   const adminPassword = String(config.adminPassword || "");
@@ -222,6 +241,9 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   // on failures from everyone together backs up the per-address limit. It
   // only ever blocks new sign-ins; existing sessions keep working.
   const globalThrottle = config.globalThrottle ?? createThrottle({ max: 100 });
+  // Personal codes start with the person's name, so wrong guesses are also
+  // counted per email: nobody can work through one person's possible codes.
+  const emailThrottle = config.emailThrottle ?? createThrottle({ max: 10 });
 
   function signInBlocked(address) {
     return throttle.blocked(address) || globalThrottle.blocked("*");
@@ -302,9 +324,13 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     if (mode === "personal") {
       if (!String(body.code ?? "").trim()) errors.code = "Enter your personal code.";
       if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+      if (emailThrottle.blocked(email)) {
+        throw new ValidationError("Too many wrong codes for this email. Wait 15 minutes and try again.", {}, 429);
+      }
       const person = personForSignIn(team, email, body.code, safeEqual);
       if (!person) {
         signInFailed(address);
+        emailThrottle.fail(email);
         await delay(config.failureDelayMs ?? 400);
         const message = "That email and code don't match. Check the code you were sent, or ask the merch admin for a new one.";
         throw new ValidationError(message, { code: message }, 401);
@@ -502,6 +528,17 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       sendJson(res, 200, { ok: true, item });
     }],
 
+    // Deleting an item leaves past orders as they are: each order line keeps
+    // its own copy of the item's name, SKU and cost.
+    ["DELETE", /^\/api\/admin\/catalog\/([\w-]+)$/, "admin", async ({ res, params }) => {
+      const removed = await store.mutate((db) => {
+        const existing = find(db.catalog, params[0], "item");
+        db.catalog.splice(db.catalog.indexOf(existing), 1);
+        return existing;
+      });
+      sendJson(res, 200, { ok: true, removed: { id: removed.id, name: removed.name } });
+    }],
+
     // Admin: team list and personal codes
     ["GET", "/api/admin/team", "admin", async ({ res }) => {
       const db = await store.read();
@@ -567,12 +604,6 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       const image = acceptProductImage(bytes);
       await store.putImage({ id: image.id, ext: image.ext, bytes });
       sendJson(res, 201, { ok: true, url: image.url });
-    }],
-
-    // A photo someone linked to, fetched here so the browser can resize it.
-    ["GET", "/api/admin/image-fetch", "admin", async ({ res, url }) => {
-      const { contentType, bytes } = await fetchRemoteImage(url.searchParams.get("url"), { fetchImpl: config.fetchImpl });
-      send(res, 200, bytes, { "Content-Type": contentType, "Content-Length": bytes.length, "Cache-Control": "no-store" });
     }],
 
     // Admin: accounts

@@ -25,6 +25,7 @@ import {
   BRANDS,
   CARRIERS,
   CATEGORIES,
+  OPEN_STATUSES,
   PURPOSES,
   STATUSES,
   TONES,
@@ -33,6 +34,7 @@ import {
   formatMoney,
   labelFor,
   suggestedMaxPerOrder,
+  suggestedMinPerOrder,
   trackingUrl,
 } from "./shared.js";
 
@@ -806,8 +808,8 @@ function renderCatalog() {
 
   clear(
     $("#catalog-table"),
-    el("thead", {}, el("tr", {}, ["Item", "Category", "Cost", "Available", "Max / order", "In store", ""].map((h) =>
-      el("th", { scope: "col", class: h === "Cost" || h === "Max / order" ? "num" : "", text: h })
+    el("thead", {}, el("tr", {}, ["Item", "Category", "Cost", "Available", "Per order", "In store", ""].map((h) =>
+      el("th", { scope: "col", class: h === "Cost" || h === "Per order" ? "num" : "", text: h })
     ))),
     el(
       "tbody",
@@ -820,7 +822,7 @@ function renderCatalog() {
           el("td", {}, el("div", { text: item.category }), el("div", { class: "cell-sub", text: labelFor(BRANDS, item.brand) })),
           el("td", { class: "num", text: formatMoney(item.costCents) }),
           el("td", {}, stockSummary(item)),
-          el("td", { class: "num", text: String(item.maxPerOrder) }),
+          el("td", { class: "num", text: (item.minPerOrder ?? 1) > 1 ? `${item.minPerOrder}–${item.maxPerOrder}` : `Up to ${item.maxPerOrder}` }),
           el("td", {}, el("span", { class: `tag ${item.active ? "account" : ""}`.trim(), text: item.active ? "Shown" : "Hidden" })),
           el("td", {}, el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Edit", "aria-label": `Edit ${item.name}`, onclick: () => openItem(item) }))
         )
@@ -909,14 +911,13 @@ async function uploadPhoto(blob) {
 }
 
 /**
- * Upload a photo or paste a link to one; either way it is resized to the
- * standard size and stored, and `input` gets its path.
+ * Upload a photo, by choosing a file or dropping one on the box. It is
+ * resized to the standard size and stored, and `input` gets its path.
  */
 function photoPicker(input, onChange) {
   let source = null; // the original, kept so changing the fit re-crops it
   const status = el("p", { class: "hint", "aria-live": "polite" });
   const file = el("input", { type: "file", accept: "image/jpeg,image/png,image/webp,image/gif", class: "sr-only", id: "photo-file" });
-  const link = el("input", { type: "url", id: "photo-link", placeholder: "https://… link to a photo", "aria-label": "Link to a photo" });
   const fitName = "photo-fit";
   const fits = el(
     "div",
@@ -926,10 +927,15 @@ function photoPicker(input, onChange) {
     )
   );
   const remove = el("button", { type: "button", class: "link-button", text: "Remove photo" });
+  const chooseLabel = el("span", { text: "Upload image" });
 
-  async function use(blob, label) {
+  async function use(blob) {
+    if (!blob.type.startsWith("image/") && blob.type) {
+      status.textContent = "That file isn't an image. Use a JPG, PNG or WebP photo.";
+      return;
+    }
     source = blob;
-    status.textContent = `Resizing ${label}…`;
+    status.textContent = "Resizing…";
     try {
       const fit = fits.querySelector("input:checked").value;
       const resized = await uniformPhoto(blob, fit);
@@ -943,34 +949,35 @@ function photoPicker(input, onChange) {
   }
 
   file.addEventListener("change", () => {
-    if (file.files[0]) use(file.files[0], "your photo");
+    if (file.files[0]) use(file.files[0]);
     file.value = "";
   });
 
-  const fetchButton = el("button", {
-    type: "button",
-    class: "btn btn-secondary btn-sm",
-    text: "Get photo",
-    onclick: async () => {
-      if (!link.value.trim()) return link.focus();
-      status.textContent = "Fetching the photo…";
-      try {
-        const response = await fetch(`/api/admin/image-fetch?url=${encodeURIComponent(link.value.trim())}`, { credentials: "same-origin" });
-        if (!response.ok) {
-          const data = await response.json().catch(() => null);
-          throw new Error(data?.error || "That photo couldn't be fetched.");
-        }
-        await use(await response.blob(), "the linked photo");
-        link.value = "";
-      } catch (error) {
-        status.textContent = error.message;
-      }
-    },
+  const drop = el(
+    "div",
+    { class: "photo-drop" },
+    el("label", { class: "btn btn-sm", for: "photo-file", tabindex: "0", role: "button", onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); file.click(); } } }, chooseLabel),
+    file,
+    el("span", { class: "muted", text: "or drag a photo here" })
+  );
+  for (const type of ["dragenter", "dragover"]) {
+    drop.addEventListener(type, (event) => {
+      event.preventDefault();
+      drop.classList.add("over");
+    });
+  }
+  for (const type of ["dragleave", "dragend"]) drop.addEventListener(type, () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    drop.classList.remove("over");
+    const dropped = [...(event.dataTransfer?.files ?? [])].find((f) => f.type.startsWith("image/"));
+    if (dropped) use(dropped);
+    else status.textContent = "Drop a photo file (JPG, PNG or WebP).";
   });
 
   for (const radio of fits.querySelectorAll("input")) {
     radio.addEventListener("change", () => {
-      if (source) use(source, "your photo");
+      if (source) use(source);
     });
   }
 
@@ -985,15 +992,7 @@ function photoPicker(input, onChange) {
     "div",
     { class: "field span-6 photo-picker" },
     el("span", { class: "label", text: "Photo" }),
-    el(
-      "div",
-      { class: "photo-actions" },
-      el("label", { class: "btn btn-sm", for: "photo-file", tabindex: "0", role: "button", onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); file.click(); } } }, "Upload photo"),
-      file,
-      el("span", { class: "muted", text: "or" }),
-      link,
-      fetchButton
-    ),
+    drop,
     fits,
     el("p", { class: "hint", text: `Every photo is resized to ${PHOTO_WIDTH} × ${PHOTO_HEIGHT} so all items match. "Show the whole photo" never cuts anything off; "Fill the frame" crops the edges.` }),
     status,
@@ -1005,6 +1004,7 @@ function photoPicker(input, onChange) {
     element,
     refresh() {
       remove.hidden = !input.value;
+      chooseLabel.textContent = input.value ? "Replace image" : "Upload image";
     },
   };
 }
@@ -1012,7 +1012,7 @@ function photoPicker(input, onChange) {
 function openItem(item) {
   const editing = Boolean(item);
   const draft = item ?? {
-    name: "", sku: "", brand: "jf-hadens", category: "Apparel", unit: "Each", costCents: 0, maxPerOrder: 6,
+    name: "", sku: "", brand: "jf-hadens", category: "Apparel", unit: "Each", costCents: 0, minPerOrder: 1, maxPerOrder: 6,
     description: "", tone: "mango", art: "tee", image: "", active: true,
     variants: [{ id: "default", label: "", stock: 0 }],
   };
@@ -1101,40 +1101,58 @@ function openItem(item) {
 
   const cost = el("input", { id: "item-cost", name: "costCents", type: "number", min: "0", step: "0.01", inputmode: "decimal", value: (draft.costCents / 100).toFixed(2) });
 
-  // Suggested max per order follows the cost as it is typed. A new item takes
-  // the suggestion until someone sets the max themselves.
-  const maxInput = el("input", { id: "item-max", name: "maxPerOrder", type: "number", min: "1", max: "999", step: "1", value: String(draft.maxPerOrder) });
-  const suggestion = el("p", { class: "hint suggestion", "aria-live": "polite" });
-  const maxField = field("Max per order", maxInput, { span: 2 });
-  maxField.append(suggestion);
-  let maxTouched = editing;
-  maxInput.addEventListener("input", () => {
-    maxTouched = true;
-    renderSuggestion();
-  });
-  function renderSuggestion() {
-    const dollars = Number.parseFloat(cost.value);
-    const suggested = suggestedMaxPerOrder(Number.isFinite(dollars) ? Math.round(dollars * 100) : NaN);
-    if (!suggested) return clear(suggestion);
-    if (!maxTouched) maxInput.value = String(suggested);
-    clear(
-      suggestion,
-      `Suggested: ${suggested}`,
-      String(suggested) === maxInput.value
-        ? null
-        : el("button", {
-            type: "button",
-            class: "link-button",
-            text: "Use",
-            onclick: () => {
-              maxInput.value = String(suggested);
-              renderSuggestion();
-            },
-          })
-    );
+  const category = el("select", { id: "item-category", name: "category" }, options(CATEGORIES, { selected: draft.category }));
+
+  // Suggested min and max per order follow the cost (and category) as they
+  // are typed. A new item takes the suggestions until someone sets its own.
+  function suggestedField({ id, name, label, value, suggest }) {
+    const input = el("input", { id, name, type: "number", min: "1", max: "999", step: "1", value: String(value) });
+    const hint = el("p", { class: "hint suggestion", "aria-live": "polite" });
+    const wrap = field(label, input, { span: 2 });
+    wrap.append(hint);
+    let touched = editing;
+    function refresh() {
+      const dollars = Number.parseFloat(cost.value);
+      const suggested = suggest(Number.isFinite(dollars) ? Math.round(dollars * 100) : NaN);
+      if (!suggested) return clear(hint);
+      if (!touched) input.value = String(suggested);
+      clear(
+        hint,
+        `Suggested: ${suggested}`,
+        String(suggested) === input.value
+          ? null
+          : el("button", {
+              type: "button",
+              class: "link-button",
+              text: "Use",
+              onclick: () => {
+                input.value = String(suggested);
+                refresh();
+              },
+            })
+      );
+    }
+    input.addEventListener("input", () => {
+      touched = true;
+      refresh();
+    });
+    return { field: wrap, refresh };
   }
-  cost.addEventListener("input", renderSuggestion);
-  renderSuggestion();
+  const maxSetting = suggestedField({ id: "item-max", name: "maxPerOrder", label: "Max per order", value: draft.maxPerOrder, suggest: suggestedMaxPerOrder });
+  const minSetting = suggestedField({
+    id: "item-min",
+    name: "minPerOrder",
+    label: "Min per order",
+    value: draft.minPerOrder ?? 1,
+    suggest: (cents) => suggestedMinPerOrder(cents, category.value),
+  });
+  const maxField = maxSetting.field;
+  const minField = minSetting.field;
+  for (const setting of [minSetting, maxSetting]) {
+    cost.addEventListener("input", setting.refresh);
+    setting.refresh();
+  }
+  category.addEventListener("change", minSetting.refresh);
 
   form.append(
     alertBox,
@@ -1144,9 +1162,10 @@ function openItem(item) {
       field("Name", el("input", { id: "item-name", name: "name", type: "text", maxlength: "120", value: draft.name, autofocus: true }), { span: 4 }),
       field("SKU", el("input", { id: "item-sku", name: "sku", type: "text", maxlength: "40", value: draft.sku }), { span: 2 }),
       field("Brand", el("select", { id: "item-brand", name: "brand" }, options(BRANDS, { selected: draft.brand })), { span: 2 }),
-      field("Category", el("select", { id: "item-category", name: "category" }, options(CATEGORIES, { selected: draft.category })), { span: 2 }),
+      field("Category", category, { span: 2 }),
       field("Sold as", el("input", { id: "item-unit", name: "unit", type: "text", maxlength: "40", value: draft.unit, placeholder: "Each, Pack of 25…" }), { span: 2 }),
       field("Cost to us ($)", cost, { span: 2 }),
+      minField,
       maxField,
       el("div", { class: "field span-2" }, el("span", { class: "label", text: "Visibility" }), el("label", { class: "check" }, el("input", { id: "item-active", type: "checkbox", checked: draft.active }), "Show in the store")),
       field("Description", el("textarea", { id: "item-description", name: "description", rows: "3", maxlength: "600", value: draft.description }), { optional: true }),
@@ -1183,6 +1202,7 @@ function openItem(item) {
       category: form.elements.namedItem("category").value,
       unit: form.elements.namedItem("unit").value,
       costCents: Number.isFinite(dollars) ? Math.round(dollars * 100) : null,
+      minPerOrder: Number(form.elements.namedItem("minPerOrder").value),
       maxPerOrder: Number(form.elements.namedItem("maxPerOrder").value),
       description: form.elements.namedItem("description").value,
       tone: tone.value,
@@ -1218,10 +1238,37 @@ function openItem(item) {
       "div",
       { class: "inline-actions" },
       el("button", { type: "submit", form: "item-form", class: "btn", id: "item-save", text: editing ? "Save changes" : "Add item" }),
-      el("button", { type: "button", class: "btn btn-secondary", "data-close": "", text: "Cancel" })
+      el("button", { type: "button", class: "btn btn-secondary", "data-close": "", text: "Cancel" }),
+      editing ? el("button", { type: "button", class: "btn btn-danger push-end", id: "item-delete", text: "Delete item", onclick: () => deleteItem(item) }) : null
     )
   );
   drawer.open();
+}
+
+async function deleteItem(item) {
+  const open = orders.filter((o) => OPEN_STATUSES.includes(o.status) && o.lines.some((l) => l.itemId === item.id)).length;
+  const ok = await confirmDialog({
+    title: `Delete ${item.name}?`,
+    body: [
+      "It disappears from the store and from this catalog for good. Past orders keep their details.",
+      open ? `${plural(open, "open order")} include${open === 1 ? "s" : ""} it and will still go out as normal.` : "",
+      item.active ? "If you might stock it again, hide it instead: edit it and untick “Show in the store”." : "",
+    ].filter(Boolean).join(" "),
+    confirmLabel: "Delete item",
+    cancelLabel: "Keep it",
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await adminApi(`/api/admin/catalog/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    catalog = catalog.filter((i) => i.id !== item.id);
+    renderCatalog();
+    renderKpis();
+    drawer.close();
+    toast(`${item.name} deleted.`);
+  } catch (error) {
+    toast(error.message, { tone: "error" });
+  }
 }
 
 /* -------------------------------------------------------------- accounts */
