@@ -84,6 +84,30 @@ Open <http://localhost:4100>. Without `DATABASE_URL`, data is kept in
 | `SESSION_SECRET` | Optional. By default a secret is generated once and kept with the data. |
 | `PORT` | Default `4100`. |
 
+## Live setup
+
+The production store runs entirely on Tropical Distillery's own accounts:
+
+| | |
+| --- | --- |
+| Site | <https://tropical-merch.onrender.com> |
+| Code | GitHub `tropicaldistillery/merch`, branch `main` |
+| Web service | Render `tropical-merch`, Starter plan, Virginia region, Tropical Distillery workspace |
+| Database | Render Postgres `tropical-merch-db`, `basic_256mb`, Postgres 17, Virginia. Outside connections are blocked; only the web service reaches it, through its internal address |
+| Deploys | Automatic on every push to `main` |
+
+The service's Environment page holds `TEAM_ACCESS_CODE`, `ADMIN_PASSWORD`,
+`TEAM_EMAIL_DOMAINS`, `COOKIE_SECURE=always`, `REQUIRE_DATABASE=1`,
+`TIMEZONE`, `PUBLIC_URL` and `DATABASE_URL` (the database's *Internal
+Database URL*). Values live only there, never in this repository.
+
+Automatic deploys depend on Render's GitHub app having access to this
+repository. If deploys stop starting on their own, check
+<https://github.com/settings/installations> while signed in as
+`tropicaldistillery`: **Render** must be listed, with `merch` among its
+repositories. Without it Render can still deploy a public repository when
+asked, but not a private one, and never on its own.
+
 ## Putting it online on Tropical Distillery's own accounts
 
 You need three accounts, all owned by Tropical Distillery:
