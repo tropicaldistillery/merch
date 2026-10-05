@@ -18,14 +18,19 @@ export const CATEGORIES = [
   "Print",
 ];
 
-// Colourways for the product artwork. Each maps to a set of CSS variables in
-// styles.css (.tone-<id>).
+// Colourways for the product artwork, after the brand and its J.F. Haden's
+// flavours. Each maps to CSS variables in styles.css (.tone-<id>). "palm" is
+// the house Tropical Distillery look; the id predates the rebrand and stays
+// because saved catalog items refer to it.
 export const TONES = [
+  { id: "palm", label: "Tropical Distillery navy & pink" },
+  { id: "sky", label: "Miami sky blue" },
   { id: "mango", label: "Mango" },
+  { id: "citrus", label: "Citrus" },
+  { id: "lime", label: "Key Lime Pie" },
+  { id: "lychee", label: "Lychee" },
   { id: "espresso", label: "Espresso" },
-  { id: "lime", label: "Key lime" },
-  { id: "oak", label: "Whiskey oak" },
-  { id: "palm", label: "Palm green" },
+  { id: "oak", label: "Twin P Whiskey oak" },
 ];
 
 export const ACCOUNT_TYPES = [

@@ -2,7 +2,6 @@ import { addressLines, api, clear, el, formatCalendarDate, formatDate } from "./
 import { ACCOUNT_TYPES, PURPOSES, labelFor } from "./shared.js";
 
 const slip = document.getElementById("slip");
-const LOGO = '<svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#135E52"/><ellipse cx="31" cy="37" rx="14" ry="16.5" transform="rotate(-22 31 37)" fill="#F29E38"/><path d="M33 21c4-8 11-10 17-8-3 6-9 9-17 8Z" fill="#8DBF3F"/><path d="M32 22c-1-4 0-7 2-10" stroke="#FBF8F2" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>';
 
 document.getElementById("print").addEventListener("click", () => window.print());
 
@@ -15,9 +14,12 @@ const id = new URLSearchParams(location.search).get("id") || "";
 try {
   const { order } = await api(`/api/admin/orders/${encodeURIComponent(id)}`);
   const s = order.shipTo;
-  const brand = el("div", { class: "brand" });
-  brand.innerHTML = LOGO;
-  brand.append(el("span", { class: "brand-name" }, "Tropical Distillery", el("span", { class: "brand-sub", text: "Team merch" })));
+  const brand = el(
+    "div",
+    { class: "brand" },
+    el("img", { class: "brand-mark", src: "/assets/brand/td-palm.png", alt: "", width: "50", height: "36" }),
+    el("span", { class: "brand-name" }, "Tropical Distillery", el("span", { class: "brand-sub", text: "Team merch" }))
+  );
 
   document.title = `Packing slip ${order.number} · Tropical Distillery Team Merch`;
   slip.removeAttribute("aria-busy");

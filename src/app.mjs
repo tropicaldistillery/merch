@@ -20,7 +20,7 @@ import {
   signSession,
   verifySession,
 } from "./auth.mjs";
-import { normalizeItem, publicItem } from "./catalog.mjs";
+import { applySeedTextFixes, needsSeedTextFixes, normalizeItem, publicItem } from "./catalog.mjs";
 import {
   cancelOwnOrder,
   normalizeAccountEdit,
@@ -172,7 +172,12 @@ function byName(a, b) {
  * @param {() => Date} [options.clock]
  */
 export async function createApp({ store, config, notify = () => {}, clock = () => new Date() }) {
-  const initial = await store.read();
+  let initial = await store.read();
+  if (needsSeedTextFixes(initial)) {
+    const changed = await store.mutate((db) => applySeedTextFixes(db));
+    console.log(`[catalog] brought ${changed} starter-catalog field(s) in line with tropicaldistillery.com`);
+    initial = await store.read();
+  }
   const secret = config.sessionSecret || initial.meta.sessionSecret;
   const teamCode = String(config.teamAccessCode || "").trim();
   const adminPassword = String(config.adminPassword || "");

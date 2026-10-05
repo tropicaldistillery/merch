@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { createThrottle, parseCookies, signSession, verifySession } from "../src/auth.mjs";
-import { SEED_CATALOG, normalizeItem } from "../src/catalog.mjs";
+import { SEED_CATALOG, SEED_TEXT_FIXES, applySeedTextFixes, needsSeedTextFixes, normalizeItem } from "../src/catalog.mjs";
 import { ValidationError } from "../src/validation.mjs";
 
 const VALID = {
@@ -77,6 +77,37 @@ describe("catalog items", () => {
   it("refuses unlabelled or repeated options", () => {
     assert.ok(errorsOf(() => normalizeItem({ ...VALID, variants: [{ label: "S", stock: 1 }, { label: "", stock: 1 }] }, { catalog: SEED_CATALOG })).variants);
     assert.ok(errorsOf(() => normalizeItem({ ...VALID, variants: [{ label: "S", stock: 1 }, { label: "s", stock: 1 }] }, { catalog: SEED_CATALOG })).variants);
+  });
+});
+
+describe("starter catalog corrections", () => {
+  function storeSeededWithOldText() {
+    const catalog = structuredClone(SEED_CATALOG);
+    for (const fix of SEED_TEXT_FIXES) catalog.find((i) => i.id === fix.id)[fix.field] = fix.from;
+    return { catalog };
+  }
+
+  it("brings untouched seed items up to date, once", () => {
+    const db = storeSeededWithOldText();
+    assert.equal(needsSeedTextFixes(db), true);
+    assert.equal(applySeedTextFixes(db), SEED_TEXT_FIXES.length);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-key-lime-table-tents").name, "Key Lime Pie Liqueur Table Tents");
+    assert.match(db.catalog.find((i) => i.id === "td-sell-sheets").description, /all six/);
+    assert.equal(needsSeedTextFixes(db), false);
+    assert.equal(applySeedTextFixes(db), 0);
+  });
+
+  it("leaves anything an admin has edited, and missing items, alone", () => {
+    const db = storeSeededWithOldText();
+    db.catalog.find((i) => i.id === "jfh-recipe-cards").description = "Our own wording";
+    db.catalog = db.catalog.filter((i) => i.id !== "jfh-shot-24");
+    applySeedTextFixes(db);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-recipe-cards").description, "Our own wording");
+    assert.equal(db.catalog.find((i) => i.id === "td-sell-sheets").description, SEED_CATALOG.find((i) => i.id === "td-sell-sheets").description);
+  });
+
+  it("has nothing to do for a fresh store", () => {
+    assert.equal(needsSeedTextFixes({ catalog: structuredClone(SEED_CATALOG) }), false);
   });
 });
 

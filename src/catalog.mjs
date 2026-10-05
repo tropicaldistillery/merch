@@ -67,7 +67,7 @@ export const SEED_CATALOG = [
   {
     id: "jfh-shot-24", sku: "TD-DRK-002", name: "J.F. Haden's Shot Glasses",
     brand: "jf-hadens", category: "Drinkware", tone: "lime", art: "shot", unit: "Pack of 24",
-    description: "1.5 oz shot glasses with a printed Key Lime logo.",
+    description: "1.5 oz shot glasses with the J.F. Haden's logo in Key Lime Pie green.",
     costCents: 2900, maxPerOrder: 4, variants: single(30),
   },
   {
@@ -97,9 +97,9 @@ export const SEED_CATALOG = [
     costCents: 2000, maxPerOrder: 10, variants: single(45),
   },
   {
-    id: "jfh-key-lime-table-tents", sku: "TD-POS-003", name: "Key Lime Liqueur Table Tents",
+    id: "jfh-key-lime-table-tents", sku: "TD-POS-003", name: "Key Lime Pie Liqueur Table Tents",
     brand: "jf-hadens", category: "Point of Sale", tone: "lime", art: "table-tent", unit: "Pack of 12",
-    description: "Feature-cocktail table tents for on-premise accounts, with space for the venue to write its price.",
+    description: "Key Lime Pie Martini table tents for on-premise accounts, with space for the venue to write its price.",
     costCents: 1800, maxPerOrder: 6, variants: single(40),
   },
   {
@@ -165,13 +165,13 @@ export const SEED_CATALOG = [
   {
     id: "td-sell-sheets", sku: "TD-PRT-001", name: "Portfolio Sell Sheets",
     brand: "tropical-distillery", category: "Print", tone: "palm", art: "sheets", unit: "Pack of 50",
-    description: "Two-sided sell sheets for J.F. Haden's Mango, Espresso and Key Lime and Twin P Whiskey: tasting notes, SKUs, case packs and UPCs. Printed to order.",
+    description: "Two-sided sell sheets for all six J.F. Haden's flavors (Citrus, Espresso, Key Lime Pie, Lychee, Mango and Orange) and Twin P Whiskey: tasting notes, SKUs, case packs and UPCs. Printed to order.",
     costCents: 2200, maxPerOrder: 6, variants: single(null),
   },
   {
     id: "jfh-recipe-cards", sku: "TD-PRT-002", name: "Signature Cocktail Recipe Cards",
     brand: "jf-hadens", category: "Print", tone: "lime", art: "cards", unit: "Pack of 100",
-    description: "Pocket recipe cards for the Mango Mule, Espresso Martini and Key Lime Pie Martini. Printed to order.",
+    description: "Pocket recipe cards for J.F. Haden's signature cocktails: Iced Coffee, Tropical Sunset, Pink Lotus and Key Lime Pie Martini. Printed to order.",
     costCents: 1800, maxPerOrder: 6, variants: single(null),
   },
   {
@@ -181,6 +181,57 @@ export const SEED_CATALOG = [
     costCents: 2500, maxPerOrder: 4, variants: single(20),
   },
 ].map((item) => ({ ...item, image: "", active: true }));
+
+/* ------------------------------------------------------- seed corrections */
+
+// Wording fixed in the starter catalog after stores were already seeded with
+// it, matched to the flavours and recipes on tropicaldistillery.com. Applied
+// at startup to items that still carry the old wording exactly, so anything
+// an admin has edited is left alone.
+export const SEED_TEXT_FIXES = [
+  {
+    id: "jfh-shot-24",
+    field: "description",
+    from: "1.5 oz shot glasses with a printed Key Lime logo.",
+  },
+  {
+    id: "jfh-key-lime-table-tents",
+    field: "name",
+    from: "Key Lime Liqueur Table Tents",
+  },
+  {
+    id: "jfh-key-lime-table-tents",
+    field: "description",
+    from: "Feature-cocktail table tents for on-premise accounts, with space for the venue to write its price.",
+  },
+  {
+    id: "td-sell-sheets",
+    field: "description",
+    from: "Two-sided sell sheets for J.F. Haden's Mango, Espresso and Key Lime and Twin P Whiskey: tasting notes, SKUs, case packs and UPCs. Printed to order.",
+  },
+  {
+    id: "jfh-recipe-cards",
+    field: "description",
+    from: "Pocket recipe cards for the Mango Mule, Espresso Martini and Key Lime Pie Martini. Printed to order.",
+  },
+].map((fix) => ({ ...fix, to: SEED_CATALOG.find((item) => item.id === fix.id)[fix.field] }));
+
+function pendingFixes(catalog) {
+  return SEED_TEXT_FIXES.filter((fix) => catalog.find((item) => item.id === fix.id)?.[fix.field] === fix.from);
+}
+
+export function needsSeedTextFixes(db) {
+  return pendingFixes(db.catalog).length > 0;
+}
+
+/** Apply the seed corrections still pending; returns how many fields changed. */
+export function applySeedTextFixes(db) {
+  const pending = pendingFixes(db.catalog);
+  for (const fix of pending) {
+    db.catalog.find((item) => item.id === fix.id)[fix.field] = fix.to;
+  }
+  return pending.length;
+}
 
 /* ------------------------------------------------------------ admin edits */
 

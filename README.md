@@ -146,6 +146,20 @@ that, the next step is real tables.
 - Team members see only their own orders. The account directory, which holds
   business addresses, is shared with the whole team on purpose.
 
+## Look and feel
+
+The store is styled to match [tropicaldistillery.com](https://tropicaldistillery.com):
+its colors, Josefin Sans headings and Inter body text, pill buttons, the
+pink-to-blue "Miami" gradient and the sunset motif, all taken from the
+Shopify theme there and kept as variables at the top of
+`public/assets/styles.css`. The palm logo is `public/assets/brand/td-palm.png`.
+
+One deliberate difference: the site's pink (`#E84890`) is too light for white
+button text or small pink text to be readable by everyone, so buttons use a
+slightly deeper pink (`#CF3579`) and pink text uses the theme's own darker
+pink (`#C92F74`). The bright pink is still used for the logo, gradients,
+outlines and highlights.
+
 ## Development
 
 ```
