@@ -11,7 +11,7 @@ import {
   toast,
   wireHeader,
 } from "./core.js";
-import { BRANDS, CATEGORIES, PROFIT_PER_CASE_CENTS, formatMoney, labelFor, minPerOrder, roiFor } from "./shared.js";
+import { BRANDS, CATEGORIES, PROFIT_PER_CASE_CENTS, formatMoney, labelFor, orderRule, quantityProblem, quantityRuleText, roiFor } from "./shared.js";
 
 const grid = $("#product-grid");
 const chips = $("#category-chips");
@@ -47,32 +47,34 @@ function itemAvailability(item) {
 // How many more of this variant fit in the order: the per-order limit across
 // all of the item's options, and the variant's own remaining stock.
 function roomFor(item, variant) {
-  const perOrder = item.maxPerOrder - cart.quantityOf(item.id);
+  const { max, step } = orderRule(item);
+  const perOrder = max - cart.quantityOf(item.id);
   const stock = variantStock(variant) - cart.quantityOf(item.id, variant.id);
-  return Math.max(0, Math.min(perOrder, stock));
+  const room = Math.max(0, Math.min(perOrder, stock));
+  return Number.isFinite(room) ? Math.floor(room / step) * step : room;
 }
 
 // The most this cart line may hold, given the other lines for the same item.
 function lineLimit(item, variant, line) {
   const othersOfItem = cart.quantityOf(item.id) - line.quantity;
-  return Math.min(item.maxPerOrder - othersOfItem, variantStock(variant));
+  return Math.min(orderRule(item).max - othersOfItem, variantStock(variant));
 }
 
 // The fewest this cart line may hold so the item still meets its minimum.
 function lineFloor(item, line) {
+  const { min, step } = orderRule(item);
   const othersOfItem = cart.quantityOf(item.id) - line.quantity;
-  return Math.max(1, minPerOrder(item) - othersOfItem);
+  return Math.max(step, Math.ceil((min - othersOfItem) / step) * step);
 }
 
-// How many more of an item must be added to reach its minimum.
+// The smallest amount that can be added now: enough to reach the minimum,
+// in whole steps.
 function stillNeeded(item) {
-  return Math.max(1, minPerOrder(item) - cart.quantityOf(item.id));
+  const { min, step } = orderRule(item);
+  return Math.max(step, Math.ceil((min - cart.quantityOf(item.id)) / step) * step);
 }
 
-function limitText(item) {
-  const min = minPerOrder(item);
-  return min > 1 ? `Min ${min} · up to ${item.maxPerOrder} per order` : `Up to ${item.maxPerOrder} per order`;
-}
+const limitText = quantityRuleText;
 
 function optionLabel(variant) {
   if (variant.stock === 0) return `${variant.label} — out of stock`;
@@ -136,7 +138,7 @@ function productCard(item) {
       )
     : null;
 
-  const stepper = quantityStepper({ value: stillNeeded(item), min: stillNeeded(item), max: item.maxPerOrder, label: `Quantity of ${item.name}` });
+  const stepper = quantityStepper({ value: stillNeeded(item), min: stillNeeded(item), max: orderRule(item).max, step: orderRule(item).step, label: `Quantity of ${item.name}` });
   const addButton = el("button", { type: "button", class: "btn", text: "Add" });
 
   function selectedVariant() {
@@ -147,7 +149,7 @@ function productCard(item) {
     const variant = selectedVariant();
     const room = variant
       ? roomFor(item, variant)
-      : Math.max(0, item.maxPerOrder - cart.quantityOf(item.id));
+      : Math.max(0, orderRule(item).max - cart.quantityOf(item.id));
     const need = stillNeeded(item);
     stepper.setMin(need);
     stepper.setMax(Math.max(need, room));
@@ -174,8 +176,8 @@ function productCard(item) {
     const room = roomFor(item, variant);
     if (room === 0) {
       toast(
-        cart.quantityOf(item.id) >= item.maxPerOrder
-          ? `Your order already has the most allowed (${item.maxPerOrder}) of ${item.name}.`
+        cart.quantityOf(item.id) >= orderRule(item).max
+          ? `Your order already has the most allowed (${orderRule(item).max}) of ${item.name}.`
           : `There are no more ${item.name}${variant.label ? ` in ${variant.label}` : ""} available.`,
         { tone: "error" }
       );
@@ -183,7 +185,7 @@ function productCard(item) {
     }
     const quantity = Math.min(stepper.value, room);
     if (quantity < stillNeeded(item)) {
-      toast(`${item.name} is ordered in at least ${minPerOrder(item)}, and there aren't that many left.`, { tone: "error" });
+      toast(`There aren't enough ${item.name} left to make up a full order quantity.`, { tone: "error" });
       return;
     }
     cart.add(item.id, variant.id, quantity);
@@ -290,11 +292,16 @@ function cartLine(line) {
   }
 
   const limit = lineLimit(item, variant, line);
-  const floor = Math.min(lineFloor(item, line), line.quantity);
-  const belowMin = cart.quantityOf(item.id) < minPerOrder(item);
+  // An item in one size steps by its increment; across sizes the total has to
+  // come out right, so each line moves one at a time.
+  const single = item.variants.length === 1;
+  const step = single ? orderRule(item).step : 1;
+  const floor = Math.min(single ? lineFloor(item, line) : 1, line.quantity);
+  const problem = quantityProblem(item, cart.quantityOf(item.id));
   const stepper = quantityStepper({
     value: line.quantity,
     min: floor,
+    step,
     max: Math.max(1, Math.max(limit, line.quantity)),
     label: `Quantity of ${item.name}`,
     onChange: (n) => cart.set(item.id, variant.id, n),
@@ -317,8 +324,8 @@ function cartLine(line) {
             class: "warn",
             text: limit <= 0 ? "No longer available in this quantity — remove it." : `Only ${limit} can be ordered — lower the quantity.`,
           })
-        : belowMin
-          ? el("p", { class: "warn", text: `Order at least ${minPerOrder(item)} of this item — raise the quantity.` })
+        : problem
+          ? el("p", { class: "warn", text: problem })
           : null,
       el(
         "div",
@@ -437,7 +444,7 @@ function renderCart() {
     total += item.costCents * line.quantity;
     units += line.quantity;
     if (line.quantity > lineLimit(item, variant, line)) blocked = true;
-    if (cart.quantityOf(item.id) < minPerOrder(item)) blocked = true;
+    if (quantityProblem(item, cart.quantityOf(item.id))) blocked = true;
   }
   $("#cart-total").textContent = formatMoney(total);
   roiCost = total;

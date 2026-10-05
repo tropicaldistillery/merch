@@ -18,6 +18,55 @@ export const CATEGORIES = [
   "VIP",
 ];
 
+// Short codes that start each SKU.
+export const CATEGORY_CODES = {
+  Apparel: "APP",
+  Giveaways: "GIV",
+  Print: "PRT",
+  "Bar Tools": "BAR",
+  "Sampling & Events": "EVT",
+  VIP: "VIP",
+};
+
+// Brand names are a separate field, so they don't need to repeat in a SKU.
+const SKU_SKIP = new Set([
+  "J", "F", "JF", "HADEN", "HADENS", "TWIN", "P", "WHISKEY", "TROPICAL", "DISTILLERY", "TD",
+  "A", "AN", "AND", "THE", "OF", "FOR", "WITH", "IN", "ON", "TO",
+]);
+
+/**
+ * A readable SKU from an item's category and name, e.g. "J.F. Haden's Throw
+ * Pillow" in VIP → VIP-THROW-PILLOW. A number is added if it's taken.
+ */
+export function generateSku(name, category, taken = []) {
+  const words = String(name ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/['’.]/g, "")
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean);
+  // "6 ft" reads better as 6FT
+  const joined = [];
+  for (let i = 0; i < words.length; i += 1) {
+    if (/^\d+$/.test(words[i]) && words[i + 1] && !/^\d+$/.test(words[i + 1])) {
+      joined.push(words[i] + words[i + 1]);
+      i += 1;
+    } else joined.push(words[i]);
+  }
+  const key = joined.filter((w) => !SKU_SKIP.has(w));
+  const parts = [CATEGORY_CODES[category] ?? "ITM"];
+  for (const word of (key.length ? key : joined).slice(0, 3)) {
+    if ([...parts, word].join("-").length > 30) break;
+    parts.push(word);
+  }
+  if (parts.length === 1) parts.push("ITEM");
+  const base = parts.join("-");
+  const used = new Set([...taken].map((s) => String(s).toUpperCase()));
+  if (!used.has(base)) return base;
+  for (let n = 2; ; n += 1) if (!used.has(`${base}-${n}`)) return `${base}-${n}`;
+}
+
 /** Items in category order, keeping their order within each category. */
 export function byCategory(items) {
   const rank = (item) => {
@@ -173,4 +222,37 @@ export function roiFor(costCents, cases) {
 /** The minimum for an item; items saved before minimums existed have none. */
 export function minPerOrder(item) {
   return Number.isInteger(item?.minPerOrder) && item.minPerOrder > 1 ? item.minPerOrder : 1;
+}
+
+/** How many at a time an item is ordered in (6 means 6, 12, 18…). */
+export function orderIncrement(item) {
+  return Number.isInteger(item?.orderIncrement) && item.orderIncrement > 1 ? item.orderIncrement : 1;
+}
+
+/** The quantities one order may hold of an item: from min to max in steps. */
+export function orderRule(item) {
+  const step = orderIncrement(item);
+  const min = Math.ceil(Math.max(minPerOrder(item), step) / step) * step;
+  const max = Math.floor(item.maxPerOrder / step) * step;
+  return { min, max, step };
+}
+
+/** Why an order can't hold `total` of an item, or null if it can. */
+export function quantityProblem(item, total) {
+  const { min, max, step } = orderRule(item);
+  if (total > max) return `You can order up to ${max} of ${item.name} per order.`;
+  if (total < min) return `${item.name} is ordered in at least ${min} per order.`;
+  if (total % step) return `${item.name} is ordered in multiples of ${step}.`;
+  return null;
+}
+
+/** "Sold in 6s · up to 24 per order", for the shop and the console. */
+export function quantityRuleText(item) {
+  const { min, max, step } = orderRule(item);
+  const parts = [];
+  if (step > 1) parts.push(`Sold in ${step}s`);
+  if (min > step) parts.push(`min ${min}`);
+  parts.push(`up to ${max} per order`);
+  const text = parts.join(" · ");
+  return text[0].toUpperCase() + text.slice(1);
 }

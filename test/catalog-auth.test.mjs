@@ -19,7 +19,7 @@ import {
   needsSeedTextFixes,
   normalizeItem,
 } from "../src/catalog.mjs";
-import { CATEGORIES } from "../public/assets/shared.js";
+import { CATEGORIES, generateSku, quantityRuleText } from "../public/assets/shared.js";
 import { initialState } from "../src/store/initial-state.mjs";
 import { ValidationError } from "../src/validation.mjs";
 
@@ -191,6 +191,41 @@ describe("per-order minimums", () => {
     assert.equal(db.catalog.find((i) => i.id === "td-sample-cups").minPerOrder, 1);
     assert.equal(db.catalog.find((i) => i.id === "custom-item").minPerOrder, 1);
     assert.equal(needsMinimums(db), false);
+  });
+});
+
+describe("order increments", () => {
+  it("defaults to one and keeps the min and max on the steps", () => {
+    assert.equal(normalizeItem({ ...VALID }, { catalog: [] }).orderIncrement, 1);
+    const sixes = normalizeItem({ ...VALID, orderIncrement: 6, minPerOrder: 6, maxPerOrder: 24 }, { catalog: [] });
+    assert.deepEqual([sixes.minPerOrder, sixes.maxPerOrder, sixes.orderIncrement], [6, 24, 6]);
+    assert.throws(() => normalizeItem({ ...VALID, orderIncrement: 6, minPerOrder: 4, maxPerOrder: 24 }, { catalog: [] }), (e) => /multiple of 6/.test(e.fieldErrors.minPerOrder));
+    assert.throws(() => normalizeItem({ ...VALID, orderIncrement: 6, minPerOrder: 6, maxPerOrder: 20 }, { catalog: [] }), (e) => /multiple of 6/.test(e.fieldErrors.maxPerOrder));
+    assert.throws(() => normalizeItem({ ...VALID, orderIncrement: 0 }, { catalog: [] }), (e) => Boolean(e.fieldErrors.orderIncrement));
+  });
+
+  it("describes the rule for the shop", () => {
+    assert.equal(quantityRuleText({ maxPerOrder: 6 }), "Up to 6 per order");
+    assert.equal(quantityRuleText({ minPerOrder: 3, maxPerOrder: 12 }), "Min 3 · up to 12 per order");
+    assert.equal(quantityRuleText({ minPerOrder: 6, maxPerOrder: 24, orderIncrement: 6 }), "Sold in 6s · up to 24 per order");
+    assert.equal(quantityRuleText({ minPerOrder: 12, maxPerOrder: 24, orderIncrement: 6 }), "Sold in 6s · min 12 · up to 24 per order");
+  });
+});
+
+describe("automatic SKUs", () => {
+  it("builds a readable SKU from the category and the name's key words", () => {
+    assert.equal(generateSku("J.F. Haden's Throw Pillow", "VIP"), "VIP-THROW-PILLOW");
+    assert.equal(generateSku("Twin P Whiskey Barrel Head Sign", "VIP"), "VIP-BARREL-HEAD-SIGN");
+    assert.equal(generateSku("6 ft Table Throw", "Sampling & Events"), "EVT-6FT-TABLE-THROW");
+    assert.equal(generateSku("Mango Koozie", "Giveaways", ["GIV-MANGO-KOOZIE", "GIV-MANGO-KOOZIE-2"]), "GIV-MANGO-KOOZIE-3");
+    assert.equal(generateSku("J.F. Haden's", "Print"), "PRT-JF-HADENS", "falls back to the brand words");
+  });
+
+  it("fills a blank SKU on a new item and keeps an existing item's", () => {
+    const made = normalizeItem({ ...VALID, sku: "" }, { catalog: [{ id: "x", sku: "GIV-MANGO-KOOZIE" }] });
+    assert.equal(made.sku, "GIV-MANGO-KOOZIE-2");
+    const kept = normalizeItem({ ...VALID, sku: "" }, { catalog: [made], existing: made });
+    assert.equal(kept.sku, "GIV-MANGO-KOOZIE-2");
   });
 });
 

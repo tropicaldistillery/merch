@@ -32,7 +32,9 @@ import {
   TRANSITIONS,
   US_STATES,
   formatMoney,
+  generateSku,
   labelFor,
+  quantityRuleText,
   suggestedMaxPerOrder,
   suggestedMinPerOrder,
   trackingUrl,
@@ -809,7 +811,7 @@ function renderCatalog() {
   clear(
     $("#catalog-table"),
     el("thead", {}, el("tr", {}, ["Item", "Category", "Cost", "Available", "Per order", "In store", ""].map((h) =>
-      el("th", { scope: "col", class: h === "Cost" || h === "Per order" ? "num" : "", text: h })
+      el("th", { scope: "col", class: h === "Cost" ? "num" : "", text: h })
     ))),
     el(
       "tbody",
@@ -822,7 +824,7 @@ function renderCatalog() {
           el("td", {}, el("div", { text: item.category }), el("div", { class: "cell-sub", text: labelFor(BRANDS, item.brand) })),
           el("td", { class: "num", text: formatMoney(item.costCents) }),
           el("td", {}, stockSummary(item)),
-          el("td", { class: "num", text: (item.minPerOrder ?? 1) > 1 ? `${item.minPerOrder}–${item.maxPerOrder}` : `Up to ${item.maxPerOrder}` }),
+          el("td", { class: "per-order", text: quantityRuleText(item).replace(/ per order$/, "") }),
           el("td", {}, el("span", { class: `tag ${item.active ? "account" : ""}`.trim(), text: item.active ? "Shown" : "Hidden" })),
           el("td", {}, el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Edit", "aria-label": `Edit ${item.name}`, onclick: () => openItem(item) }))
         )
@@ -1012,7 +1014,7 @@ function photoPicker(input, onChange) {
 function openItem(item) {
   const editing = Boolean(item);
   const draft = item ?? {
-    name: "", sku: "", brand: "jf-hadens", category: "Apparel", unit: "Each", costCents: 0, minPerOrder: 1, maxPerOrder: 6,
+    name: "", sku: "", brand: "jf-hadens", category: "Apparel", unit: "Each", costCents: 0, minPerOrder: 1, maxPerOrder: 6, orderIncrement: 1,
     description: "", tone: "mango", art: "tee", image: "", active: true,
     variants: [{ id: "default", label: "", stock: 0 }],
   };
@@ -1103,6 +1105,22 @@ function openItem(item) {
 
   const category = el("select", { id: "item-category", name: "category" }, options(CATEGORIES, { selected: draft.category }));
 
+  // A new item's SKU is made from its name and category as they're typed,
+  // until someone types their own. An existing item keeps its SKU.
+  const nameInput = el("input", { id: "item-name", name: "name", type: "text", maxlength: "120", value: draft.name, autofocus: true });
+  const skuInput = el("input", { id: "item-sku", name: "sku", type: "text", maxlength: "40", value: draft.sku, placeholder: "Made from the name" });
+  const skuField = field("SKU", skuInput, { span: 2 });
+  let skuTouched = editing;
+  function refreshSku() {
+    if (skuTouched) return;
+    skuInput.value = nameInput.value.trim() ? generateSku(nameInput.value, category.value, catalog.map((i) => i.sku)) : "";
+  }
+  skuInput.addEventListener("input", () => {
+    skuTouched = skuInput.value.trim() !== "";
+  });
+  nameInput.addEventListener("input", refreshSku);
+  category.addEventListener("change", refreshSku);
+
   // Suggested min and max per order follow the cost (and category) as they
   // are typed. A new item takes the suggestions until someone sets its own.
   function suggestedField({ id, name, label, value, suggest }) {
@@ -1138,18 +1156,39 @@ function openItem(item) {
     });
     return { field: wrap, refresh };
   }
-  const maxSetting = suggestedField({ id: "item-max", name: "maxPerOrder", label: "Max per order", value: draft.maxPerOrder, suggest: suggestedMaxPerOrder });
+  // Ordered in steps: 6 means 6, 12, 18… The suggestions round to the step.
+  const stepInput = el("input", { id: "item-step", name: "orderIncrement", type: "number", min: "1", max: "999", step: "1", value: String(draft.orderIncrement ?? 1) });
+  const stepField = field("Order increment", stepInput, { span: 2 });
+  stepField.append(el("p", { class: "hint", text: "Quantities go up by this much, e.g. 6 for six-packs. 1 for any amount." }));
+  const step = () => {
+    const n = Number.parseInt(stepInput.value, 10);
+    return Number.isInteger(n) && n > 1 ? n : 1;
+  };
+  const maxSetting = suggestedField({
+    id: "item-max",
+    name: "maxPerOrder",
+    label: "Maximum order",
+    value: draft.maxPerOrder,
+    suggest: (cents) => {
+      const n = suggestedMaxPerOrder(cents);
+      return n && Math.max(step(), Math.floor(n / step()) * step());
+    },
+  });
   const minSetting = suggestedField({
     id: "item-min",
     name: "minPerOrder",
-    label: "Min per order",
+    label: "Minimum order",
     value: draft.minPerOrder ?? 1,
-    suggest: (cents) => suggestedMinPerOrder(cents, category.value),
+    suggest: (cents) => {
+      const n = suggestedMinPerOrder(cents, category.value);
+      return n && Math.ceil(n / step()) * step();
+    },
   });
   const maxField = maxSetting.field;
   const minField = minSetting.field;
   for (const setting of [minSetting, maxSetting]) {
     cost.addEventListener("input", setting.refresh);
+    stepInput.addEventListener("input", setting.refresh);
     setting.refresh();
   }
   category.addEventListener("change", minSetting.refresh);
@@ -1159,14 +1198,15 @@ function openItem(item) {
     el(
       "div",
       { class: "form-grid" },
-      field("Name", el("input", { id: "item-name", name: "name", type: "text", maxlength: "120", value: draft.name, autofocus: true }), { span: 4 }),
-      field("SKU", el("input", { id: "item-sku", name: "sku", type: "text", maxlength: "40", value: draft.sku }), { span: 2 }),
+      field("Name", nameInput, { span: 4 }),
+      skuField,
       field("Brand", el("select", { id: "item-brand", name: "brand" }, options(BRANDS, { selected: draft.brand })), { span: 2 }),
       field("Category", category, { span: 2 }),
       field("Sold as", el("input", { id: "item-unit", name: "unit", type: "text", maxlength: "40", value: draft.unit, placeholder: "Each, Pack of 25…" }), { span: 2 }),
       field("Cost to us ($)", cost, { span: 2 }),
       minField,
       maxField,
+      stepField,
       el("div", { class: "field span-2" }, el("span", { class: "label", text: "Visibility" }), el("label", { class: "check" }, el("input", { id: "item-active", type: "checkbox", checked: draft.active }), "Show in the store")),
       field("Description", el("textarea", { id: "item-description", name: "description", rows: "3", maxlength: "600", value: draft.description }), { optional: true }),
       field("Colourway", tone, { span: 3 }),
@@ -1203,6 +1243,7 @@ function openItem(item) {
       unit: form.elements.namedItem("unit").value,
       costCents: Number.isFinite(dollars) ? Math.round(dollars * 100) : null,
       minPerOrder: Number(form.elements.namedItem("minPerOrder").value),
+      orderIncrement: Number(form.elements.namedItem("orderIncrement").value),
       maxPerOrder: Number(form.elements.namedItem("maxPerOrder").value),
       description: form.elements.namedItem("description").value,
       tone: tone.value,

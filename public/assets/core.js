@@ -407,13 +407,14 @@ export function plural(n, one, many = `${one}s`) {
 }
 
 /** − [n] + quantity control. */
-export function quantityStepper({ value = 1, min: initialMin = 1, max = 99, label = "Quantity", onChange }) {
+export function quantityStepper({ value = 1, min: initialMin = 1, max = 99, step = 1, label = "Quantity", onChange }) {
   // data-role lets a list that re-renders put focus back on the same control.
   const input = el("input", {
     type: "number",
     inputmode: "numeric",
     min: initialMin,
     max,
+    step,
     value: String(value),
     "aria-label": label,
     dataset: { role: "qty" },
@@ -426,17 +427,20 @@ export function quantityStepper({ value = 1, min: initialMin = 1, max = 99, labe
   let limit = max;
   let min = initialMin;
 
+  // Values run min, min + step, min + 2·step… up to the limit.
   function set(next, notify = true) {
-    const n = Math.max(min, Math.min(limit, Math.round(Number(next) || min)));
+    const top = min + Math.floor(Math.max(0, limit - min) / step) * step;
+    const wanted = Math.round(((Number(next) || min) - min) / step) * step + min;
+    const n = Math.max(min, Math.min(top, wanted));
     current = n;
     input.value = String(n);
     minus.disabled = n <= min;
-    plus.disabled = n >= limit;
+    plus.disabled = n >= top;
     if (notify) onChange?.(n);
   }
 
-  minus.addEventListener("click", () => set(current - 1));
-  plus.addEventListener("click", () => set(current + 1));
+  minus.addEventListener("click", () => set(current - step));
+  plus.addEventListener("click", () => set(current + step));
   input.addEventListener("change", () => set(input.value));
 
   set(value, false);

@@ -4,7 +4,7 @@
 // console (Catalog tab) with real numbers. The seed is only used when a store
 // is created for the first time; after that the catalog lives in the store.
 
-import { BRANDS, CATEGORIES, TONES, suggestedMinPerOrder } from "../public/assets/shared.js";
+import { BRANDS, CATEGORIES, TONES, generateSku, suggestedMinPerOrder } from "../public/assets/shared.js";
 import { IMAGE_PATH_RE } from "./images.mjs";
 import { ValidationError, cleanText } from "./validation.mjs";
 
@@ -190,6 +190,7 @@ export const SEED_CATALOG = [
 ].map((item) => ({
   ...item,
   minPerOrder: Math.min(suggestedMinPerOrder(item.costCents, item.category), item.maxPerOrder),
+  orderIncrement: 1,
   image: SEED_PHOTOS[item.id] ?? "",
   active: true,
 }));
@@ -379,9 +380,15 @@ export function normalizeItem(input, { catalog, existing = null }) {
   const name = cleanText(src.name, 120);
   if (!name) errors.name = "Give the item a name.";
 
-  const sku = cleanText(src.sku, 40).toUpperCase();
-  if (!sku) errors.sku = "Add a SKU.";
-  else if (catalog.some((item) => item.sku === sku && item.id !== existing?.id)) {
+  // A blank SKU keeps the item's current one, or is made from its name and
+  // category for a new item.
+  let sku = cleanText(src.sku, 40).toUpperCase();
+  if (!sku && existing) sku = existing.sku;
+  if (!sku) {
+    const others = catalog.filter((item) => item.id !== existing?.id).map((item) => item.sku);
+    sku = generateSku(cleanText(src.name, 120), cleanText(src.category, 40), others);
+  }
+  if (catalog.some((item) => item.sku === sku && item.id !== existing?.id)) {
     errors.sku = "Another item already uses this SKU.";
   }
 
@@ -407,11 +414,21 @@ export function normalizeItem(input, { catalog, existing = null }) {
   if (!Number.isInteger(maxPerOrder) || maxPerOrder < 1 || maxPerOrder > 999) {
     errors.maxPerOrder = "Enter a whole number from 1 to 999.";
   }
-  const minPerOrder = src.minPerOrder === undefined || src.minPerOrder === null || src.minPerOrder === "" ? 1 : Number(src.minPerOrder);
+  const blankIsOne = (value) => (value === undefined || value === null || value === "" ? 1 : Number(value));
+  const minPerOrder = blankIsOne(src.minPerOrder);
+  const orderIncrement = blankIsOne(src.orderIncrement);
+  if (!Number.isInteger(orderIncrement) || orderIncrement < 1 || orderIncrement > 999) {
+    errors.orderIncrement = "Enter a whole number from 1 to 999.";
+  }
   if (!Number.isInteger(minPerOrder) || minPerOrder < 1 || minPerOrder > 999) {
     errors.minPerOrder = "Enter a whole number from 1 to 999.";
   } else if (!errors.maxPerOrder && minPerOrder > maxPerOrder) {
-    errors.minPerOrder = "The minimum can't be more than the max per order.";
+    errors.minPerOrder = "The minimum can't be more than the maximum.";
+  } else if (!errors.orderIncrement && minPerOrder % orderIncrement) {
+    errors.minPerOrder = `Make the minimum a multiple of ${orderIncrement}.`;
+  }
+  if (!errors.maxPerOrder && !errors.orderIncrement && maxPerOrder % orderIncrement) {
+    errors.maxPerOrder = `Make the maximum a multiple of ${orderIncrement}.`;
   }
 
   const rawVariants = Array.isArray(src.variants) ? src.variants : [];
@@ -472,6 +489,7 @@ export function normalizeItem(input, { catalog, existing = null }) {
     costCents,
     minPerOrder,
     maxPerOrder,
+    orderIncrement,
     variants,
     active: src.active !== false,
   };
@@ -493,6 +511,7 @@ export function publicItem(item) {
     costCents: item.costCents,
     minPerOrder: item.minPerOrder ?? 1,
     maxPerOrder: item.maxPerOrder,
+    orderIncrement: item.orderIncrement ?? 1,
     variants: item.variants.map((v) => ({ id: v.id, label: v.label, stock: v.stock })),
   };
 }

@@ -167,6 +167,14 @@ describe("placing an order", () => {
     assert.equal(placed.totalUnits, 3);
   });
 
+  it("only takes whole steps of an item sold in increments", () => {
+    const db = initialState();
+    Object.assign(db.catalog.find((i) => i.id === "jfh-jigger"), { minPerOrder: 6, maxPerOrder: 24, orderIncrement: 6 });
+    const errors = fieldErrors(() => place(db, order({ lines: [{ itemId: "jfh-jigger", variantId: "default", quantity: 9 }] })));
+    assert.match(errors.lines, /Japanese Jigger is ordered in multiples of 6/);
+    assert.equal(place(db, order({ lines: [{ itemId: "jfh-jigger", variantId: "default", quantity: 12 }] })).totalUnits, 12);
+  });
+
   it("treats items saved before minimums existed as minimum one", () => {
     const db = initialState();
     delete db.catalog.find((i) => i.id === "jfh-jigger").minPerOrder;

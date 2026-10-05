@@ -13,7 +13,7 @@ import {
   toast,
   wireHeader,
 } from "./core.js";
-import { ACCOUNT_TYPES, CARRIERS, PURPOSES, formatMoney, labelFor, minPerOrder, trackingUrl } from "./shared.js";
+import { ACCOUNT_TYPES, CARRIERS, PURPOSES, formatMoney, labelFor, orderRule, trackingUrl } from "./shared.js";
 
 const STEPS = [
   ["submitted", "Submitted"],
@@ -238,11 +238,13 @@ async function reorder(order) {
       continue;
     }
     const stock = Number.isInteger(variant.stock) ? variant.stock : Infinity;
-    const room = Math.min(item.maxPerOrder - cart.quantityOf(item.id), stock - cart.quantityOf(item.id, variant.id));
-    // Round up to the item's minimum if it has changed since the last order.
-    const want = Math.max(line.quantity, minPerOrder(item) - cart.quantityOf(item.id));
+    // Fit the item's current rules, which may have changed since the last order.
+    const { min, max, step } = orderRule(item);
+    const have = cart.quantityOf(item.id);
+    const room = Math.floor(Math.min(max - have, stock - cart.quantityOf(item.id, variant.id)) / step) * step;
+    const want = Math.ceil(Math.max(line.quantity, min - have) / step) * step;
     const quantity = Math.min(want, room);
-    if (quantity > 0 && cart.quantityOf(item.id) + quantity >= minPerOrder(item)) {
+    if (quantity > 0 && have + quantity >= min) {
       cart.add(item.id, variant.id, quantity);
       added += 1;
     }

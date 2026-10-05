@@ -48,7 +48,12 @@ shares nothing with SipScale.
   details). As the cost is typed, a **suggested max per order** appears (1 for
   $100+, 2 for $50+, 4 for $25+, 6 for $10+, otherwise 12) and a **suggested
   minimum** for small items (10 under $5, 3 under $10, 2 under $15; clothing
-  always 1); new items take both automatically.
+  always 1); new items take both automatically. An **order increment** sells
+  an item in steps (6 means 6, 12, 18…); the minimum and maximum must be
+  multiples of it, and the shop's quantity buttons move in those steps.
+- A new item's **SKU is made from its category and name** as you type
+  ("J.F. Haden's Throw Pillow" in VIP becomes `VIP-THROW-PILLOW`), and you can
+  still type your own. Existing SKUs never change.
 - **Upload a photo** with the button or by dragging it onto the editor. It's
   resized in the browser to 1200 × 900, so every product card matches: "Show
   the whole photo" fits it on white, "Fill the frame" crops the edges. Photos
