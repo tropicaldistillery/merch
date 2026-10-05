@@ -21,9 +21,11 @@ import {
   verifySession,
 } from "./auth.mjs";
 import {
+  applyCategoryMoves,
   applyMinimums,
   applySeedPhotos,
   applySeedTextFixes,
+  needsCategoryMoves,
   needsMinimums,
   needsSeedPhotos,
   needsSeedTextFixes,
@@ -48,7 +50,7 @@ import {
   teamState,
   updatePerson,
 } from "./team.mjs";
-import { OPEN_STATUSES, STATUSES } from "../public/assets/shared.js";
+import { OPEN_STATUSES, STATUSES, byCategory } from "../public/assets/shared.js";
 import { ValidationError, cleanLine, isValidEmail, normalizeEmail } from "./validation.mjs";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -220,6 +222,11 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   if (needsSeedPhotos(initial)) {
     const changed = await store.mutate((db) => applySeedPhotos(db));
     console.log(`[catalog] added product photos to ${changed} starter item(s)`);
+    initial = await store.read();
+  }
+  if (needsCategoryMoves(initial)) {
+    const moved = await store.mutate((db) => applyCategoryMoves(db));
+    console.log(`[catalog] moved ${moved} item(s) into the new categories`);
     initial = await store.read();
   }
   if (needsMinimums(initial)) {
@@ -422,7 +429,7 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     // Store
     ["GET", "/api/catalog", "team", async ({ res }) => {
       const db = await store.read();
-      sendJson(res, 200, { ok: true, items: db.catalog.filter((item) => item.active).map(publicItem) });
+      sendJson(res, 200, { ok: true, items: byCategory(db.catalog.filter((item) => item.active)).map(publicItem) });
     }],
 
     ["GET", "/api/me", "team", async ({ res, user }) => {
@@ -504,7 +511,7 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     // Admin: catalog
     ["GET", "/api/admin/catalog", "admin", async ({ res }) => {
       const db = await store.read();
-      sendJson(res, 200, { ok: true, items: db.catalog });
+      sendJson(res, 200, { ok: true, items: byCategory(db.catalog) });
     }],
 
     ["POST", "/api/admin/catalog", "admin", async ({ req, res }) => {

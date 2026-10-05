@@ -4,18 +4,22 @@ import { describe, it } from "node:test";
 
 import { createThrottle, parseCookies, signSession, verifySession } from "../src/auth.mjs";
 import {
+  CATEGORIES_VERSION,
   SEED_CATALOG,
   SEED_PHOTOS,
   SEED_PHOTOS_VERSION,
   SEED_TEXT_FIXES,
+  applyCategoryMoves,
   applyMinimums,
   applySeedPhotos,
   applySeedTextFixes,
+  needsCategoryMoves,
   needsMinimums,
   needsSeedPhotos,
   needsSeedTextFixes,
   normalizeItem,
 } from "../src/catalog.mjs";
+import { CATEGORIES } from "../public/assets/shared.js";
 import { initialState } from "../src/store/initial-state.mjs";
 import { ValidationError } from "../src/validation.mjs";
 
@@ -23,7 +27,7 @@ const VALID = {
   name: "Mango Koozie",
   sku: "td-acc-001",
   brand: "jf-hadens",
-  category: "Drinkware",
+  category: "Giveaways",
   tone: "mango",
   art: "tumbler",
   unit: "Pack of 10",
@@ -122,6 +126,39 @@ describe("starter catalog corrections", () => {
 
   it("has nothing to do for a fresh store", () => {
     assert.equal(needsSeedTextFixes({ catalog: structuredClone(SEED_CATALOG) }), false);
+  });
+});
+
+describe("categories", () => {
+  it("files every starter item under one of the six categories", () => {
+    for (const item of SEED_CATALOG) assert.ok(CATEGORIES.includes(item.category), `${item.id}: ${item.category}`);
+    const of = (id) => SEED_CATALOG.find((i) => i.id === id).category;
+    assert.equal(of("td-tumbler"), "Giveaways");
+    assert.equal(of("jfh-stickers"), "Giveaways");
+    assert.equal(of("jfh-led-sign"), "VIP");
+    assert.equal(of("jfh-bar-mat"), "Bar Tools");
+    assert.equal(of("jfh-key-lime-table-tents"), "Print");
+  });
+
+  it("moves an older store over once, respecting the admin's own choices", () => {
+    const old = { "td-tumbler": "Drinkware", "jfh-led-sign": "Point of Sale", "jfh-stickers": "Print", "jfh-bar-mat": "Point of Sale" };
+    const catalog = structuredClone(SEED_CATALOG).map((i) => ({ ...i, category: old[i.id] ?? i.category }));
+    catalog.find((i) => i.id === "jfh-bar-mat").category = "Sampling & Events"; // the admin moved it
+    catalog.push({ ...structuredClone(catalog[0]), id: "custom-glass", category: "Drinkware" });
+    catalog.push({ ...structuredClone(catalog[0]), id: "custom-sign", category: "Point of Sale" });
+    const db = { meta: {}, catalog };
+    assert.equal(needsCategoryMoves(db), true);
+    applyCategoryMoves(db);
+    const of = (id) => db.catalog.find((i) => i.id === id).category;
+    assert.equal(of("td-tumbler"), "Giveaways");
+    assert.equal(of("jfh-led-sign"), "VIP");
+    assert.equal(of("jfh-stickers"), "Giveaways");
+    assert.equal(of("jfh-bar-mat"), "Sampling & Events");
+    assert.equal(of("custom-glass"), "Giveaways");
+    assert.equal(of("custom-sign"), "Print");
+    assert.equal(db.meta.categories, CATEGORIES_VERSION);
+    assert.equal(needsCategoryMoves(db), false);
+    assert.equal(needsCategoryMoves(initialState()), false);
   });
 });
 

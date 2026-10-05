@@ -11,12 +11,21 @@ export const BRANDS = [
 
 export const CATEGORIES = [
   "Apparel",
-  "Drinkware",
-  "Point of Sale",
+  "Giveaways",
+  "Print",
   "Bar Tools",
   "Sampling & Events",
-  "Print",
+  "VIP",
 ];
+
+/** Items in category order, keeping their order within each category. */
+export function byCategory(items) {
+  const rank = (item) => {
+    const i = CATEGORIES.indexOf(item.category);
+    return i === -1 ? CATEGORIES.length : i;
+  };
+  return items.map((item, i) => [item, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([item]) => item);
+}
 
 // Colourways for the product artwork, after the brand and its J.F. Haden's
 // flavours. Each maps to CSS variables in styles.css (.tone-<id>). "palm" is

@@ -291,7 +291,7 @@ describe("merch store over HTTP", () => {
     const created = await admin("/api/admin/catalog", {
       method: "POST",
       body: {
-        name: "Mango Koozie", sku: "TD-ACC-001", brand: "jf-hadens", category: "Drinkware",
+        name: "Mango Koozie", sku: "TD-ACC-001", brand: "jf-hadens", category: "Giveaways",
         tone: "mango", art: "tumbler", unit: "Pack of 10", costCents: 900, maxPerOrder: 5,
         variants: [{ label: "", stock: 1 }],
       },
@@ -321,7 +321,7 @@ describe("merch store over HTTP", () => {
     const created = await admin("/api/admin/catalog", {
       method: "POST",
       body: {
-        name: "Retired Coaster", sku: "TD-OLD-001", brand: "tropical-distillery", category: "Point of Sale",
+        name: "Retired Coaster", sku: "TD-OLD-001", brand: "tropical-distillery", category: "Print",
         tone: "palm", art: "bar-mat", unit: "Pack of 50", costCents: 2000, maxPerOrder: 4,
         variants: [{ label: "", stock: 5 }],
       },

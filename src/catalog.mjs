@@ -64,66 +64,66 @@ export const SEED_CATALOG = [
     costCents: 2200, maxPerOrder: 6, variants: single(18),
   },
 
-  // Drinkware
+  // Giveaways, bar tools and VIP pieces
   {
     id: "jfh-rocks-12", sku: "TD-DRK-001", name: "J.F. Haden's Etched Rocks Glasses",
-    brand: "jf-hadens", category: "Drinkware", tone: "mango", art: "rocks", unit: "Case of 12",
+    brand: "jf-hadens", category: "Bar Tools", tone: "mango", art: "rocks", unit: "Case of 12",
     description: "10 oz double old fashioned glasses with an etched logo, for feature-cocktail programs.",
     costCents: 4200, maxPerOrder: 4, variants: single(25),
   },
   {
     id: "jfh-shot-24", sku: "TD-DRK-002", name: "J.F. Haden's Shot Glasses",
-    brand: "jf-hadens", category: "Drinkware", tone: "lime", art: "shot", unit: "Pack of 24",
+    brand: "jf-hadens", category: "Giveaways", tone: "lime", art: "shot", unit: "Pack of 24",
     description: "1.5 oz shot glasses with the J.F. Haden's logo in Key Lime Pie green.",
     costCents: 2900, maxPerOrder: 4, variants: single(30),
   },
   {
     id: "twinp-glencairn-6", sku: "TD-DRK-003", name: "Twin P Whiskey Tasting Glasses",
-    brand: "twin-p", category: "Drinkware", tone: "oak", art: "glencairn", unit: "Pack of 6",
+    brand: "twin-p", category: "VIP", tone: "oak", art: "glencairn", unit: "Pack of 6",
     description: "Glencairn-style nosing glasses for whiskey dinners and tastings.",
     costCents: 4500, maxPerOrder: 2, variants: single(12),
   },
   {
     id: "td-tumbler", sku: "TD-DRK-004", name: "Tropical Distillery Insulated Tumbler",
-    brand: "tropical-distillery", category: "Drinkware", tone: "palm", art: "tumbler", unit: "20 oz",
+    brand: "tropical-distillery", category: "Giveaways", tone: "palm", art: "tumbler", unit: "20 oz",
     description: "Stainless steel tumbler with a slide lid and straw.",
     costCents: 1600, maxPerOrder: 4, variants: single(40),
   },
 
-  // Point of Sale
+  // Print and display
   {
     id: "jfh-mango-shelf-talkers", sku: "TD-POS-001", name: "Mango Liqueur Shelf Talkers",
-    brand: "jf-hadens", category: "Point of Sale", tone: "mango", art: "shelf-talker", unit: "Pack of 25",
+    brand: "jf-hadens", category: "Print", tone: "mango", art: "shelf-talker", unit: "Pack of 25",
     description: "Clip-on shelf talkers with tasting notes and a QR code to the cocktail menu. For off-premise accounts.",
     costCents: 1500, maxPerOrder: 10, variants: single(60),
   },
   {
     id: "jfh-espresso-neck-hangers", sku: "TD-POS-002", name: "Espresso Liqueur Neck Hangers",
-    brand: "jf-hadens", category: "Point of Sale", tone: "espresso", art: "neck-hanger", unit: "Pack of 50",
+    brand: "jf-hadens", category: "Print", tone: "espresso", art: "neck-hanger", unit: "Pack of 50",
     description: "Espresso Martini recipe neck hangers. Fit standard 750 ml necks.",
     costCents: 2000, maxPerOrder: 10, variants: single(45),
   },
   {
     id: "jfh-key-lime-table-tents", sku: "TD-POS-003", name: "Key Lime Pie Liqueur Table Tents",
-    brand: "jf-hadens", category: "Point of Sale", tone: "lime", art: "table-tent", unit: "Pack of 12",
+    brand: "jf-hadens", category: "Print", tone: "lime", art: "table-tent", unit: "Pack of 12",
     description: "Key Lime Pie Martini table tents for on-premise accounts, with space for the venue to write its price.",
     costCents: 1800, maxPerOrder: 6, variants: single(40),
   },
   {
     id: "jfh-bar-mat", sku: "TD-POS-004", name: "J.F. Haden's Rubber Bar Mat",
-    brand: "jf-hadens", category: "Point of Sale", tone: "mango", art: "bar-mat", unit: "Each",
+    brand: "jf-hadens", category: "Bar Tools", tone: "mango", art: "bar-mat", unit: "Each",
     description: "20 × 3.5 in service-well bar mat.",
     costCents: 2200, maxPerOrder: 4, variants: single(35),
   },
   {
     id: "jfh-led-sign", sku: "TD-POS-005", name: "J.F. Haden's LED Back-bar Sign",
-    brand: "jf-hadens", category: "Point of Sale", tone: "mango", art: "neon", unit: "Each",
+    brand: "jf-hadens", category: "VIP", tone: "mango", art: "neon", unit: "Each",
     description: "Low-voltage LED sign, 24 × 14 in, with wall mount and a 6 ft cord. For priority on-premise accounts.",
     costCents: 14500, maxPerOrder: 1, variants: single(6),
   },
   {
     id: "twinp-tin-sign", sku: "TD-POS-006", name: "Twin P Whiskey Tin Sign",
-    brand: "twin-p", category: "Point of Sale", tone: "oak", art: "tin-sign", unit: "Each",
+    brand: "twin-p", category: "VIP", tone: "oak", art: "tin-sign", unit: "Each",
     description: "Embossed 18 × 12 in tin sign, pre-drilled for hanging.",
     costCents: 3800, maxPerOrder: 2, variants: single(10),
   },
@@ -183,7 +183,7 @@ export const SEED_CATALOG = [
   },
   {
     id: "jfh-stickers", sku: "TD-PRT-003", name: "J.F. Haden's Logo Stickers",
-    brand: "jf-hadens", category: "Print", tone: "mango", art: "sticker", unit: "Pack of 100",
+    brand: "jf-hadens", category: "Giveaways", tone: "mango", art: "sticker", unit: "Pack of 100",
     description: "3 in die-cut vinyl stickers.",
     costCents: 2500, maxPerOrder: 4, variants: single(20),
   },
@@ -284,6 +284,47 @@ export function applyMinimums(db) {
     if (item.minPerOrder > 1) raised += 1;
   }
   return raised;
+}
+
+/**
+ * The categories changed from Drinkware and Point of Sale to Giveaways and
+ * VIP. Move each starter item an admin hasn't recategorized to its new home,
+ * and anything else left in a retired category to the nearest new one, once.
+ */
+export const CATEGORIES_VERSION = 1;
+const CATEGORY_MOVES = {
+  "jfh-rocks-12": "Drinkware",
+  "jfh-shot-24": "Drinkware",
+  "twinp-glencairn-6": "Drinkware",
+  "td-tumbler": "Drinkware",
+  "jfh-mango-shelf-talkers": "Point of Sale",
+  "jfh-espresso-neck-hangers": "Point of Sale",
+  "jfh-key-lime-table-tents": "Point of Sale",
+  "jfh-bar-mat": "Point of Sale",
+  "jfh-led-sign": "Point of Sale",
+  "twinp-tin-sign": "Point of Sale",
+  "jfh-stickers": "Print",
+};
+const RETIRED_CATEGORIES = { Drinkware: "Giveaways", "Point of Sale": "Print" };
+
+export function needsCategoryMoves(db) {
+  return (db.meta?.categories ?? 0) < CATEGORIES_VERSION;
+}
+
+export function applyCategoryMoves(db) {
+  let moved = 0;
+  for (const item of db.catalog) {
+    const seed = SEED_CATALOG.find((s) => s.id === item.id);
+    let next = item.category;
+    if (seed && CATEGORY_MOVES[item.id] === item.category) next = seed.category;
+    else if (!CATEGORIES.includes(item.category)) next = RETIRED_CATEGORIES[item.category] ?? "Giveaways";
+    if (next !== item.category) {
+      item.category = next;
+      moved += 1;
+    }
+  }
+  db.meta.categories = CATEGORIES_VERSION;
+  return moved;
 }
 
 /* ------------------------------------------------------------ admin edits */
