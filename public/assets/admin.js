@@ -32,6 +32,7 @@ import {
   US_STATES,
   formatMoney,
   labelFor,
+  suggestedMaxPerOrder,
   trackingUrl,
 } from "./shared.js";
 
@@ -69,11 +70,13 @@ const ui = {
   catalogCategory: "",
   showHidden: false,
   accountQuery: "",
+  teamQuery: "",
 };
 
 let orders = [];
 let catalog = [];
 let accounts = [];
+let team = { mode: "shared", people: [], suggestions: [] };
 
 /* ------------------------------------------------------------ api + auth */
 
@@ -147,14 +150,16 @@ $("[data-admin-sign-out]").addEventListener("click", async () => {
 /* ------------------------------------------------------------------ data */
 
 async function loadAll() {
-  const [o, c, a] = await Promise.all([
+  const [o, c, a, t] = await Promise.all([
     adminApi("/api/admin/orders"),
     adminApi("/api/admin/catalog"),
     adminApi("/api/admin/accounts"),
+    adminApi("/api/admin/team"),
   ]);
   orders = o.orders;
   catalog = c.items;
   accounts = a.accounts;
+  team = t;
 }
 
 function renderAll() {
@@ -162,6 +167,7 @@ function renderAll() {
   renderOrders();
   renderCatalog();
   renderAccounts();
+  renderTeam();
 }
 
 async function showApp() {
@@ -203,7 +209,7 @@ setInterval(async () => {
 /* ------------------------------------------------------------------ tabs */
 
 function setTab(tab, { focus = true } = {}) {
-  if (!["orders", "catalog", "accounts"].includes(tab)) tab = "orders";
+  if (!["orders", "catalog", "accounts", "team"].includes(tab)) tab = "orders";
   ui.tab = tab;
   for (const button of $$("[role=tab]")) {
     const selected = button.dataset.tab === tab;
@@ -850,6 +856,159 @@ function field(label, control, { span = 6, hint, optional = false } = {}) {
   );
 }
 
+/* ------------------------------------------------------- product photos */
+
+// Every photo is redrawn at exactly this size before upload, so all product
+// cards match. The server refuses anything else.
+const PHOTO_WIDTH = 1200;
+const PHOTO_HEIGHT = 900;
+
+async function uniformPhoto(blob, fit) {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch {
+    throw new Error("That file couldn't be opened as a photo. Try a JPG or PNG.");
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = PHOTO_WIDTH;
+  canvas.height = PHOTO_HEIGHT;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, PHOTO_WIDTH, PHOTO_HEIGHT);
+  // "whole": fit inside on white, nothing cut off. "fill": cover, cropping edges.
+  const scale = (fit === "fill" ? Math.max : Math.min)(PHOTO_WIDTH / bitmap.width, PHOTO_HEIGHT / bitmap.height);
+  const w = bitmap.width * scale;
+  const h = bitmap.height * scale;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bitmap, (PHOTO_WIDTH - w) / 2, (PHOTO_HEIGHT - h) / 2, w, h);
+  bitmap.close?.();
+  const encode = (type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+  let out = await encode("image/webp", 0.86);
+  // Safari can't encode WebP and quietly returns a PNG instead.
+  if (!out || out.type !== "image/webp") out = await encode("image/jpeg", 0.88);
+  return out;
+}
+
+async function uploadPhoto(blob) {
+  let response;
+  try {
+    response = await fetch("/api/admin/images", {
+      method: "POST",
+      headers: { "Content-Type": blob.type, "X-Requested-With": "fetch", Accept: "application/json" },
+      credentials: "same-origin",
+      body: blob,
+    });
+  } catch {
+    throw new Error("The photo couldn't be uploaded. Check your connection.");
+  }
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.ok) throw new Error(data?.error || `Upload failed (${response.status}).`);
+  return data.url;
+}
+
+/**
+ * Upload a photo or paste a link to one; either way it is resized to the
+ * standard size and stored, and `input` gets its path.
+ */
+function photoPicker(input, onChange) {
+  let source = null; // the original, kept so changing the fit re-crops it
+  const status = el("p", { class: "hint", "aria-live": "polite" });
+  const file = el("input", { type: "file", accept: "image/jpeg,image/png,image/webp,image/gif", class: "sr-only", id: "photo-file" });
+  const link = el("input", { type: "url", id: "photo-link", placeholder: "https://… link to a photo", "aria-label": "Link to a photo" });
+  const fitName = "photo-fit";
+  const fits = el(
+    "div",
+    { class: "chips", role: "radiogroup", "aria-label": "How to fit the photo" },
+    [["whole", "Show the whole photo"], ["fill", "Fill the frame"]].map(([value, label]) =>
+      el("label", { class: "check" }, el("input", { type: "radio", name: fitName, value, checked: value === "whole" }), label)
+    )
+  );
+  const remove = el("button", { type: "button", class: "link-button", text: "Remove photo" });
+
+  async function use(blob, label) {
+    source = blob;
+    status.textContent = `Resizing ${label}…`;
+    try {
+      const fit = fits.querySelector("input:checked").value;
+      const resized = await uniformPhoto(blob, fit);
+      status.textContent = "Uploading…";
+      input.value = await uploadPhoto(resized);
+      status.textContent = `Photo ready at ${PHOTO_WIDTH} × ${PHOTO_HEIGHT}. Save the item to keep it.`;
+      onChange();
+    } catch (error) {
+      status.textContent = error.message;
+    }
+  }
+
+  file.addEventListener("change", () => {
+    if (file.files[0]) use(file.files[0], "your photo");
+    file.value = "";
+  });
+
+  const fetchButton = el("button", {
+    type: "button",
+    class: "btn btn-secondary btn-sm",
+    text: "Get photo",
+    onclick: async () => {
+      if (!link.value.trim()) return link.focus();
+      status.textContent = "Fetching the photo…";
+      try {
+        const response = await fetch(`/api/admin/image-fetch?url=${encodeURIComponent(link.value.trim())}`, { credentials: "same-origin" });
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.error || "That photo couldn't be fetched.");
+        }
+        await use(await response.blob(), "the linked photo");
+        link.value = "";
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    },
+  });
+
+  for (const radio of fits.querySelectorAll("input")) {
+    radio.addEventListener("change", () => {
+      if (source) use(source, "your photo");
+    });
+  }
+
+  remove.addEventListener("click", () => {
+    input.value = "";
+    source = null;
+    status.textContent = "Photo removed; the illustration will show instead.";
+    onChange();
+  });
+
+  const element = el(
+    "div",
+    { class: "field span-6 photo-picker" },
+    el("span", { class: "label", text: "Photo" }),
+    el(
+      "div",
+      { class: "photo-actions" },
+      el("label", { class: "btn btn-sm", for: "photo-file", tabindex: "0", role: "button", onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); file.click(); } } }, "Upload photo"),
+      file,
+      el("span", { class: "muted", text: "or" }),
+      link,
+      fetchButton
+    ),
+    fits,
+    el("p", { class: "hint", text: `Every photo is resized to ${PHOTO_WIDTH} × ${PHOTO_HEIGHT} so all items match. "Show the whole photo" never cuts anything off; "Fill the frame" crops the edges.` }),
+    status,
+    remove,
+    input
+  );
+
+  return {
+    element,
+    refresh() {
+      remove.hidden = !input.value;
+    },
+  };
+}
+
 function openItem(item) {
   const editing = Boolean(item);
   const draft = item ?? {
@@ -865,10 +1024,13 @@ function openItem(item) {
 
   const tone = el("select", { id: "item-tone", name: "tone" }, options(TONES, { selected: draft.tone }));
   const art = el("select", { id: "item-art", name: "art" }, options(Object.entries(ART_LABELS), { selected: draft.art }));
-  const image = el("input", { id: "item-image", name: "image", type: "url", maxlength: "500", value: draft.image, placeholder: "https://…" });
+  // The photo, as stored: an uploaded /images/ path (or an older link).
+  const image = el("input", { id: "item-image", name: "image", type: "hidden", value: draft.image });
+  const photo = photoPicker(image, () => renderPreview());
 
   function renderPreview() {
-    clear(preview, artwork({ tone: tone.value, art: art.value, image: image.value.startsWith("https://") ? image.value : "" }, "art-preview"));
+    clear(preview, artwork({ tone: tone.value, art: art.value, image: image.value }, "art-preview"));
+    photo.refresh();
   }
   for (const control of [tone, art, image]) control.addEventListener("change", renderPreview);
 
@@ -939,6 +1101,41 @@ function openItem(item) {
 
   const cost = el("input", { id: "item-cost", name: "costCents", type: "number", min: "0", step: "0.01", inputmode: "decimal", value: (draft.costCents / 100).toFixed(2) });
 
+  // Suggested max per order follows the cost as it is typed. A new item takes
+  // the suggestion until someone sets the max themselves.
+  const maxInput = el("input", { id: "item-max", name: "maxPerOrder", type: "number", min: "1", max: "999", step: "1", value: String(draft.maxPerOrder) });
+  const suggestion = el("p", { class: "hint suggestion", "aria-live": "polite" });
+  const maxField = field("Max per order", maxInput, { span: 2 });
+  maxField.append(suggestion);
+  let maxTouched = editing;
+  maxInput.addEventListener("input", () => {
+    maxTouched = true;
+    renderSuggestion();
+  });
+  function renderSuggestion() {
+    const dollars = Number.parseFloat(cost.value);
+    const suggested = suggestedMaxPerOrder(Number.isFinite(dollars) ? Math.round(dollars * 100) : NaN);
+    if (!suggested) return clear(suggestion);
+    if (!maxTouched) maxInput.value = String(suggested);
+    clear(
+      suggestion,
+      `Suggested: ${suggested}`,
+      String(suggested) === maxInput.value
+        ? null
+        : el("button", {
+            type: "button",
+            class: "link-button",
+            text: "Use",
+            onclick: () => {
+              maxInput.value = String(suggested);
+              renderSuggestion();
+            },
+          })
+    );
+  }
+  cost.addEventListener("input", renderSuggestion);
+  renderSuggestion();
+
   form.append(
     alertBox,
     el(
@@ -950,13 +1147,13 @@ function openItem(item) {
       field("Category", el("select", { id: "item-category", name: "category" }, options(CATEGORIES, { selected: draft.category })), { span: 2 }),
       field("Sold as", el("input", { id: "item-unit", name: "unit", type: "text", maxlength: "40", value: draft.unit, placeholder: "Each, Pack of 25…" }), { span: 2 }),
       field("Cost to us ($)", cost, { span: 2 }),
-      field("Max per order", el("input", { id: "item-max", name: "maxPerOrder", type: "number", min: "1", max: "999", step: "1", value: String(draft.maxPerOrder) }), { span: 2 }),
+      maxField,
       el("div", { class: "field span-2" }, el("span", { class: "label", text: "Visibility" }), el("label", { class: "check" }, el("input", { id: "item-active", type: "checkbox", checked: draft.active }), "Show in the store")),
       field("Description", el("textarea", { id: "item-description", name: "description", rows: "3", maxlength: "600", value: draft.description }), { optional: true }),
       field("Colourway", tone, { span: 3 }),
       field("Illustration", art, { span: 3 }),
       preview,
-      field("Photo URL", image, { optional: true, hint: "An https:// link to a product photo. It replaces the illustration." }),
+      photo.element,
       el("fieldset", { class: "span-6", name: "variants" }, el("legend", { text: "Stock" }), modeRadios, singleBox, optionsBox)
     )
   );
@@ -1147,6 +1344,344 @@ function openAccount(account) {
             renderAccounts();
             drawer.close();
             toast(`${account.name} deleted.`);
+          } catch (error) {
+            toast(error.message, { tone: "error" });
+          }
+        },
+      })
+    )
+  );
+  drawer.open();
+}
+
+/* ------------------------------------------------------------------ team */
+
+async function copyText(text, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`${label} copied.`);
+  } catch {
+    toast("Couldn't copy — select the text instead.", { tone: "error" });
+  }
+}
+
+const codeLine = (p) => `${p.name || p.email} — ${p.email} — ${p.code}`;
+
+// Codes just created or reset, with a reminder to send them.
+function showNewCodes(people, title) {
+  const box = $("#team-new-codes");
+  if (!people.length) return clear(box);
+  const site = location.origin;
+  clear(
+    box,
+    el(
+      "section",
+      { class: "card card-pad new-codes", "aria-labelledby": "new-codes-title" },
+      el(
+        "div",
+        { class: "section-title" },
+        el("h2", { id: "new-codes-title", text: title }),
+        el("button", { type: "button", class: "icon-btn", "aria-label": "Dismiss", text: "×", onclick: () => clear(box) })
+      ),
+      el("p", { class: "muted", text: `Send each person their code. They sign in at ${site} with their email and code.` }),
+      el(
+        "ul",
+        { class: "code-list" },
+        people.map((p) =>
+          el(
+            "li",
+            {},
+            el("div", {}, el("div", { class: "cell-main", text: p.name || p.email }), el("div", { class: "cell-sub", text: p.email })),
+            el("span", { class: "code-chip", text: p.code }),
+            el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Copy", onclick: () => copyText(`Your Tropical Distillery merch store code: ${p.code}\nSign in at ${site} with ${p.email}.`, "Message") })
+          )
+        )
+      ),
+      people.length > 1
+        ? el("button", {
+            type: "button",
+            class: "btn btn-sm",
+            text: "Copy all",
+            onclick: () => copyText(people.map(codeLine).join("\n"), "Codes"),
+          })
+        : null
+    )
+  );
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function reloadTeam() {
+  team = await adminApi("/api/admin/team");
+  renderTeam();
+}
+
+function lastActive(p) {
+  const times = [p.lastSignInAt, p.lastOrderAt].filter(Boolean).sort();
+  return times.length ? times[times.length - 1] : null;
+}
+
+function renderTeam() {
+  for (const radio of $$("input[name=team-mode]")) radio.checked = radio.value === team.mode;
+  $("#team-mode-note").textContent =
+    team.mode === "personal"
+      ? `Personal codes are on: ${plural(team.people.length, "person", "people")} can sign in. The shared team code no longer works.`
+      : team.people.length
+        ? "The shared team code is still in use. Once everyone has their personal code, switch to personal codes."
+        : "Add your team, send them their codes, then switch to personal codes.";
+
+  const query = ui.teamQuery.toLowerCase();
+  const visible = team.people
+    .filter((p) => !query || `${p.name} ${p.email}`.toLowerCase().includes(query))
+    .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email, "en", { sensitivity: "base" }));
+  $("#team-count").textContent = `${plural(team.people.length, "person", "people")} on the team list`;
+
+  const table = $("#team-table");
+  if (!visible.length) {
+    clear(
+      table,
+      el("tbody", {}, el("tr", {}, el("td", { class: "empty", colspan: "6", text: team.people.length ? "Nobody matches." : "Nobody on the team list yet. Add people above." })))
+    );
+  } else {
+    clear(
+      table,
+      el("thead", {}, el("tr", {}, ["Person", "Personal code", "Orders", "Order value", "Last active", ""].map((h) =>
+        el("th", { scope: "col", class: h === "Orders" || h === "Order value" ? "num" : "", text: h })
+      ))),
+      el(
+        "tbody",
+        {},
+        visible.map((p) => {
+          const codeCell = el(
+            "td",
+            {},
+            el("button", {
+              type: "button",
+              class: "btn btn-secondary btn-sm",
+              text: "Show",
+              "aria-label": `Show ${p.name || p.email}'s code`,
+              onclick: async () => {
+                try {
+                  const { code } = await adminApi(`/api/admin/team/${encodeURIComponent(p.id)}/code`);
+                  clear(
+                    codeCell,
+                    el("span", { class: "code-chip", text: code }),
+                    el("button", { type: "button", class: "link-button", text: "Copy", onclick: () => copyText(code, "Code") })
+                  );
+                } catch (error) {
+                  toast(error.message, { tone: "error" });
+                }
+              },
+            })
+          );
+          const active = lastActive(p);
+          return el(
+            "tr",
+            {},
+            el("td", {}, el("div", { class: "cell-main", text: p.name || "—" }), el("div", { class: "cell-sub", text: p.email })),
+            codeCell,
+            el("td", { class: "num" }, el("div", { text: String(p.orders) }), el("div", { class: "cell-sub", text: plural(p.units, "unit") })),
+            el("td", { class: "num" }, el("div", { text: formatMoney(p.valueCents) }), el("div", { class: "cell-sub", text: `${formatMoney(p.monthValueCents)} this month` })),
+            el("td", { text: active ? formatDate(active) : "Not yet" }),
+            el(
+              "td",
+              {},
+              el(
+                "div",
+                { class: "action-row" },
+                el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Edit", "aria-label": `Edit ${p.name || p.email}`, onclick: () => openPerson(p) }),
+                el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "New code", "aria-label": `New code for ${p.name || p.email}`, onclick: () => resetCode(p) })
+              )
+            )
+          );
+        })
+      )
+    );
+  }
+
+  const suggestionsBox = $("#team-suggestions");
+  if (!team.suggestions.length) {
+    clear(suggestionsBox);
+  } else {
+    const add = (list) => addPeopleText(list.map((x) => (x.name ? `${x.name}, ${x.email}` : x.email)).join("\n"));
+    clear(
+      suggestionsBox,
+      el(
+        "section",
+        { class: "card card-pad suggestions", "aria-labelledby": "suggestions-title" },
+        el(
+          "div",
+          { class: "section-title" },
+          el("h2", { id: "suggestions-title", text: "Using the store, not on the list" }),
+          team.suggestions.length > 1
+            ? el("button", { type: "button", class: "btn btn-sm", text: "Add all", onclick: () => add(team.suggestions) })
+            : null
+        ),
+        el("p", { class: "muted", text: "These people have signed in or ordered with the shared team code. Add them before switching to personal codes, or they won't be able to sign in." }),
+        el(
+          "ul",
+          { class: "code-list" },
+          team.suggestions.map((x) =>
+            el(
+              "li",
+              {},
+              el("div", {}, el("div", { class: "cell-main", text: x.name || x.email }), el("div", { class: "cell-sub", text: x.email })),
+              el("span", { class: "cell-sub", text: x.lastSeenAt ? `Last seen ${formatDate(x.lastSeenAt)}` : "" }),
+              el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Add", onclick: () => add([x]) })
+            )
+          )
+        )
+      )
+    );
+  }
+}
+
+async function addPeopleText(entries) {
+  const form = $("#team-add-form");
+  const alertBox = $(".form-alert", form);
+  clearFieldErrors(form);
+  setAlert(alertBox, "");
+  const { added, already, invalid } = await adminApi("/api/admin/team", { method: "POST", body: { entries } });
+  const notes = [];
+  if (already.length) notes.push(`Already on the list: ${already.join(", ")}.`);
+  if (invalid.length) notes.push(`Not an email address, so skipped: ${invalid.join("; ")}.`);
+  setAlert(alertBox, notes.join("\n"));
+  await reloadTeam();
+  showNewCodes(added, added.length === 1 ? "New code" : `${added.length} new codes`);
+  if (added.length) toast(`Added ${plural(added.length, "person", "people")} to the team list.`);
+  return added;
+}
+
+$("#team-add-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = $("button[type=submit]", form);
+  button.disabled = true;
+  try {
+    const added = await addPeopleText($("#team-entries").value);
+    if (added.length) $("#team-entries").value = "";
+  } catch (error) {
+    setAlert($(".form-alert", form), error.message);
+    showFieldErrors(form, error.fieldErrors);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#team-search").addEventListener("input", (event) => {
+  ui.teamQuery = event.target.value.trim();
+  renderTeam();
+});
+
+for (const radio of $$("input[name=team-mode]")) {
+  radio.addEventListener("change", async () => {
+    const mode = radio.value;
+    const ok = await confirmDialog(
+      mode === "personal"
+        ? {
+            title: "Switch to personal codes?",
+            body: "From now on everyone signs in with their own email and code. The shared team code stops working, and everyone signed in with it will need to sign in again. Send people their codes first.",
+            confirmLabel: "Use personal codes",
+            cancelLabel: "Not yet",
+          }
+        : {
+            title: "Go back to the shared code?",
+            body: "Personal codes stop working and everyone is signed out. They'll sign in again with the shared team code and their own name and email.",
+            confirmLabel: "Use the shared code",
+            cancelLabel: "Keep personal codes",
+          }
+    );
+    if (!ok) return renderTeam();
+    try {
+      await adminApi("/api/admin/team/mode", { method: "PUT", body: { mode } });
+      await reloadTeam();
+      toast(mode === "personal" ? "Personal codes are on." : "Back to the shared team code.");
+    } catch (error) {
+      toast(error.message, { tone: "error" });
+      renderTeam();
+    }
+  });
+}
+
+async function resetCode(p) {
+  const ok = await confirmDialog({
+    title: `New code for ${p.name || p.email}?`,
+    body: "Their current code stops working and they're signed out. You'll need to send them the new one.",
+    confirmLabel: "Make a new code",
+    cancelLabel: "Keep the current code",
+  });
+  if (!ok) return;
+  try {
+    const { person } = await adminApi(`/api/admin/team/${encodeURIComponent(p.id)}`, { method: "PATCH", body: { resetCode: true } });
+    await reloadTeam();
+    showNewCodes([person], "New code");
+  } catch (error) {
+    toast(error.message, { tone: "error" });
+  }
+}
+
+function openPerson(p) {
+  const form = el("form", { id: "person-form", novalidate: true });
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  form.append(
+    alertBox,
+    el(
+      "div",
+      { class: "form-grid" },
+      field("Name", el("input", { id: "person-name", name: "name", type: "text", maxlength: "80", value: p.name, autofocus: true })),
+      field("Email", el("input", { id: "person-email", name: "email", type: "email", maxlength: "160", value: p.email }), {
+        hint: "They sign in with this email. Past orders stay linked to them.",
+      })
+    )
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    try {
+      await adminApi(`/api/admin/team/${encodeURIComponent(p.id)}`, {
+        method: "PATCH",
+        body: { name: form.elements.namedItem("name").value, email: form.elements.namedItem("email").value },
+      });
+      await reloadTeam();
+      drawer.close();
+      toast("Saved.");
+    } catch (error) {
+      setAlert(alertBox, error.message);
+      showFieldErrors(form, error.fieldErrors);
+    }
+  });
+
+  detailTitle.textContent = p.name || p.email;
+  clear(detailBody, form);
+  clear(
+    detailFoot,
+    el(
+      "div",
+      { class: "inline-actions" },
+      el(
+        "div",
+        { class: "inline-actions" },
+        el("button", { type: "submit", form: "person-form", class: "btn", text: "Save" }),
+        el("button", { type: "button", class: "btn btn-secondary", "data-close": "", text: "Cancel" })
+      ),
+      el("button", {
+        type: "button",
+        class: "btn btn-danger",
+        text: "Remove from team",
+        onclick: async () => {
+          const ok = await confirmDialog({
+            title: `Remove ${p.name || p.email}?`,
+            body: "Their code stops working and they're signed out straight away. Their past orders stay in the order history.",
+            confirmLabel: "Remove",
+            cancelLabel: "Keep them",
+            danger: true,
+          });
+          if (!ok) return;
+          try {
+            await adminApi(`/api/admin/team/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+            await reloadTeam();
+            drawer.close();
+            toast(`${p.name || p.email} removed.`);
           } catch (error) {
             toast(error.message, { tone: "error" });
           }

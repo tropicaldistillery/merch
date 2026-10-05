@@ -2473,3 +2473,147 @@ dialog.confirm .dialog-actions {
     transition: none !important;
   }
 }
+
+/* ----------------------------------------------------------------- team */
+
+.team-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  margin-bottom: 20px;
+  align-items: start;
+}
+
+.team-grid h2 {
+  margin-bottom: 14px;
+}
+
+.team-grid form > * + * {
+  margin-top: 14px;
+}
+
+#team-mode-note {
+  margin-top: 12px;
+}
+
+.new-codes,
+.suggestions {
+  margin-bottom: 20px;
+}
+
+.new-codes {
+  background: var(--blush);
+  border-color: transparent;
+}
+
+.suggestions {
+  margin-top: 20px;
+}
+
+.code-list {
+  list-style: none;
+  margin: 14px 0;
+  padding: 0;
+}
+
+.code-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.code-list li > div:first-child {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.code-chip {
+  display: inline-block;
+  background: #fff;
+  border: 1.5px dashed var(--pink);
+  color: var(--navy);
+  border-radius: 10px;
+  padding: 5px 12px;
+  font-weight: 700;
+  font-size: 14.5px;
+  letter-spacing: 0.02em;
+  user-select: all;
+  margin-right: 6px;
+}
+
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.suggestion .link-button {
+  color: var(--pink-text);
+  font-weight: 600;
+  padding: 0 2px;
+}
+
+@media (max-width: 900px) {
+  .team-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------- free to you */
+
+.price .free {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ok);
+}
+
+.totals.you-pay {
+  margin-top: -4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.totals.you-pay strong {
+  color: var(--ok);
+}
+
+.summary .totals.you-pay {
+  margin: -6px 0 16px;
+}
+
+/* -------------------------------------------------------- photo picker */
+
+.photo-picker > * + * {
+  margin-top: 6px;
+}
+
+.photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.photo-actions input[type="url"] {
+  flex: 1 1 220px;
+  width: auto;
+  min-height: 38px;
+}
+
+.photo-picker .chips {
+  margin-top: 4px;
+}
+
+.photo-picker .link-button {
+  color: var(--error);
+  padding-left: 0;
+  justify-self: start;
+  align-self: flex-start;
+}

@@ -123,3 +123,14 @@ export function trackingUrl(carrierId, trackingNumber) {
 export function availableUnits(variant) {
   return variant && Number.isInteger(variant.stock) ? variant.stock : null;
 }
+
+// A sensible per-order cap for an item, from what it costs: one of the
+// expensive display pieces, a few mid-priced items, a dozen of the cheap ones.
+export function suggestedMaxPerOrder(costCents) {
+  if (!Number.isFinite(costCents) || costCents < 0) return null;
+  if (costCents >= 10000) return 1;
+  if (costCents >= 5000) return 2;
+  if (costCents >= 2500) return 4;
+  if (costCents >= 1000) return 6;
+  return 12;
+}

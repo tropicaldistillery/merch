@@ -20,5 +20,6 @@ export function initialState() {
     orders: [],
     accounts: [],
     members: {},
+    team: { mode: "shared", people: [] },
   };
 }

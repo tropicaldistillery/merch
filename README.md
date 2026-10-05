@@ -13,10 +13,13 @@ shares nothing with SipScale.
 
 **For team members**
 
-- Sign in with name, work email and the shared team code. A session lasts 30
-  days on that device.
+- Sign in with their email and **personal code** (or, until personal codes are
+  switched on, their name, work email and the shared team code). A session
+  lasts 30 days on that device.
 - Browse the catalog by category, brand or search, with live stock, sizes and a
-  per-order limit on each item.
+  per-order limit on each item. Every item shows what it costs Tropical
+  Distillery and that it's **free to them**; the cart and checkout show the
+  order's value and "You pay $0.00".
 - At checkout, choose **Ship to me** (your address is remembered) or **Ship to
   an account**. Any account someone on the team has shipped to before can be
   picked from a list, which fills in its address, receiving contact and
@@ -36,15 +39,44 @@ shares nothing with SipScale.
 - Print a packing slip, copy the delivery address, keep internal notes.
 - Export orders to CSV, one row per item, for fulfilment or budgeting.
 - Edit the catalog: add items, change cost, stock, sizes, per-order limits and
-  photos, or hide an item from the store.
+  photos, or hide an item from the store. As the cost is typed, a **suggested
+  max per order** appears (1 for $100+, 2 for $50+, 4 for $25+, 6 for $10+,
+  otherwise 12); new items take it automatically.
+- **Upload a photo, or paste a link to one.** Either way it's resized in the
+  browser to 1200 × 900, so every product card matches: "Show the whole photo"
+  fits it on white, "Fill the frame" crops the edges. Photos are stored with
+  the rest of the data (in Postgres, or `DATA_DIR/images`).
+- Manage the **team list** (Team tab): paste names and emails, straight from a
+  spreadsheet if you like, and everyone gets a personal code like
+  `mango-pelican-sunset-42`. Look up or copy a code, issue a new one (the old
+  one stops working at once), download every code as a CSV, and see each
+  person's orders, units and order value this month and overall. People who
+  have used the shared code but aren't on the list yet are listed so they can
+  be added in one click.
 - Tidy the shared account directory.
 
 Stock is reserved when an order is placed and returned if it is cancelled or
 declined, so "available" always means what's left to promise. Items printed or
 bought to order can be left untracked and never run out.
 
-Costs are internal, for budgeting. Nobody is charged and there is no payment
-step.
+Costs are shown so the team knows what they're ordering is worth, but nobody
+is charged and there is no payment step.
+
+### Personal codes
+
+1. In **Team**, add everyone (name and email, one per line). Each person gets a
+   code.
+2. Send people their codes: **Copy all**, or **Download codes** for a
+   spreadsheet with each person's sign-in link.
+3. Switch **How people sign in** to **Personal codes**. The shared team code
+   stops working and anyone signed in with it signs in again with their own
+   code.
+
+From then on every order is tied to a person on the list. Removing someone or
+giving them a new code signs them out everywhere. The email-domain rule
+(`TEAM_EMAIL_DOMAINS`) only applies to the shared code; anyone you put on the
+list can sign in, personal email included. Switching back to the shared code
+is one click.
 
 ## The starter catalog
 
@@ -52,7 +84,7 @@ The store opens with 24 items across J.F. Haden's (Mango, Espresso and Key Lime
 liqueurs), Twin P Whiskey and Tropical Distillery house branding. **Costs and
 stock levels are placeholders.** Set the real numbers in the admin console
 (Catalog & stock → Edit) before inviting the team, hide anything you don't
-stock, and add a photo URL to any item to replace its illustration.
+stock, and upload a photo for any item to replace its illustration.
 
 ## Run it on your computer
 
@@ -70,10 +102,10 @@ Open <http://localhost:4100>. Without `DATABASE_URL`, data is kept in
 
 | Variable | |
 | --- | --- |
-| `TEAM_ACCESS_CODE` | The code team members sign in with. Use a short passphrase; it is not case-sensitive. **Changing it signs everyone out**, which is how you lock out someone who has left. Without it the store is closed. |
+| `TEAM_ACCESS_CODE` | The shared code team members sign in with until personal codes are switched on (Team tab). Use a short passphrase; it is not case-sensitive. **Changing it signs everyone using it out**, which is how you lock out someone who has left. Without it the store is closed, unless personal codes are on. |
 | `ADMIN_PASSWORD` | Opens `/admin`. Changing it signs out every admin. Without it the admin console is off. |
-| `TEAM_EMAIL_DOMAINS` | Optional, comma-separated, e.g. `tropicaldistillery.com`. Only these email addresses may sign in. Leave it empty if brand ambassadors use personal email. |
-| `DATABASE_URL` | Optional Postgres connection string. When set, everything is stored in one table (`tropical_merch_store`) that the app creates itself. **Required on any host without a permanent disk**, Render and Replit included. Run `npm install` once to fetch the driver. |
+| `TEAM_EMAIL_DOMAINS` | Optional, comma-separated, e.g. `tropicaldistillery.com`. With the shared code, only these email addresses may sign in. Ignored once personal codes are on: the team list decides. |
+| `DATABASE_URL` | Optional Postgres connection string. When set, everything is stored in two tables the app creates itself (`tropical_merch_store` for the data, `tropical_merch_images` for photos). **Required on any host without a permanent disk**, Render and Replit included. Run `npm install` once to fetch the driver. |
 | `REQUIRE_DATABASE` | Set to `1` on any host without a permanent disk. The site then refuses to start without `DATABASE_URL`, instead of keeping orders in a file that vanishes on the next restart. |
 | `DATA_DIR` | Where `store.json` lives when there's no database. Default `./data`. |
 | `ORDER_WEBHOOK_URL` | Optional. Every new order and status change is POSTed here as JSON with a ready-made `text` summary. A Slack incoming webhook works as-is; a Zapier or Make webhook can turn it into emails to the requester. |
@@ -157,13 +189,23 @@ that, the next step is real tables.
 
 ## Security model
 
-- The team code is shared, so anyone who has it can order under any name; it
-  is meant to keep the store private, not to prove identity. Restrict email
-  domains where you can, and change the code when someone leaves.
+- With **personal codes** on, each order is tied to the person whose code was
+  used, and one person can be locked out without affecting anyone else. Codes
+  are three words and a number (nearly 900 million combinations), and wrong
+  guesses are throttled. They are kept retrievable so the admin can look one
+  up again; anyone who can read the database can already read every order, so
+  hashing them would add little.
+- The **shared** team code, by contrast, lets anyone who has it order under any
+  name; it keeps the store private but doesn't prove identity. Restrict email
+  domains, and change the code when someone leaves.
 - Sessions are signed, `HttpOnly` cookies. Every request that changes data
   must carry a header a cross-site page cannot send, so other sites cannot
   place or approve orders on someone's behalf.
-- Wrong codes and passwords are throttled per address.
+- Wrong codes and passwords are throttled per address, with an overall
+  ceiling as well.
+- Uploaded photos must already be 1200 × 900 JPG, PNG or WebP (checked from
+  the file itself) and under 3 MB. "Get photo" only fetches public `https`
+  addresses, never anything on a private network.
 - Pages are served with a strict Content-Security-Policy; everything people
   type is rendered as text, never as HTML; CSV exports defuse spreadsheet
   formulas.
@@ -191,6 +233,8 @@ server.mjs              entry point: reads settings, opens the store, starts HTT
 src/app.mjs             routes, sign-in, security headers, static pages
 src/orders.mjs          order validation, stock, account directory, status changes, CSV
 src/catalog.mjs         starter catalog and item editing rules
+src/team.mjs            team list, personal codes, per-person tracking
+src/images.mjs          photo checks and fetching linked photos
 src/auth.mjs            signed sessions and sign-in throttling
 src/notify.mjs          webhook messages
 src/store/              JSON-file and Postgres stores

@@ -149,7 +149,7 @@ function orderCard(order) {
         el("h2", { id: `order-${order.id}`, text: order.number }),
         el("p", {
           class: "muted",
-          text: `Placed ${formatDate(order.createdAt)} · ${plural(order.totalUnits, "unit")} · ${formatMoney(order.totalCents)}`,
+          text: `Placed ${formatDate(order.createdAt)} · ${plural(order.totalUnits, "unit")} · ${formatMoney(order.totalCents)} value, free to you`,
         })
       ),
       statusBadge(order.status)

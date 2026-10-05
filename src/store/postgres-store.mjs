@@ -7,6 +7,9 @@
 // Needs the `pg` package: run `npm install` once.
 
 const TABLE = "tropical_merch_store";
+// Photos are kept out of the store document, which is rewritten on every
+// change, in a table of their own.
+const IMAGES = "tropical_merch_images";
 
 export async function createPostgresStore({ connectionString, initialState }) {
   let pg;
@@ -24,6 +27,13 @@ export async function createPostgresStore({ connectionString, initialState }) {
       id smallint primary key check (id = 1),
       doc jsonb not null,
       updated_at timestamptz not null default now()
+    )`);
+  await pool.query(`
+    create table if not exists ${IMAGES} (
+      id text primary key,
+      ext text not null,
+      bytes bytea not null,
+      created_at timestamptz not null default now()
     )`);
   await pool.query(`insert into ${TABLE} (id, doc) values (1, $1::jsonb) on conflict (id) do nothing`, [
     JSON.stringify(initialState()),
@@ -56,6 +66,15 @@ export async function createPostgresStore({ connectionString, initialState }) {
       } finally {
         client.release();
       }
+    },
+
+    async putImage({ id, ext, bytes }) {
+      await pool.query(`insert into ${IMAGES} (id, ext, bytes) values ($1, $2, $3) on conflict (id) do nothing`, [id, ext, bytes]);
+    },
+
+    async getImage(id, ext) {
+      const { rows } = await pool.query(`select bytes from ${IMAGES} where id = $1 and ext = $2`, [id, ext]);
+      return rows[0]?.bytes ?? null;
     },
 
     async close() {

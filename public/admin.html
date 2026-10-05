@@ -66,6 +66,7 @@
         <button type="button" class="tab" role="tab" id="tab-orders" aria-controls="panel-orders" data-tab="orders">Orders</button>
         <button type="button" class="tab" role="tab" id="tab-catalog" aria-controls="panel-catalog" data-tab="catalog">Catalog &amp; stock</button>
         <button type="button" class="tab" role="tab" id="tab-accounts" aria-controls="panel-accounts" data-tab="accounts">Accounts</button>
+        <button type="button" class="tab" role="tab" id="tab-team" aria-controls="panel-team" data-tab="team">Team</button>
       </div>
 
       <section role="tabpanel" id="panel-orders" aria-labelledby="tab-orders">
@@ -110,6 +111,54 @@
         <p class="result-count" id="account-count" aria-live="polite"></p>
         <div class="card table-wrap"><table class="table" id="accounts-table"></table></div>
         <p class="fine panel-note">Accounts are saved automatically the first time someone ships an order to them, and offered to the whole team at checkout.</p>
+      </section>
+
+      <section role="tabpanel" id="panel-team" aria-labelledby="tab-team" hidden>
+        <div class="team-grid">
+          <section class="card card-pad" aria-labelledby="team-mode-title">
+            <h2 id="team-mode-title">How people sign in</h2>
+            <fieldset class="stack">
+              <legend class="sr-only">Sign-in method</legend>
+              <label class="choice compact">
+                <input type="radio" name="team-mode" value="personal">
+                <span><span class="choice-title">Personal codes</span><span class="choice-text">Everyone on the team list signs in with their own code, so every order is tied to a real person. Remove someone or reset their code and only they are signed out.</span></span>
+                <span class="choice-tick" aria-hidden="true"></span>
+              </label>
+              <label class="choice compact">
+                <input type="radio" name="team-mode" value="shared">
+                <span><span class="choice-title">One shared team code</span><span class="choice-text">Everyone types their name and email with the same code. Simple, but anyone with the code can order under any name.</span></span>
+                <span class="choice-tick" aria-hidden="true"></span>
+              </label>
+            </fieldset>
+            <p class="fine" id="team-mode-note"></p>
+          </section>
+
+          <form class="card card-pad" id="team-add-form" novalidate aria-labelledby="team-add-title">
+            <h2 id="team-add-title">Add people</h2>
+            <div class="form-alert" role="alert" hidden></div>
+            <div class="field">
+              <label for="team-entries">One person per line: name and email</label>
+              <textarea id="team-entries" name="entries" rows="5" placeholder="Jane Rep, jane@tropicaldistillery.com&#10;Marco Diaz &lt;marco.ambassador@gmail.com&gt;&#10;sam@tropicaldistillery.com"></textarea>
+              <p class="hint">Paste straight from a spreadsheet if you like. Each new person gets their own code; any email works, personal ones included.</p>
+            </div>
+            <button type="submit" class="btn">Add &amp; create codes</button>
+          </form>
+        </div>
+
+        <div id="team-new-codes"></div>
+
+        <div class="toolbar">
+          <label class="search">
+            <span class="sr-only">Search the team</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="team-search" type="search" placeholder="Name or email" autocomplete="off">
+          </label>
+          <a class="btn btn-secondary" id="team-csv" href="/api/admin/team.csv">Download codes</a>
+        </div>
+        <p class="result-count" id="team-count" aria-live="polite"></p>
+        <div class="card table-wrap"><table class="table" id="team-table"></table></div>
+        <div id="team-suggestions"></div>
+        <p class="fine panel-note">Order value is what the items cost Tropical Distillery. Team members are never charged. Cancelled and declined orders don't count.</p>
       </section>
     </section>
   </main>

@@ -77,6 +77,7 @@ const config = {
   orderPrefix,
   cookieSecure,
   publicDir: path.join(ROOT, "public"),
+  publicUrl: env.PUBLIC_URL || "",
 };
 
 const port = Number(env.PORT || 4100);

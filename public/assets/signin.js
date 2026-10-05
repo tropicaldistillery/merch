@@ -6,6 +6,7 @@ const emailInput = $("#email");
 const codeInput = $("#code");
 const alertBox = $(".form-alert", form);
 const params = new URLSearchParams(location.search);
+let personal = false;
 
 // Resolve against this site and keep only the path, so nothing in `next`
 // (protocol-relative URLs, stray tabs or backslashes) can leave the site.
@@ -42,6 +43,19 @@ async function init() {
 
   try {
     const config = await api("/api/config");
+    if (config.signInMode === "personal") {
+      // Everyone has their own code; the name comes from the team list.
+      personal = true;
+      $("#name-field").hidden = true;
+      $("#email-label").textContent = "Email";
+      $("#code-label").textContent = "Your personal code";
+      codeInput.type = "text";
+      codeInput.autocomplete = "off";
+      const hint = $("#code-hint");
+      hint.textContent = "It looks like mango-pelican-sunset-42. Ask the merch admin if you don't have one.";
+      hint.hidden = false;
+      $("#signin-intro").textContent = "Use your email and the personal code from your merch admin. You'll stay signed in on this device for 30 days.";
+    }
     if (!config.teamSignIn) {
       setAlert(alertBox, "The store isn't open yet: the team code hasn't been set up. Ask the merch admin.");
       form.querySelector("button[type=submit]").disabled = true;
@@ -55,7 +69,8 @@ async function init() {
     // The form still works; the server enforces everything.
   }
 
-  (nameInput.value ? (emailInput.value ? codeInput : emailInput) : nameInput).focus();
+  const firstEmpty = [personal ? null : nameInput, emailInput, codeInput].find((input) => input && !input.value);
+  (firstEmpty ?? codeInput).focus();
 }
 
 form.addEventListener("submit", async (event) => {

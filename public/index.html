@@ -35,21 +35,22 @@
           <p class="eyebrow">Team members</p>
           <h2>Sign in to order</h2>
         </div>
-        <p class="muted">Use the team code from your manager. You'll stay signed in on this device for 30 days.</p>
+        <p class="muted" id="signin-intro">Use the team code from your manager. You'll stay signed in on this device for 30 days.</p>
         <div class="form-alert" role="alert" hidden></div>
 
-        <div class="field">
+        <div class="field" id="name-field">
           <label for="name">Your name</label>
           <input id="name" name="name" type="text" autocomplete="name" required maxlength="80">
         </div>
         <div class="field">
-          <label for="email">Work email</label>
+          <label for="email" id="email-label">Work email</label>
           <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required maxlength="160">
           <p class="hint" id="email-hint" hidden></p>
         </div>
         <div class="field">
-          <label for="code">Team code</label>
+          <label for="code" id="code-label">Team code</label>
           <input id="code" name="code" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" required>
+          <p class="hint" id="code-hint" hidden></p>
         </div>
         <button class="btn btn-block" type="submit">Sign in</button>
         <p class="fine">For Tropical Distillery staff and brand ambassadors. Running the store? <a href="/admin">Open the admin console</a>.</p>

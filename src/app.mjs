@@ -21,13 +21,24 @@ import {
   verifySession,
 } from "./auth.mjs";
 import { applySeedTextFixes, needsSeedTextFixes, normalizeItem, publicItem } from "./catalog.mjs";
+import { IMAGE_PATH_RE, MAX_IMAGE_BYTES, acceptProductImage, fetchRemoteImage } from "./images.mjs";
 import {
   cancelOwnOrder,
+  csvCell,
   normalizeAccountEdit,
   ordersToCsv,
   placeOrder,
   updateOrder,
 } from "./orders.mjs";
+import {
+  addPeople,
+  personForSignIn,
+  removePerson,
+  setMode,
+  teamReport,
+  teamState,
+  updatePerson,
+} from "./team.mjs";
 import { OPEN_STATUSES, STATUSES } from "../public/assets/shared.js";
 import { ValidationError, cleanLine, isValidEmail, normalizeEmail } from "./validation.mjs";
 
@@ -124,6 +135,25 @@ function readJson(req) {
   });
 }
 
+// A binary upload, refused past `limit` bytes.
+function readRaw(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(new ValidationError("That photo is too large. Try a smaller one.", {}, 413));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
 function clientAddress(req) {
   const forwarded = req.headers["x-forwarded-for"];
   if (typeof forwarded === "string" && forwarded.length) return forwarded.split(",")[0].trim();
@@ -208,10 +238,40 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     return req.socket.encrypted === true || req.headers["x-forwarded-proto"] === "https";
   }
 
-  function teamUser(req) {
-    if (!teamFingerprint) return null;
+  // Who may sign in changes from the admin console, so every request checks
+  // it. A short-lived copy keeps that to one store read every few seconds;
+  // changes made on this instance clear it at once.
+  let access = null;
+
+  async function teamAccess({ fresh = false } = {}) {
+    const ttl = config.accessCacheMs ?? 5000;
+    if (!fresh && access && Date.now() - access.at < ttl) return access;
+    const team = teamState(await store.read());
+    access = { at: Date.now(), mode: team.mode, team, byId: new Map(team.people.map((p) => [p.id, p])) };
+    return access;
+  }
+
+  function accessChanged() {
+    access = null;
+  }
+
+  function personFingerprint(person) {
+    return credentialFingerprint(secret, `person:${person.id}:${person.code}`);
+  }
+
+  // Personal-code sessions carry the person and a fingerprint of their
+  // current code, so a reset or removal ends them; shared-code sessions carry
+  // the team code's fingerprint. Switching modes ends the other kind.
+  async function teamUser(req) {
     const payload = verifySession(secret, parseCookies(req.headers.cookie)[TEAM_COOKIE]);
-    if (!payload || payload.role !== "team" || payload.fp !== teamFingerprint) return null;
+    if (!payload || payload.role !== "team") return null;
+    const { mode, byId } = await teamAccess();
+    if (mode === "personal") {
+      const person = payload.pid ? byId.get(payload.pid) : null;
+      if (!person || payload.fp !== personFingerprint(person)) return null;
+      return { name: person.name || person.email, email: person.email, personId: person.id };
+    }
+    if (!teamFingerprint || payload.pid || payload.fp !== teamFingerprint) return null;
     return { name: payload.name, email: payload.email };
   }
 
@@ -225,7 +285,8 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   /* ------------------------------------------------------------- handlers */
 
   async function teamSignIn({ req, res }) {
-    if (!teamCode) {
+    const { mode, team } = await teamAccess({ fresh: true });
+    if (mode === "shared" && !teamCode) {
       throw new ValidationError("The store isn't set up yet — TEAM_ACCESS_CODE has not been configured.", {}, 503);
     }
     const address = clientAddress(req);
@@ -233,32 +294,47 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       throw new ValidationError("Too many sign-in attempts. Wait 15 minutes and try again.", {}, 429);
     }
     const body = await readJson(req);
-    const name = cleanLine(body.name, 80);
     const email = normalizeEmail(body.email);
     const errors = {};
-    if (!name) errors.name = "Enter your name.";
-    if (!isValidEmail(email)) errors.email = "Enter your work email address.";
-    else if (domains.length && !domains.some((domain) => email.endsWith(`@${domain}`))) {
-      errors.email = `Use your ${domains.map((d) => `@${d}`).join(" or ")} email address.`;
-    }
-    if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+    if (!isValidEmail(email)) errors.email = "Enter your email address.";
 
-    const code = String(body.code ?? "").trim().toLowerCase();
-    if (!safeEqual(code, teamCode.toLowerCase())) {
-      signInFailed(address);
-      await delay(config.failureDelayMs ?? 400);
-      throw new ValidationError("That team code isn't right.", { code: "That team code isn't right." }, 401);
+    let session;
+    if (mode === "personal") {
+      if (!String(body.code ?? "").trim()) errors.code = "Enter your personal code.";
+      if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+      const person = personForSignIn(team, email, body.code, safeEqual);
+      if (!person) {
+        signInFailed(address);
+        await delay(config.failureDelayMs ?? 400);
+        const message = "That email and code don't match. Check the code you were sent, or ask the merch admin for a new one.";
+        throw new ValidationError(message, { code: message }, 401);
+      }
+      session = { pid: person.id, name: person.name || person.email, email: person.email, fp: personFingerprint(person) };
+    } else {
+      const name = cleanLine(body.name, 80);
+      if (!name) errors.name = "Enter your name.";
+      if (!errors.email && domains.length && !domains.some((domain) => email.endsWith(`@${domain}`))) {
+        errors.email = `Use your ${domains.map((d) => `@${d}`).join(" or ")} email address.`;
+      }
+      if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+      const code = String(body.code ?? "").trim().toLowerCase();
+      if (!safeEqual(code, teamCode.toLowerCase())) {
+        signInFailed(address);
+        await delay(config.failureDelayMs ?? 400);
+        throw new ValidationError("That team code isn't right.", { code: "That team code isn't right." }, 401);
+      }
+      session = { name, email, fp: teamFingerprint };
     }
+
+    // Remember the sign-in, for the admin's team report.
+    const at = clock().toISOString();
+    await store.mutate((db) => {
+      db.members[session.email] = { ...db.members[session.email], name: session.name, lastSignInAt: at };
+    });
 
     const maxAgeSeconds = TEAM_SESSION_DAYS * 24 * 60 * 60;
-    const token = signSession(secret, {
-      role: "team",
-      name,
-      email,
-      fp: teamFingerprint,
-      exp: Date.now() + maxAgeSeconds * 1000,
-    });
-    sendJson(res, 200, { ok: true, user: { name, email } }, {
+    const token = signSession(secret, { role: "team", ...session, exp: Date.now() + maxAgeSeconds * 1000 });
+    sendJson(res, 200, { ok: true, user: { name: session.name, email: session.email } }, {
       "Set-Cookie": sessionCookie(TEAM_COOKIE, token, { maxAgeSeconds, secure: secureCookies(req) }),
     });
   }
@@ -300,13 +376,16 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   const routes = [
     ["GET", "/api/health", "public", async ({ res }) => sendJson(res, 200, { ok: true, store: store.kind })],
 
-    ["GET", "/api/config", "public", async ({ res }) =>
+    ["GET", "/api/config", "public", async ({ res }) => {
+      const { mode } = await teamAccess();
       sendJson(res, 200, {
         ok: true,
-        teamSignIn: Boolean(teamCode),
+        signInMode: mode,
+        teamSignIn: mode === "personal" || Boolean(teamCode),
         adminSignIn: Boolean(adminPassword),
-        emailDomains: domains,
-      })],
+        emailDomains: mode === "personal" ? [] : domains,
+      });
+    }],
 
     // Team session
     ["POST", "/api/session", "public", teamSignIn],
@@ -332,7 +411,9 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
 
     ["GET", "/api/orders", "team", async ({ res, user }) => {
       const db = await store.read();
-      const orders = db.orders.filter((o) => o.requester.email === user.email).reverse();
+      const orders = db.orders
+        .filter((o) => o.requester.email === user.email || (user.personId && o.requester.personId === user.personId))
+        .reverse();
       sendJson(res, 200, { ok: true, orders });
     }],
 
@@ -421,6 +502,79 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       sendJson(res, 200, { ok: true, item });
     }],
 
+    // Admin: team list and personal codes
+    ["GET", "/api/admin/team", "admin", async ({ res }) => {
+      const db = await store.read();
+      sendJson(res, 200, { ok: true, ...teamReport(db, { now: clock() }) });
+    }],
+
+    ["POST", "/api/admin/team", "admin", async ({ req, res, admin }) => {
+      const body = await readJson(req);
+      const result = await store.mutate((db) =>
+        addPeople(db, body.entries, { by: admin.name, at: clock().toISOString() })
+      );
+      accessChanged();
+      sendJson(res, 200, {
+        ok: true,
+        added: result.added.map(({ id, name, email, code }) => ({ id, name, email, code })),
+        already: result.already,
+        invalid: result.invalid,
+      });
+    }],
+
+    ["PUT", "/api/admin/team/mode", "admin", async ({ req, res }) => {
+      const body = await readJson(req);
+      const team = await store.mutate((db) => setMode(db, cleanLine(body.mode, 20)));
+      accessChanged();
+      sendJson(res, 200, { ok: true, mode: team.mode });
+    }],
+
+    ["GET", "/api/admin/team.csv", "admin", async ({ res }) => {
+      const { people } = teamState(await store.read());
+      const rows = [["name", "email", "personal_code", "sign_in_link"].join(",")];
+      const site = (config.publicUrl || "").replace(/\/$/, "");
+      for (const p of people) rows.push([p.name, p.email, p.code, site || ""].map(csvCell).join(","));
+      send(res, 200, rows.join("\r\n") + "\r\n", {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="tropical-merch-team-codes.csv"',
+        "Cache-Control": "no-store",
+      });
+    }],
+
+    ["GET", /^\/api\/admin\/team\/([\w-]+)\/code$/, "admin", async ({ res, params }) => {
+      const person = teamState(await store.read()).people.find((p) => p.id === params[0]);
+      if (!person) throw new ValidationError("That person isn't on the team list.", {}, 404);
+      sendJson(res, 200, { ok: true, code: person.code });
+    }],
+
+    ["PATCH", /^\/api\/admin\/team\/([\w-]+)$/, "admin", async ({ req, res, params }) => {
+      const body = await readJson(req);
+      const person = await store.mutate((db) => updatePerson(db, params[0], body, { at: clock().toISOString() }));
+      accessChanged();
+      const { id, name, email, codeSetAt } = person;
+      sendJson(res, 200, { ok: true, person: { id, name, email, codeSetAt, ...(body.resetCode === true ? { code: person.code } : {}) } });
+    }],
+
+    ["DELETE", /^\/api\/admin\/team\/([\w-]+)$/, "admin", async ({ res, params }) => {
+      await store.mutate((db) => removePerson(db, params[0]));
+      accessChanged();
+      sendJson(res, 200, { ok: true });
+    }],
+
+    // Admin: product photos, already resized in the browser
+    ["POST", "/api/admin/images", "admin", async ({ req, res }) => {
+      const bytes = await readRaw(req, MAX_IMAGE_BYTES);
+      const image = acceptProductImage(bytes);
+      await store.putImage({ id: image.id, ext: image.ext, bytes });
+      sendJson(res, 201, { ok: true, url: image.url });
+    }],
+
+    // A photo someone linked to, fetched here so the browser can resize it.
+    ["GET", "/api/admin/image-fetch", "admin", async ({ res, url }) => {
+      const { contentType, bytes } = await fetchRemoteImage(url.searchParams.get("url"), { fetchImpl: config.fetchImpl });
+      send(res, 200, bytes, { "Content-Type": contentType, "Content-Length": bytes.length, "Cache-Control": "no-store" });
+    }],
+
     // Admin: accounts
     ["GET", "/api/admin/accounts", "admin", async ({ res }) => {
       const db = await store.read();
@@ -480,7 +634,7 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     const ctx = { req, res, url, params: route.params, user: null, admin: null };
 
     if (route.access === "team") {
-      ctx.user = teamUser(req);
+      ctx.user = await teamUser(req);
       if (!ctx.user) return sendJson(res, 401, { ok: false, error: "Your session has ended. Sign in again." });
     } else if (route.access === "admin" || route.access === "admin-signin") {
       if (!adminPassword) {
@@ -534,12 +688,12 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     send(res, 302, "", { Location: location, "Cache-Control": "no-store" });
   }
 
-  function servePage(req, res, url) {
+  async function servePage(req, res, url) {
     const page = PAGES[url.pathname];
-    if (page.team && !teamUser(req)) {
+    if (page.team && !(await teamUser(req))) {
       return redirect(res, `/?next=${encodeURIComponent(url.pathname + url.search)}`);
     }
-    if (url.pathname === "/" && teamUser(req)) {
+    if (url.pathname === "/" && (await teamUser(req))) {
       return redirect(res, safeNext(url.searchParams.get("next")));
     }
     return serveFile(req, res, path.join(publicDir, page.file));
@@ -562,7 +716,20 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
         return send(res, 405, "Method not allowed", { Allow: "GET, HEAD", "Content-Type": "text/plain; charset=utf-8" });
       }
 
-      if (Object.hasOwn(PAGES, url.pathname)) return servePage(req, res, url);
+      if (Object.hasOwn(PAGES, url.pathname)) return await servePage(req, res, url);
+
+      const photo = IMAGE_PATH_RE.exec(url.pathname);
+      if (photo) {
+        const bytes = await store.getImage(photo[1], photo[2]);
+        if (bytes) {
+          // Named by content hash, so a given URL never changes.
+          return send(res, 200, req.method === "HEAD" ? "" : bytes, {
+            "Content-Type": { webp: "image/webp", jpg: "image/jpeg", png: "image/png" }[photo[2]],
+            "Content-Length": bytes.length,
+            "Cache-Control": "public, max-age=31536000, immutable",
+          });
+        }
+      }
 
       if (url.pathname.startsWith("/assets/")) {
         const asset = resolveAsset(url.pathname);

@@ -351,7 +351,11 @@ export function placeOrder(db, input, { requester, now = new Date(), timeZone = 
     createdAt: at,
     updatedAt: at,
     status: "submitted",
-    requester: { name: requester.name, email: requester.email },
+    requester: {
+      name: requester.name,
+      email: requester.email,
+      ...(requester.personId ? { personId: requester.personId } : {}),
+    },
     shipTo,
     purpose: value.purpose,
     neededBy: value.neededBy,

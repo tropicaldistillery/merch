@@ -45,6 +45,7 @@ async function start(dir, overrides = {}) {
       allowedEmailDomains: ["tropicaldistillery.com"],
       publicDir: PUBLIC_DIR,
       failureDelayMs: 0,
+      accessCacheMs: 0,
       throttle: createThrottle({ max: 3 }),
       ...overrides,
     },
@@ -332,6 +333,47 @@ describe("merch store over HTTP", () => {
     assert.deepEqual(results.map((r) => r.status).sort(), [201, 400, 400, 400]);
   });
 
+  it("stores uploaded photos and serves them for good", async () => {
+    const admin = await signedInAdmin(app);
+    const { png } = await import("./images.test.mjs");
+    const upload = (bytes, headers = {}) =>
+      fetch(`${app.base}/api/admin/images`, {
+        method: "POST",
+        headers: { "Content-Type": "image/png", "X-Requested-With": "fetch", ...headers },
+        body: bytes,
+      });
+
+    assert.equal((await upload(png(1200, 900))).status, 401, "admins only");
+
+    const adminCookie = await (async () => {
+      const res = await fetch(`${app.base}/api/admin/session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" },
+        body: JSON.stringify({ name: "Allie", password: ADMIN_PASSWORD }),
+      });
+      return res.headers.getSetCookie()[0].split(";")[0];
+    })();
+
+    const wrongSize = await upload(png(800, 600), { Cookie: adminCookie });
+    assert.equal(wrongSize.status, 400);
+
+    const res = await upload(png(1200, 900), { Cookie: adminCookie });
+    assert.equal(res.status, 201);
+    const { url } = await res.json();
+    const served = await fetch(app.base + url);
+    assert.equal(served.status, 200);
+    assert.equal(served.headers.get("content-type"), "image/png");
+    assert.match(served.headers.get("cache-control"), /immutable/);
+    assert.deepEqual(Buffer.from(await served.arrayBuffer()), png(1200, 900));
+    assert.equal((await fetch(`${app.base}/images/${"0".repeat(32)}.png`)).status, 404);
+
+    // The photo can then be put on an item.
+    const { data } = await admin("/api/admin/catalog");
+    const cap = data.items.find((i) => i.id === "jfh-cap");
+    const saved = await admin(`/api/admin/catalog/${cap.id}`, { method: "PUT", body: { ...cap, image: url } });
+    assert.equal(saved.data.item.image, url);
+  });
+
   it("serves assets but nothing outside them", async () => {
     const request = app.client();
     assert.equal((await request("/assets/styles.css")).status, 200);
@@ -346,6 +388,74 @@ describe("merch store over HTTP", () => {
     const db = await reopened.read();
     assert.ok(db.orders.length >= 3);
     await reopened.close();
+  });
+});
+
+describe("personal codes", () => {
+  it("signs people in with their own code and tracks their orders", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const app = await start(dir);
+    try {
+      const admin = await signedInAdmin(app);
+      // Someone already using the shared code shows up as a suggestion.
+      const shared = await signedInTeam(app, "lee@tropicaldistillery.com", "Lee");
+      assert.equal((await admin("/api/admin/team")).data.suggestions[0].email, "lee@tropicaldistillery.com");
+
+      const switchEarly = await admin("/api/admin/team/mode", { method: "PUT", body: { mode: "personal" } });
+      assert.equal(switchEarly.status, 409, "can't switch with nobody listed");
+
+      const added = await admin("/api/admin/team", {
+        method: "POST",
+        body: { entries: "Jane Rep, jane@tropicaldistillery.com\nMarco <marco.ambassador@gmail.com>" },
+      });
+      const [jane, marco] = added.data.added;
+      assert.ok(jane.code && marco.code);
+      assert.equal((await admin("/api/admin/team")).data.people[0].code, undefined, "the list never includes codes");
+      assert.equal((await admin(`/api/admin/team/${jane.id}/code`)).data.code, jane.code);
+
+      assert.equal((await admin("/api/admin/team/mode", { method: "PUT", body: { mode: "personal" } })).status, 200);
+      assert.equal((await app.client()("/api/config")).data.signInMode, "personal");
+      assert.equal((await shared("/api/catalog")).status, 401, "shared-code sessions end");
+
+      const anon = app.client();
+      const sharedAttempt = await anon("/api/session", { method: "POST", body: { name: "X", email: "jane@tropicaldistillery.com", code: TEAM_CODE } });
+      assert.equal(sharedAttempt.status, 401, "the shared code no longer works");
+
+      // Personal email domains are fine once someone is on the list.
+      const marcoClient = app.client();
+      const marcoIn = await marcoClient("/api/session", { method: "POST", body: { email: "Marco.Ambassador@gmail.com", code: marco.code.toUpperCase() } });
+      assert.equal(marcoIn.status, 200, JSON.stringify(marcoIn.data));
+      assert.equal(marcoIn.data.user.name, "Marco");
+
+      const janeClient = app.client();
+      assert.equal((await janeClient("/api/session", { method: "POST", body: { email: "jane@tropicaldistillery.com", code: jane.code } })).status, 200);
+      const placed = await janeClient("/api/orders", { method: "POST", body: ACCOUNT_ORDER });
+      assert.equal(placed.status, 201);
+      assert.equal(placed.data.order.requester.personId, jane.id);
+      assert.equal(placed.data.order.requester.name, "Jane Rep");
+
+      const report = (await admin("/api/admin/team")).data.people.find((p) => p.id === jane.id);
+      assert.equal(report.orders, 1);
+      assert.ok(report.lastSignInAt);
+
+      // A new code signs Jane out; Marco is unaffected.
+      const reset = await admin(`/api/admin/team/${jane.id}`, { method: "PATCH", body: { resetCode: true } });
+      assert.notEqual(reset.data.person.code, jane.code);
+      assert.equal((await janeClient("/api/catalog")).status, 401);
+      assert.equal((await marcoClient("/api/catalog")).status, 200);
+
+      // Removing Marco signs him out.
+      assert.equal((await admin(`/api/admin/team/${marco.id}`, { method: "DELETE" })).status, 200);
+      assert.equal((await marcoClient("/api/catalog")).status, 401);
+
+      const csv = await admin("/api/admin/team.csv");
+      assert.match(csv.data, /^name,email,personal_code,sign_in_link/);
+      assert.match(csv.data, new RegExp(reset.data.person.code));
+      assert.equal((await janeClient("/api/admin/team")).status, 401, "team sessions can't read the list");
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

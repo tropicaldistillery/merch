@@ -1,6 +1,6 @@
 // Both stores must serialize mutations and never apply a failed one. The
 // Postgres half runs only when MERCH_TEST_DATABASE_URL points at a disposable
-// database and `pg` is installed; it drops its table when it finishes.
+// database and `pg` is installed; it drops its tables when it finishes.
 
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -38,12 +38,24 @@ async function exercise(store) {
   assert.equal((await store.read()).orders.length, 0);
 }
 
+async function exerciseImages(store) {
+  const id = "0123456789abcdef0123456789abcdef";
+  const bytes = Buffer.from("not really a photo, but bytes are bytes");
+  await store.putImage({ id, ext: "webp", bytes });
+  // Same content, same id: storing it again is harmless.
+  await store.putImage({ id, ext: "webp", bytes });
+  assert.deepEqual(Buffer.from(await store.getImage(id, "webp")), bytes);
+  assert.equal(await store.getImage(id, "png"), null);
+  assert.equal(await store.getImage("ffffffffffffffffffffffffffffffff", "webp"), null);
+}
+
 describe("file store", () => {
   it("serializes and isolates mutations", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-store-"));
     try {
       const store = await createFileStore({ dir, initialState });
       await exercise(store);
+      await exerciseImages(store);
       await store.close();
 
       const reopened = await createFileStore({ dir, initialState });
@@ -79,7 +91,7 @@ describe("postgres store", { skip: !databaseUrl || !hasDriver ? "set MERCH_TEST_
     const { default: pg } = await import("pg");
     const reset = new pg.Client({ connectionString: databaseUrl });
     await reset.connect();
-    await reset.query("drop table if exists tropical_merch_store");
+    await reset.query("drop table if exists tropical_merch_store, tropical_merch_images");
     await reset.end();
 
     const { createPostgresStore } = await import("../src/store/postgres-store.mjs");
@@ -88,6 +100,7 @@ describe("postgres store", { skip: !databaseUrl || !hasDriver ? "set MERCH_TEST_
     const b = await createPostgresStore({ connectionString: databaseUrl, initialState });
     try {
       await exercise(a);
+      await exerciseImages(a);
       await Promise.all(
         Array.from({ length: 20 }, (_, i) =>
           (i % 2 ? a : b).mutate((db) => {
@@ -96,12 +109,13 @@ describe("postgres store", { skip: !databaseUrl || !hasDriver ? "set MERCH_TEST_
         )
       );
       assert.equal((await b.read()).meta.nextOrderNumber, 1071);
+      assert.ok(await b.getImage("0123456789abcdef0123456789abcdef", "webp"));
     } finally {
       await a.close();
       await b.close();
       const cleanup = new pg.Client({ connectionString: databaseUrl });
       await cleanup.connect();
-      await cleanup.query("drop table if exists tropical_merch_store");
+      await cleanup.query("drop table if exists tropical_merch_store, tropical_merch_images");
       await cleanup.end();
     }
   });

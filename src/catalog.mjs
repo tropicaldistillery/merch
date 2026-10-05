@@ -5,6 +5,7 @@
 // is created for the first time; after that the catalog lives in the store.
 
 import { BRANDS, CATEGORIES, TONES } from "../public/assets/shared.js";
+import { IMAGE_PATH_RE } from "./images.mjs";
 import { ValidationError, cleanText } from "./validation.mjs";
 
 export const ART_KINDS = [
@@ -254,11 +255,13 @@ function parseStock(value) {
   return Number.isInteger(n) && n >= 0 && n <= 100000 ? n : NaN;
 }
 
-// Images are either one of our own files or an https URL. Anything else (a
-// javascript: or data: URL, a protocol-relative path) is refused.
+// Images are an uploaded photo, one of our own files, or (from before
+// uploads) an https URL. Anything else (a javascript: or data: URL, a
+// protocol-relative path) is refused.
 function cleanImage(value) {
   const text = cleanText(value, 500);
   if (!text) return "";
+  if (IMAGE_PATH_RE.test(text)) return text;
   if (/^\/assets\/[A-Za-z0-9._/-]+$/.test(text) && !text.includes("..")) return text;
   try {
     const url = new URL(text);

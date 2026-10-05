@@ -182,7 +182,13 @@ function productCard(item) {
       el(
         "div",
         { class: "product-meta" },
-        el("span", { class: "price" }, formatMoney(item.costCents), el("small", { text: item.unit === "Each" ? " each" : ` / ${item.unit.toLowerCase()}` })),
+        el(
+          "span",
+          { class: "price" },
+          formatMoney(item.costCents),
+          el("small", { text: item.unit === "Each" ? " each" : ` / ${item.unit.toLowerCase()}` }),
+          el("span", { class: "free", text: "Free to you" })
+        ),
         el("span", { class: `stock ${availability.tone}`.trim(), text: availability.label })
       ),
       el("div", { class: "product-actions" }, select, stepper.element, addButton),

@@ -51,6 +51,25 @@ export async function createFileStore({ dir, initialState }) {
       return run;
     },
 
+    // Photos live beside the store as files named by their content hash.
+    async putImage({ id, ext, bytes }) {
+      const images = path.join(dir, "images");
+      await fs.mkdir(images, { recursive: true });
+      const target = path.join(images, `${id}.${ext}`);
+      const tmp = `${target}.${process.pid}.tmp`;
+      await fs.writeFile(tmp, bytes, { mode: 0o600 });
+      await fs.rename(tmp, target);
+    },
+
+    async getImage(id, ext) {
+      try {
+        return await fs.readFile(path.join(dir, "images", `${id}.${ext}`));
+      } catch (error) {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      }
+    },
+
     async close() {
       await queue;
     },
