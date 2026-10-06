@@ -22,23 +22,38 @@ const ALL_COLORS = ["White", "Navy", "Burgundy", "Black", "Royal", "Red", "Fores
 const SEED_COLORS = {
   "td-team-polo": ALL_COLORS,
   "jfh-polo": ALL_COLORS,
+  "jfh-good-spirits-tee": ALL_COLORS,
 };
 
-// Product photos for the starter items, in public/assets/merch: one photo
-// named after the item, or one per colour (td-team-polo-navy.jpg), main
-// photo first. Bump the version when photos are added so existing stores
-// pick them up once. The polos' main photo is Royal, the colour they were
-// actually photographed in.
-export const SEED_PHOTOS_VERSION = 1;
-const SEED_PHOTO_IDS = [];
-const SEED_MAIN_COLOR = { "td-team-polo": "Royal", "jfh-polo": "Royal" };
-export const SEED_PHOTOS = Object.fromEntries([
-  ...SEED_PHOTO_IDS.map((id) => [id, [{ url: `/assets/merch/${id}.jpg`, color: "" }]]),
-  ...Object.entries(SEED_MAIN_COLOR).map(([id, main]) => [
-    id,
-    [main, ...SEED_COLORS[id].filter((c) => c !== main)].map((color) => ({ url: `/assets/merch/${id}-${slug(color)}.jpg`, color })),
-  ]),
-]);
+// Product photos for the starter items, in public/assets/merch, main photo
+// first: one named after the item, numbered ones for a gallery, or one per
+// colour (td-team-polo-navy.jpg). Bump the version when photos are added so
+// existing stores pick them up once. The polos' main photo is Royal, the
+// colour they were actually photographed in.
+export const SEED_PHOTOS_VERSION = 2;
+const photo = (file, color = "") => ({ url: `/assets/merch/${file}.jpg`, color });
+const one = (id) => [photo(id)];
+const numbered = (id, n) => Array.from({ length: n }, (_, i) => photo(`${id}-${i + 1}`));
+const perColor = (id, main) => [main, ...SEED_COLORS[id].filter((c) => c !== main)].map((c) => photo(`${id}-${slug(c)}`, c));
+export const SEED_PHOTOS = {
+  "jfh-logo-tee": one("jfh-logo-tee"),
+  "td-team-polo": perColor("td-team-polo", "Royal"),
+  "jfh-polo": perColor("jfh-polo", "Royal"),
+  "jfh-espresso-tee": numbered("jfh-espresso-tee", 5),
+  "jfh-espresso-tank": one("jfh-espresso-tank"),
+  // the model in black first, then the tee in every colour
+  "jfh-good-spirits-tee": [photo("jfh-good-spirits-tee-model", "Black"), ...perColor("jfh-good-spirits-tee", "Black")],
+  "jfh-cap": one("jfh-cap"),
+  "twinp-trucker": one("twinp-trucker"),
+  "jfh-bar-mat": one("jfh-bar-mat"),
+  "jfh-spill-mat": one("jfh-spill-mat"),
+  "jfh-lychee-pin": one("jfh-lychee-pin"),
+  "jfh-koozies": one("jfh-koozies"),
+  "jfh-espresso-coasters": one("jfh-espresso-coasters"),
+  "jfh-espresso-stickers": one("jfh-espresso-stickers"),
+  "jfh-throw-pillow": numbered("jfh-throw-pillow", 2),
+  "jfh-key-lime-colada-talkers": one("jfh-key-lime-colada-talkers"),
+};
 
 function sized(stockBySize) {
   return SIZES.map((size, i) => ({ id: size.toLowerCase(), label: size, stock: stockBySize[i] }));
@@ -67,6 +82,24 @@ export const SEED_CATALOG = [
     brand: "jf-hadens", category: "Apparel", tone: "mango", art: "polo", unit: "Each",
     description: "Moisture-wicking polo with the J.F. Haden's logo embroidered on the chest. Sharp enough for account visits, tastings and trade shows.",
     costCents: 2600, maxPerOrder: 3, variants: sized([4, 8, 8, 6, 4, 2]),
+  },
+  {
+    id: "jfh-espresso-tee", sku: "TD-APP-007", name: "In My Espresso Martini Era Tee",
+    brand: "jf-hadens", category: "Apparel", tone: "espresso", art: "tee", unit: "Each",
+    description: "Soft white tee with the In My Espresso Martini Era badge on the chest or the big print, and the J.F. Haden's logo. Made for Espresso Liqueur nights.",
+    costCents: 1400, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
+  },
+  {
+    id: "jfh-espresso-tank", sku: "TD-APP-008", name: "In My Espresso Martini Era Tank",
+    brand: "jf-hadens", category: "Apparel", tone: "espresso", art: "tee", unit: "Each",
+    description: "White racerback tank with the In My Espresso Martini Era print and the J.F. Haden's logo. Great for summer events.",
+    costCents: 1300, maxPerOrder: 6, variants: sized([6, 10, 10, 6, 3, 1]),
+  },
+  {
+    id: "jfh-good-spirits-tee", sku: "TD-APP-009", name: "Good Spirits Only Tee",
+    brand: "jf-hadens", category: "Apparel", tone: "mango", art: "tee", unit: "Each",
+    description: "Retro striped GOOD SPIRITS ONLY in orange, sky blue and pink, with the J.F. Haden's logo.",
+    costCents: 1400, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
   },
   {
     id: "jfh-cap", sku: "TD-APP-003", name: "J.F. Haden's Embroidered Cap",
@@ -210,10 +243,52 @@ export const SEED_CATALOG = [
     description: "3 in die-cut vinyl stickers.",
     costCents: 2500, maxPerOrder: 4, variants: single(20),
   },
+  {
+    id: "jfh-espresso-stickers", sku: "TD-GIV-004", name: "Espresso Martini Era Stickers",
+    brand: "jf-hadens", category: "Giveaways", tone: "espresso", art: "sticker", unit: "Pack of 50",
+    description: "Glossy vinyl stickers: the 3 in round In My Espresso Martini Era badge and the 4 in die-cut print, mixed.",
+    costCents: 2200, maxPerOrder: 4, variants: single(20),
+  },
+  {
+    id: "jfh-lychee-pin", sku: "TD-GIV-001", name: "Lychee Liqueur Bottle Enamel Pin",
+    brand: "jf-hadens", category: "Giveaways", tone: "lychee", art: "bottle", unit: "Each",
+    description: "Hard-enamel pin of the J.F. Haden's Lychee bottle with a gold-tone finish and rubber clutch. Ordered in tens.",
+    costCents: 350, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
+  },
+  {
+    id: "jfh-koozies", sku: "TD-GIV-002", name: "Good Spirits Only Can Koozies",
+    brand: "jf-hadens", category: "Giveaways", tone: "mango", art: "tumbler", unit: "Pack of 25",
+    description: "Collapsible neoprene can koozies, black and white mixed, printed with Good Spirits Only and the J.F. Haden's logo.",
+    costCents: 3000, maxPerOrder: 4, variants: single(12),
+  },
+  {
+    id: "jfh-espresso-coasters", sku: "TD-GIV-003", name: "Espresso Martini Era Coasters",
+    brand: "jf-hadens", category: "Giveaways", tone: "espresso", art: "cards", unit: "Pack of 100",
+    description: "4 in round pulpboard coasters, In My Espresso Martini Era on one design and the J.F. Haden's logo on the other. A bar favourite.",
+    costCents: 2800, maxPerOrder: 4, variants: single(15),
+  },
+  {
+    id: "jfh-throw-pillow", sku: "TD-VIP-001", name: "J.F. Haden's Throw Pillow",
+    brand: "jf-hadens", category: "VIP", tone: "mango", art: "table-throw", unit: "Each",
+    description: "18 in square cream and orange throw pillow with the J.F. Haden's logo, Miami in a Bottle on the back. A thank-you for top accounts.",
+    costCents: 3200, maxPerOrder: 2, variants: single(10),
+  },
+  {
+    id: "jfh-key-lime-colada-talkers", sku: "TD-POS-007", name: "Key Lime Pie Colada Shelf Talkers",
+    brand: "jf-hadens", category: "Print", tone: "lime", art: "shelf-talker", unit: "Pack of 25",
+    description: "Clip-on shelf talkers with the Key Lime Pie Colada recipe and a QR code to more cocktails.",
+    costCents: 1500, maxPerOrder: 10, variants: single(30),
+  },
+  {
+    id: "jfh-spill-mat", sku: "TD-POS-008", name: "J.F. Haden's Square Spill Mat",
+    brand: "jf-hadens", category: "Bar Tools", tone: "mango", art: "bar-mat", unit: "Each",
+    description: "12 x 12 in rubber spill mat for the service well, with the J.F. Haden's logo.",
+    costCents: 1800, maxPerOrder: 4, variants: single(20),
+  },
 ].map((item) => ({
   ...item,
-  minPerOrder: Math.min(suggestedMinPerOrder(item.costCents, item.category), item.maxPerOrder),
-  orderIncrement: 1,
+  minPerOrder: item.minPerOrder ?? Math.min(suggestedMinPerOrder(item.costCents, item.category), item.maxPerOrder),
+  orderIncrement: item.orderIncrement ?? 1,
   image: SEED_PHOTOS[item.id]?.[0].url ?? "",
   images: structuredClone(SEED_PHOTOS[item.id] ?? []),
   colors: SEED_COLORS[item.id] ?? [],
@@ -297,15 +372,25 @@ export function applySeedPhotos(db) {
 
 /**
  * Starter items put into existing stores once, with their colours and
- * photos: the Team Polo (back in stores that had deleted it) and the
- * J.F. Haden's Polo (added later). Each goes after the item named, when
- * that's still there. A store that has the item, or its own item of the same
- * name, is left alone; the SKU is remade if another item has taken it; and
- * deleting it afterwards sticks, since each is only tried once.
+ * photos: the Team Polo (back in stores that had deleted it), the J.F.
+ * Haden's Polo, and the second merch drop. Each goes after the item named,
+ * when that's still there. A store that has the item, or its own item of the
+ * same name, is left alone; the SKU is remade if another item has taken it;
+ * and deleting one afterwards sticks, since each group is only tried once.
  */
 const ADDED_ITEMS = [
   { flag: "teamPolo", id: "td-team-polo", after: "jfh-logo-tee" },
   { flag: "jfhPolo", id: "jfh-polo", after: "td-team-polo" },
+  { flag: "merchDrop2", id: "jfh-espresso-tee", after: "jfh-polo" },
+  { flag: "merchDrop2", id: "jfh-espresso-tank", after: "jfh-espresso-tee" },
+  { flag: "merchDrop2", id: "jfh-good-spirits-tee", after: "jfh-espresso-tank" },
+  { flag: "merchDrop2", id: "jfh-espresso-stickers", after: "jfh-stickers" },
+  { flag: "merchDrop2", id: "jfh-lychee-pin", after: "jfh-espresso-stickers" },
+  { flag: "merchDrop2", id: "jfh-koozies", after: "jfh-lychee-pin" },
+  { flag: "merchDrop2", id: "jfh-espresso-coasters", after: "jfh-koozies" },
+  { flag: "merchDrop2", id: "jfh-throw-pillow", after: "twinp-glencairn-6" },
+  { flag: "merchDrop2", id: "jfh-key-lime-colada-talkers", after: "jfh-key-lime-table-tents" },
+  { flag: "merchDrop2", id: "jfh-spill-mat", after: "jfh-bar-mat" },
 ];
 
 export function needsAddedItems(db) {
@@ -314,10 +399,10 @@ export function needsAddedItems(db) {
 
 /** Returns the items added. */
 export function applyAddedItems(db) {
+  const pending = new Set(ADDED_ITEMS.filter(({ flag }) => !db.meta[flag]).map(({ flag }) => flag));
   const added = [];
   for (const { flag, id, after } of ADDED_ITEMS) {
-    if (db.meta[flag]) continue;
-    db.meta[flag] = 1;
+    if (!pending.has(flag)) continue;
     const seed = SEED_CATALOG.find((i) => i.id === id);
     const name = seed.name.toLowerCase();
     if (db.catalog.some((i) => i.id === seed.id || String(i.name).trim().toLowerCase() === name)) continue;
@@ -328,6 +413,7 @@ export function applyAddedItems(db) {
     db.catalog.splice(at >= 0 ? at + 1 : db.catalog.length, 0, item);
     added.push(item);
   }
+  for (const flag of pending) db.meta[flag] = 1;
   return added;
 }
 

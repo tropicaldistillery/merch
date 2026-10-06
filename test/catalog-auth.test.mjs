@@ -192,8 +192,9 @@ describe("per-order minimums", () => {
     catalog.push({ ...structuredClone(catalog[0]), id: "custom-item" });
     const db = { catalog };
     assert.equal(needsMinimums(db), true);
-    assert.equal(applyMinimums(db), 1);
+    assert.equal(applyMinimums(db), 2);
     assert.equal(db.catalog.find((i) => i.id === "jfh-jigger").minPerOrder, 3);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-lychee-pin").minPerOrder, 10);
     assert.equal(db.catalog.find((i) => i.id === "td-sample-cups").minPerOrder, 1);
     assert.equal(db.catalog.find((i) => i.id === "custom-item").minPerOrder, 1);
     assert.equal(needsMinimums(db), false);
@@ -308,7 +309,8 @@ describe("colors and photo galleries", () => {
     const catalog = structuredClone(SEED_CATALOG).map(({ colors, ...rest }) => rest);
     const db = { meta: {}, catalog };
     assert.equal(needsColors(db), true);
-    assert.equal(applyColors(db), 2);
+    assert.equal(applyColors(db), 3);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-good-spirits-tee").colors.length, 9);
     assert.equal(db.catalog.find((i) => i.id === "td-team-polo").colors.length, 9);
     assert.equal(db.catalog.find((i) => i.id === "jfh-polo").colors.length, 9);
     assert.deepEqual(db.catalog.find((i) => i.id === "jfh-cap").colors, []);
@@ -365,6 +367,26 @@ describe("starter items added to existing stores", () => {
   it("is already in place in a new store", () => {
     const db = initialState();
     for (const id of POLOS) assert.ok(db.catalog.some((i) => i.id === id), id);
+  });
+
+  it("adds the second merch drop once, each piece next to its kind", () => {
+    const DROP = ["jfh-espresso-tee", "jfh-espresso-tank", "jfh-good-spirits-tee", "jfh-espresso-stickers", "jfh-lychee-pin", "jfh-koozies", "jfh-espresso-coasters", "jfh-throw-pillow", "jfh-key-lime-colada-talkers", "jfh-spill-mat"];
+    const db = { meta: { teamPolo: 1, jfhPolo: 1 }, catalog: structuredClone(SEED_CATALOG).filter((i) => !DROP.includes(i.id)) };
+    db.catalog.find((i) => i.id === "jfh-cap").name = "In My Espresso Martini Era Tank";   // the admin's own item of that name
+    assert.equal(needsAddedItems(db), true);
+    const added = applyAddedItems(db).map((i) => i.id);
+    assert.deepEqual(added, DROP.filter((id) => id !== "jfh-espresso-tank"));
+    const ids = db.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("jfh-polo") + 1], "jfh-espresso-tee");
+    assert.equal(ids[ids.indexOf("jfh-bar-mat") + 1], "jfh-spill-mat");
+    assert.equal(ids[ids.indexOf("jfh-stickers") + 1], "jfh-espresso-stickers");
+    assert.equal(db.meta.merchDrop2, 1);
+    assert.equal(needsAddedItems(db), false);
+    const pin = db.catalog.find((i) => i.id === "jfh-lychee-pin");
+    assert.deepEqual([pin.minPerOrder, pin.maxPerOrder, pin.orderIncrement], [10, 50, 10]);
+    const gso = db.catalog.find((i) => i.id === "jfh-good-spirits-tee");
+    assert.equal(imageFor(gso, "Black"), "/assets/merch/jfh-good-spirits-tee-model.jpg");
+    assert.equal(imageFor(gso, "Red"), "/assets/merch/jfh-good-spirits-tee-red.jpg");
   });
 });
 
