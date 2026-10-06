@@ -9,20 +9,20 @@ import {
   SEED_PHOTOS,
   SEED_PHOTOS_VERSION,
   SEED_TEXT_FIXES,
+  applyAddedItems,
   applyCategoryMoves,
   applyColors,
   applyMinimums,
   applyPoloColors,
   applySeedPhotos,
   applySeedTextFixes,
-  applyTeamPolo,
+  needsAddedItems,
   needsCategoryMoves,
   needsColors,
   needsMinimums,
   needsPoloColors,
   needsSeedPhotos,
   needsSeedTextFixes,
-  needsTeamPolo,
   normalizeItem,
 } from "../src/catalog.mjs";
 import { CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, generateSku, imageFor, itemImages, quantityRuleText } from "../public/assets/shared.js";
@@ -308,51 +308,63 @@ describe("colors and photo galleries", () => {
     const catalog = structuredClone(SEED_CATALOG).map(({ colors, ...rest }) => rest);
     const db = { meta: {}, catalog };
     assert.equal(needsColors(db), true);
-    assert.equal(applyColors(db), 1);
+    assert.equal(applyColors(db), 2);
     assert.equal(db.catalog.find((i) => i.id === "td-team-polo").colors.length, 9);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-polo").colors.length, 9);
     assert.deepEqual(db.catalog.find((i) => i.id === "jfh-cap").colors, []);
     assert.equal(needsColors(db), false);
   });
 });
 
-describe("bringing back the team polo", () => {
-  const without = () => ({ meta: {}, catalog: structuredClone(SEED_CATALOG).filter((i) => i.id !== "td-team-polo") });
+describe("starter items added to existing stores", () => {
+  const POLOS = ["td-team-polo", "jfh-polo"];
+  const without = (ids = POLOS) => ({ meta: {}, catalog: structuredClone(SEED_CATALOG).filter((i) => !ids.includes(i.id)) });
 
-  it("adds it once, with its colors and photos, after the logo tee", () => {
+  it("adds both polos once, with their colors and photos, in their usual places", () => {
     const db = without();
-    assert.equal(needsTeamPolo(db), true);
-    const polo = applyTeamPolo(db);
-    assert.equal(polo.id, "td-team-polo");
-    assert.equal(polo.colors.length, 9);
-    assert.equal(polo.images.length, 9);
-    assert.equal(db.catalog[db.catalog.findIndex((i) => i.id === "jfh-logo-tee") + 1].id, "td-team-polo");
-    assert.equal(needsTeamPolo(db), false);
-    db.catalog = db.catalog.filter((i) => i.id !== "td-team-polo");
-    assert.equal(needsTeamPolo(db), false, "deleting it again sticks");
+    assert.equal(needsAddedItems(db), true);
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), POLOS);
+    const ids = db.catalog.map((i) => i.id);
+    assert.deepEqual(ids.slice(ids.indexOf("jfh-logo-tee"), ids.indexOf("jfh-logo-tee") + 3), ["jfh-logo-tee", ...POLOS]);
+    for (const id of POLOS) {
+      const polo = db.catalog.find((i) => i.id === id);
+      assert.equal(polo.colors.length, 9);
+      assert.equal(polo.images.length, 9);
+      assert.equal(polo.image, `/assets/merch/${id}-royal.jpg`);
+    }
+    assert.equal(needsAddedItems(db), false);
+    db.catalog = db.catalog.filter((i) => !POLOS.includes(i.id));
+    assert.equal(needsAddedItems(db), false, "deleting them again sticks");
   });
 
-  it("leaves a store that has it, or its own polo of that name, alone", () => {
+  it("adds only the J.F. Haden's Polo to a store that already brought back the Team Polo", () => {
+    const db = without(["jfh-polo"]);
+    db.meta.teamPolo = 1;
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["jfh-polo"]);
+  });
+
+  it("leaves a store that has them, or its own polo of that name, alone", () => {
     const fresh = { meta: {}, catalog: structuredClone(SEED_CATALOG) };
-    assert.equal(applyTeamPolo(fresh), null);
-    assert.equal(fresh.catalog.filter((i) => i.id === "td-team-polo").length, 1);
+    assert.deepEqual(applyAddedItems(fresh), []);
+    assert.equal(fresh.catalog.length, SEED_CATALOG.length);
 
     const own = without();
-    own.catalog.push({ ...structuredClone(SEED_CATALOG[0]), id: "app-my-polo", sku: "APP-MY-POLO", name: " tropical distillery team polo " });
-    assert.equal(applyTeamPolo(own), null);
+    own.catalog.push({ ...structuredClone(SEED_CATALOG[0]), id: "app-my-polo", sku: "APP-MY-POLO", name: " j.f. haden's polo " });
+    assert.deepEqual(applyAddedItems(own).map((i) => i.id), ["td-team-polo"]);
   });
 
   it("makes a new SKU if its old one has been taken", () => {
     const db = without();
-    db.catalog.find((i) => i.id === "jfh-cap").sku = "TD-APP-002";
-    const polo = applyTeamPolo(db);
-    assert.notEqual(polo.sku, "TD-APP-002");
-    assert.match(polo.sku, /^APP-/);
+    db.catalog.find((i) => i.id === "jfh-cap").sku = "TD-APP-006";
+    const jfh = applyAddedItems(db).find((i) => i.id === "jfh-polo");
+    assert.notEqual(jfh.sku, "TD-APP-006");
+    assert.match(jfh.sku, /^APP-/);
     assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
   });
 
   it("is already in place in a new store", () => {
     const db = initialState();
-    assert.ok(db.catalog.some((i) => i.id === "td-team-polo"));
+    for (const id of POLOS) assert.ok(db.catalog.some((i) => i.id === id), id);
   });
 });
 

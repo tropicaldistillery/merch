@@ -18,18 +18,20 @@ export const ART_KINDS = [
 const SIZES = ["S", "M", "L", "XL", "2XL", "3XL"];
 
 // Starter items offered in colours.
+const ALL_COLORS = ["White", "Navy", "Burgundy", "Black", "Royal", "Red", "Forest Green", "Grey", "Carolina Blue"];
 const SEED_COLORS = {
-  "td-team-polo": ["White", "Navy", "Burgundy", "Black", "Royal", "Red", "Forest Green", "Grey", "Carolina Blue"],
+  "td-team-polo": ALL_COLORS,
+  "jfh-polo": ALL_COLORS,
 };
 
 // Product photos for the starter items, in public/assets/merch: one photo
 // named after the item, or one per colour (td-team-polo-navy.jpg), main
 // photo first. Bump the version when photos are added so existing stores
-// pick them up once. The polo's main photo is Royal, the colour it was
+// pick them up once. The polos' main photo is Royal, the colour they were
 // actually photographed in.
 export const SEED_PHOTOS_VERSION = 1;
 const SEED_PHOTO_IDS = [];
-const SEED_MAIN_COLOR = { "td-team-polo": "Royal" };
+const SEED_MAIN_COLOR = { "td-team-polo": "Royal", "jfh-polo": "Royal" };
 export const SEED_PHOTOS = Object.fromEntries([
   ...SEED_PHOTO_IDS.map((id) => [id, [{ url: `/assets/merch/${id}.jpg`, color: "" }]]),
   ...Object.entries(SEED_MAIN_COLOR).map(([id, main]) => [
@@ -58,6 +60,12 @@ export const SEED_CATALOG = [
     id: "td-team-polo", sku: "TD-APP-002", name: "Tropical Distillery Team Polo",
     brand: "tropical-distillery", category: "Apparel", tone: "palm", art: "polo", unit: "Each",
     description: "Moisture-wicking polo with the embroidered Tropical Distillery logo. The standard uniform for account visits and trade shows.",
+    costCents: 2600, maxPerOrder: 3, variants: sized([4, 8, 8, 6, 4, 2]),
+  },
+  {
+    id: "jfh-polo", sku: "TD-APP-006", name: "J.F. Haden's Polo",
+    brand: "jf-hadens", category: "Apparel", tone: "mango", art: "polo", unit: "Each",
+    description: "Moisture-wicking polo with the J.F. Haden's logo embroidered on the chest. Sharp enough for account visits, tastings and trade shows.",
     costCents: 2600, maxPerOrder: 3, variants: sized([4, 8, 8, 6, 4, 2]),
   },
   {
@@ -288,27 +296,39 @@ export function applySeedPhotos(db) {
 }
 
 /**
- * Put the starter Team Polo, with its colours and photos, back in a store
- * that no longer has it, once. A store with its own item of the same name is
- * left alone, and the SKU is remade if another item has taken it. Returns
- * the item added, or null.
+ * Starter items put into existing stores once, with their colours and
+ * photos: the Team Polo (back in stores that had deleted it) and the
+ * J.F. Haden's Polo (added later). Each goes after the item named, when
+ * that's still there. A store that has the item, or its own item of the same
+ * name, is left alone; the SKU is remade if another item has taken it; and
+ * deleting it afterwards sticks, since each is only tried once.
  */
-export function needsTeamPolo(db) {
-  return !db.meta?.teamPolo;
+const ADDED_ITEMS = [
+  { flag: "teamPolo", id: "td-team-polo", after: "jfh-logo-tee" },
+  { flag: "jfhPolo", id: "jfh-polo", after: "td-team-polo" },
+];
+
+export function needsAddedItems(db) {
+  return ADDED_ITEMS.some(({ flag }) => !db.meta?.[flag]);
 }
 
-export function applyTeamPolo(db) {
-  db.meta.teamPolo = 1;
-  const seed = SEED_CATALOG.find((i) => i.id === "td-team-polo");
-  const name = seed.name.toLowerCase();
-  if (db.catalog.some((i) => i.id === seed.id || String(i.name).trim().toLowerCase() === name)) return null;
-  const polo = structuredClone(seed);
-  const taken = db.catalog.map((i) => i.sku);
-  if (taken.includes(polo.sku)) polo.sku = generateSku(polo.name, polo.category, taken);
-  // Back in its usual place, after the logo tee, when that's still there.
-  const after = db.catalog.findIndex((i) => i.id === "jfh-logo-tee");
-  db.catalog.splice(after >= 0 ? after + 1 : db.catalog.length, 0, polo);
-  return polo;
+/** Returns the items added. */
+export function applyAddedItems(db) {
+  const added = [];
+  for (const { flag, id, after } of ADDED_ITEMS) {
+    if (db.meta[flag]) continue;
+    db.meta[flag] = 1;
+    const seed = SEED_CATALOG.find((i) => i.id === id);
+    const name = seed.name.toLowerCase();
+    if (db.catalog.some((i) => i.id === seed.id || String(i.name).trim().toLowerCase() === name)) continue;
+    const item = structuredClone(seed);
+    const taken = db.catalog.map((i) => i.sku);
+    if (taken.includes(item.sku)) item.sku = generateSku(item.name, item.category, taken);
+    const at = db.catalog.findIndex((i) => i.id === after);
+    db.catalog.splice(at >= 0 ? at + 1 : db.catalog.length, 0, item);
+    added.push(item);
+  }
+  return added;
 }
 
 /**
