@@ -23,6 +23,7 @@ const SEED_COLORS = {
   "td-team-polo": ALL_COLORS,
   "jfh-polo": ALL_COLORS,
   "jfh-good-spirits-tee": ["White", "Navy", "Burgundy", "Black", "Forest Green", "Grey", "Carolina Blue"],
+  "jfh-martini-tee": ["White", "Black", "Navy", "Grey", "Carolina Blue"],
 };
 
 // Product photos for the starter items, in public/assets/merch, main photo
@@ -43,6 +44,8 @@ export const SEED_PHOTOS = {
   "jfh-espresso-tank": one("jfh-espresso-tank"),
   // printed on the back: black first, then every colour
   "jfh-good-spirits-tee": perColor("jfh-good-spirits-tee", "Black"),
+  // on the models (in white) first, then every colour
+  "jfh-martini-tee": [photo("jfh-martini-tee-woman", "White"), photo("jfh-martini-tee-man", "White"), ...perColor("jfh-martini-tee", "White")],
   "jfh-cap": one("jfh-cap"),
   "twinp-trucker": one("twinp-trucker"),
   "jfh-bar-mat": one("jfh-bar-mat"),
@@ -99,6 +102,12 @@ export const SEED_CATALOG = [
     id: "jfh-good-spirits-tee", sku: "TD-APP-009", name: "Good Spirits Only Tee",
     brand: "jf-hadens", category: "Apparel", tone: "mango", art: "tee", unit: "Each",
     description: "Retro striped GOOD SPIRITS ONLY in orange, sky blue and pink, with the J.F. Haden's logo, printed on the back.",
+    costCents: 1400, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
+  },
+  {
+    id: "jfh-martini-tee", sku: "TD-APP-010", name: "J.F. Haden's Martini Glass Tee",
+    brand: "jf-hadens", category: "Apparel", tone: "mango", art: "tee", unit: "Each",
+    description: "A hand-drawn martini glass made of all six J.F. Haden's flavors (mango, espresso, key lime, citrus, lychee and orange) with the J.F. Haden's logo, printed on the front.",
     costCents: 1400, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
   },
   {
@@ -408,6 +417,7 @@ const ADDED_ITEMS = [
   { flag: "merchDrop2", id: "jfh-throw-pillow", after: "twinp-glencairn-6" },
   { flag: "merchDrop2", id: "jfh-key-lime-colada-talkers", after: "jfh-key-lime-table-tents" },
   { flag: "merchDrop2", id: "jfh-spill-mat", after: "jfh-bar-mat" },
+  { flag: "martiniTee", id: "jfh-martini-tee", after: "jfh-good-spirits-tee" },
 ];
 
 export function needsAddedItems(db) {

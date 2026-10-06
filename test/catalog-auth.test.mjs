@@ -309,7 +309,7 @@ describe("colors and photo galleries", () => {
     const catalog = structuredClone(SEED_CATALOG).map(({ colors, ...rest }) => rest);
     const db = { meta: {}, catalog };
     assert.equal(needsColors(db), true);
-    assert.equal(applyColors(db), 3);
+    assert.equal(applyColors(db), 4);
     assert.equal(db.catalog.find((i) => i.id === "jfh-good-spirits-tee").colors.length, 7);
     assert.equal(db.catalog.find((i) => i.id === "td-team-polo").colors.length, 9);
     assert.equal(db.catalog.find((i) => i.id === "jfh-polo").colors.length, 9);
@@ -388,6 +388,19 @@ describe("starter items added to existing stores", () => {
     assert.equal(imageFor(gso, "Black"), "/assets/merch/jfh-good-spirits-tee-black.jpg");
     assert.equal(imageFor(gso, "Navy"), "/assets/merch/jfh-good-spirits-tee-navy.jpg");
     assert.ok(!gso.colors.includes("Red") && !gso.colors.includes("Royal"));
+  });
+
+  it("adds the Martini Glass Tee once, after the Good Spirits Only Tee", () => {
+    const db = { meta: { teamPolo: 1, jfhPolo: 1, merchDrop2: 1 }, catalog: structuredClone(SEED_CATALOG).filter((i) => i.id !== "jfh-martini-tee") };
+    assert.equal(needsAddedItems(db), true);
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["jfh-martini-tee"]);
+    const ids = db.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("jfh-good-spirits-tee") + 1], "jfh-martini-tee");
+    const tee = db.catalog.find((i) => i.id === "jfh-martini-tee");
+    assert.deepEqual(tee.colors, ["White", "Black", "Navy", "Grey", "Carolina Blue"]);
+    assert.equal(tee.image, "/assets/merch/jfh-martini-tee-woman.jpg");
+    assert.equal(imageFor(tee, "Navy"), "/assets/merch/jfh-martini-tee-navy.jpg");
+    assert.equal(needsAddedItems(db), false);
   });
 
   it("moves an untouched Good Spirits Only Tee to the back print without Red and Royal, once", () => {

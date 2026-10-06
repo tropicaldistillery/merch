@@ -22,9 +22,9 @@ shares nothing with SipScale.
   order's value and "You pay $0.00". Small, cheap items can have a **minimum
   per order** (a jigger comes in threes), and the quantity picker starts there.
 - Pick a **color** for items that come in several (the Tropical Distillery
-  Team Polo, the J.F. Haden's Polo and the Good Spirits Only Tee come in
-  White, Navy, Burgundy, Black, Royal, Red, Forest Green, Grey and Carolina
-  Blue): the photo switches to that color, and one order can mix colors.
+  Team Polo and the J.F. Haden's Polo come in White, Navy, Burgundy, Black,
+  Royal, Red, Forest Green, Grey and Carolina Blue; the tees in fewer): the
+  photo switches to that color, and one order can mix colors.
   Arrows and dots page through an item's photos.
 - Use the **ROI calculator** in the cart: enter the cases the order should help
   sell and see the projected profit (at an average of $75 a case, set as
@@ -105,7 +105,7 @@ is one click.
 
 ## The starter catalog
 
-The store opens with 35 items across J.F. Haden's (Mango, Espresso and Key Lime
+The store opens with 36 items across J.F. Haden's (Mango, Espresso and Key Lime
 liqueurs), Twin P Whiskey and Tropical Distillery house branding. **Costs and
 stock levels are placeholders.** Set the real numbers in the admin console
 (Catalog & stock → Edit) before inviting the team, hide anything you don't
