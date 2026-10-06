@@ -74,11 +74,14 @@ export const SEED_PHOTOS = {
   "jfh-sunglasses-andy-black": one("jfh-sunglasses-andy-black"),
 };
 
-// Where an admin orders each starter item from, as far as the vendor proofs
-// say. Only admins see this; it is never part of what the store shows.
-export const SUPPLIER_FIELDS = { company: 120, contact: 120, email: 160, phone: 40, website: 300, itemNumber: 160, notes: 600 };
+// Where an admin orders each item from. Merch comes through Ten 10 Design
+// unless an item says otherwise, and any item can carry a link for ordering
+// it online instead. Only admins see this; it is never part of what the
+// store shows. The details for the starter items come from the vendor proofs.
+export const SUPPLIER_FIELDS = { company: 120, contact: 120, email: 160, phone: 40, link: 500, itemNumber: 160, notes: 600 };
+export const DEFAULT_SUPPLIER = "Ten 10 Design LLC";
 const emptySupplier = () => Object.fromEntries(Object.keys(SUPPLIER_FIELDS).map((k) => [k, ""]));
-const TEN10 = "Ten 10 Design LLC";
+const TEN10 = DEFAULT_SUPPLIER;
 const SEED_SUPPLIERS = {
   "jfh-tote-bag": { itemNumber: "337572 Full Color Sublimated Canvas Everyday Bag with Zipper Closure", notes: "Top zipper in white; base band PMS 4260 C; logo front and back." },
   "jfh-beach-towel": { company: TEN10, itemNumber: "BP1518SB sublimated towel, 28 × 56 in, white", notes: "Sales order 1282403; 50 ordered." },
@@ -411,7 +414,7 @@ export const SEED_CATALOG = [
   image: SEED_PHOTOS[item.id]?.[0].url ?? "",
   images: structuredClone(SEED_PHOTOS[item.id] ?? []),
   colors: SEED_COLORS[item.id] ?? [],
-  supplier: { ...emptySupplier(), ...SEED_SUPPLIERS[item.id] },
+  supplier: { ...emptySupplier(), company: DEFAULT_SUPPLIER, ...SEED_SUPPLIERS[item.id] },
   active: true,
 }));
 
@@ -609,6 +612,30 @@ export function applySeedSuppliers(db) {
     changed += 1;
   }
   db.meta.seedSuppliers = 1;
+  return changed;
+}
+
+/**
+ * Ten 10 Design as the supplier of every item that doesn't name one, once;
+ * and the first version's "website" field becomes the online order link.
+ */
+export function needsSupplierDefaults(db) {
+  return !db.meta?.supplierDefaults;
+}
+
+export function applySupplierDefaults(db) {
+  let changed = 0;
+  for (const item of db.catalog) {
+    const { website = "", ...rest } = item.supplier ?? {};
+    const supplier = { ...emptySupplier(), ...rest };
+    if (!supplier.link && website) supplier.link = website;
+    if (!supplier.company) {
+      supplier.company = DEFAULT_SUPPLIER;
+      changed += 1;
+    }
+    item.supplier = supplier;
+  }
+  db.meta.supplierDefaults = 1;
   return changed;
 }
 
@@ -867,17 +894,18 @@ export function normalizeItem(input, { catalog, existing = null }) {
   const supplier = emptySupplier();
   const rawSupplier = src.supplier && typeof src.supplier === "object" ? src.supplier : existing?.supplier ?? {};
   for (const [key, max] of Object.entries(SUPPLIER_FIELDS)) supplier[key] = cleanText(rawSupplier[key], max);
+  if (!supplier.link) supplier.link = cleanText(rawSupplier.website, SUPPLIER_FIELDS.link);   // older clients
   if (supplier.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supplier.email)) {
     errors.supplierEmail = "Enter an email address like name@company.com, or leave it blank.";
   }
-  if (supplier.website) {
-    const withScheme = /^https?:\/\//i.test(supplier.website) ? supplier.website : `https://${supplier.website}`;
+  if (supplier.link) {
+    const withScheme = /^https?:\/\//i.test(supplier.link) ? supplier.link : `https://${supplier.link}`;
     try {
       const url = new URL(withScheme);
       if (!url.hostname.includes(".")) throw new Error("no host");
-      supplier.website = url.href;
+      supplier.link = url.href;
     } catch {
-      errors.supplierWebsite = "Enter a web address like company.com, or leave it blank.";
+      errors.supplierLink = "Enter a web address like amazon.com/…, or leave it blank.";
     }
   }
 

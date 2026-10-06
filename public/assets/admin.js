@@ -801,16 +801,16 @@ function stockSummary(item) {
   );
 }
 
-/** "From Ten 10 Design LLC · #1602-14", for admins only. */
-function supplierText(item) {
+/** "From Ten 10 Design LLC · #1602-14 · Order online ↗", for admins only. */
+function supplierLine(item) {
   const s = item?.supplier ?? {};
   const who = s.company || s.contact;
-  if (!who && !s.itemNumber) return "";
-  return [who ? `From ${who}` : "", s.itemNumber].filter(Boolean).join(" · ");
-}
-function supplierLine(item) {
-  const text = supplierText(item);
-  return text ? el("div", { class: "cell-sub supplier-line", text }) : null;
+  const text = [who ? `From ${who}` : "", s.itemNumber].filter(Boolean).join(" · ");
+  const link = /^https?:\/\//i.test(s.link || "")
+    ? el("a", { href: s.link, target: "_blank", rel: "noopener noreferrer", text: "Order online ↗", "aria-label": `Order ${item.name} online (opens in a new tab)` })
+    : null;
+  if (!text && !link) return null;
+  return el("div", { class: "cell-sub supplier-line" }, text, text && link ? " · " : "", link);
 }
 
 function renderCatalog() {
@@ -1155,6 +1155,7 @@ function openItem(item) {
     name: "", sku: "", brand: "jf-hadens", category: "Apparel", unit: "Each", costCents: 0, minPerOrder: 1, maxPerOrder: 6, orderIncrement: 1,
     description: "", tone: "mango", art: "tee", image: "", images: [], colors: [], active: true,
     variants: [{ id: "default", label: "", stock: 0 }],
+    supplier: { company: "Ten 10 Design LLC" },
   };
   const hasOptions = draft.variants.length > 1 || Boolean(draft.variants[0]?.label);
 
@@ -1340,7 +1341,7 @@ function openItem(item) {
     contact: supplierInput("contact", { maxlength: "120", autocomplete: "off" }),
     email: supplierInput("email", { type: "email", maxlength: "160", autocomplete: "off" }),
     phone: supplierInput("phone", { type: "tel", maxlength: "40", autocomplete: "off" }),
-    website: supplierInput("website", { maxlength: "300", placeholder: "company.com" }),
+    link: supplierInput("link", { type: "url", maxlength: "500", placeholder: "https://…", autocomplete: "off" }),
     itemNumber: supplierInput("itemNumber", { maxlength: "160", placeholder: "Their item or style number" }),
     notes: el("textarea", { id: "item-supplier-notes", name: "supplierNotes", rows: "2", maxlength: "600", value: supplier.notes ?? "", placeholder: "PO numbers, imprint specs, lead times…" }),
   };
@@ -1356,8 +1357,8 @@ function openItem(item) {
       field("Contact", supplierFields.contact, { span: 3, optional: true }),
       field("Email", supplierFields.email, { span: 3, optional: true }),
       field("Phone", supplierFields.phone, { span: 3, optional: true }),
-      field("Website", supplierFields.website, { span: 3, optional: true }),
       field("Their item #", supplierFields.itemNumber, { span: 3, optional: true }),
+      field("Online order link", supplierFields.link, { span: 3, optional: true, hint: "If it can be bought online, the page to order it from." }),
       field("Notes", supplierFields.notes, { optional: true })
     )
   );

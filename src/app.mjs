@@ -28,6 +28,7 @@ import {
   applyPoloColors,
   applySeedPhotos,
   applySeedSuppliers,
+  applySupplierDefaults,
   applySeedTextFixes,
   needsAddedItems,
   needsCategoryMoves,
@@ -36,6 +37,7 @@ import {
   needsPoloColors,
   needsSeedPhotos,
   needsSeedSuppliers,
+  needsSupplierDefaults,
   needsSeedTextFixes,
   normalizeItem,
   publicItem,
@@ -236,6 +238,11 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   if (needsSeedSuppliers(initial)) {
     const changed = await store.mutate((db) => applySeedSuppliers(db));
     console.log(`[catalog] added where-to-order details to ${changed} starter item(s)`);
+    initial = await store.read();
+  }
+  if (needsSupplierDefaults(initial)) {
+    const changed = await store.mutate((db) => applySupplierDefaults(db));
+    console.log(`[catalog] set Ten 10 Design as the supplier of ${changed} item(s)`);
     initial = await store.read();
   }
   if (needsPoloColors(initial)) {

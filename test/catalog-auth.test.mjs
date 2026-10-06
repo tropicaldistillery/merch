@@ -16,6 +16,7 @@ import {
   applyPoloColors,
   applySeedPhotos,
   applySeedSuppliers,
+  applySupplierDefaults,
   applySeedTextFixes,
   needsAddedItems,
   needsCategoryMoves,
@@ -24,6 +25,7 @@ import {
   needsPoloColors,
   needsSeedPhotos,
   needsSeedSuppliers,
+  needsSupplierDefaults,
   needsSeedTextFixes,
   normalizeItem,
   publicItem,
@@ -102,9 +104,9 @@ describe("catalog items", () => {
   });
 
   it("keeps where-to-order details for admins only", () => {
-    const supplier = { company: "Ten 10 Design LLC", contact: "Sam", email: "sam@example.com", phone: "555-0100", website: "example.com/order", itemNumber: "1602-14", notes: "PO 1" };
+    const supplier = { company: "Ten 10 Design LLC", contact: "Sam", email: "sam@example.com", phone: "555-0100", link: "example.com/order", itemNumber: "1602-14", notes: "PO 1" };
     const item = normalizeItem({ ...VALID, supplier }, { catalog: SEED_CATALOG });
-    assert.deepEqual(item.supplier, { ...supplier, website: "https://example.com/order" });
+    assert.deepEqual(item.supplier, { ...supplier, link: "https://example.com/order" });
     assert.equal("supplier" in publicItem(item), false);
     // a client that doesn't send them leaves them as they were
     const edited = normalizeItem({ ...VALID, name: "Renamed" }, { catalog: SEED_CATALOG, existing: item });
@@ -113,10 +115,15 @@ describe("catalog items", () => {
     assert.equal(normalizeItem({ ...VALID, supplier: {} }, { catalog: SEED_CATALOG, existing: item }).supplier.company, "");
   });
 
-  it("refuses a bad supplier email or website", () => {
-    const errors = errorsOf(() => normalizeItem({ ...VALID, supplier: { email: "not an email", website: "nope" } }, { catalog: SEED_CATALOG }));
+  it("refuses a bad supplier email or online link", () => {
+    const errors = errorsOf(() => normalizeItem({ ...VALID, supplier: { email: "not an email", link: "nope" } }, { catalog: SEED_CATALOG }));
     assert.ok(errors.supplierEmail);
-    assert.ok(errors.supplierWebsite);
+    assert.ok(errors.supplierLink);
+    assert.ok(errorsOf(() => normalizeItem({ ...VALID, supplier: { link: "javascript:alert(1)" } }, { catalog: SEED_CATALOG })).supplierLink);
+  });
+
+  it("orders every starter item through Ten 10 Design unless it says otherwise", () => {
+    for (const item of SEED_CATALOG) assert.equal(item.supplier.company, "Ten 10 Design LLC", item.id);
   });
 
   it("refuses unlabelled or repeated options", () => {
@@ -488,6 +495,22 @@ describe("starter items added to existing stores", () => {
     assert.match(db.catalog.find((i) => i.id === "jfh-bluetooth-speaker").supplier.itemNumber, /7195-78/);
     assert.equal(db.catalog.find((i) => i.id === "jfh-logo-tee").supplier, undefined);
     assert.equal(needsSeedSuppliers(db), false);
+  });
+
+  it("makes Ten 10 Design the supplier of every item that names none, once, keeping any link", () => {
+    const db = { meta: {}, catalog: structuredClone(SEED_CATALOG).map(({ supplier, ...rest }) => rest) };
+    db.catalog.push({ ...structuredClone(db.catalog[0]), id: "own-item", sku: "OWN-1" });
+    db.catalog.find((i) => i.id === "jfh-wine-bag").supplier = { company: "Our own vendor" };
+    db.catalog.find((i) => i.id === "jfh-tote-bag").supplier = { company: "", website: "https://example.com/tote" };
+    assert.equal(needsSupplierDefaults(db), true);
+    assert.equal(applySupplierDefaults(db), db.catalog.length - 1);
+    for (const item of db.catalog) assert.ok(item.supplier.company, item.id);
+    assert.equal(db.catalog.find((i) => i.id === "own-item").supplier.company, "Ten 10 Design LLC");
+    assert.equal(db.catalog.find((i) => i.id === "jfh-wine-bag").supplier.company, "Our own vendor");
+    const tote = db.catalog.find((i) => i.id === "jfh-tote-bag").supplier;
+    assert.equal(tote.link, "https://example.com/tote");
+    assert.equal("website" in tote, false);
+    assert.equal(needsSupplierDefaults(db), false);
   });
 
   it("moves an untouched Good Spirits Only Tee to the back print without Red and Royal, once", () => {
