@@ -15,12 +15,14 @@ import {
   applyPoloColors,
   applySeedPhotos,
   applySeedTextFixes,
+  applyTeamPolo,
   needsCategoryMoves,
   needsColors,
   needsMinimums,
   needsPoloColors,
   needsSeedPhotos,
   needsSeedTextFixes,
+  needsTeamPolo,
   normalizeItem,
 } from "../src/catalog.mjs";
 import { CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, generateSku, imageFor, itemImages, quantityRuleText } from "../public/assets/shared.js";
@@ -313,6 +315,47 @@ describe("colors and photo galleries", () => {
   });
 });
 
+describe("bringing back the team polo", () => {
+  const without = () => ({ meta: {}, catalog: structuredClone(SEED_CATALOG).filter((i) => i.id !== "td-team-polo") });
+
+  it("adds it once, with its colors and photos, after the logo tee", () => {
+    const db = without();
+    assert.equal(needsTeamPolo(db), true);
+    const polo = applyTeamPolo(db);
+    assert.equal(polo.id, "td-team-polo");
+    assert.equal(polo.colors.length, 9);
+    assert.equal(polo.images.length, 9);
+    assert.equal(db.catalog[db.catalog.findIndex((i) => i.id === "jfh-logo-tee") + 1].id, "td-team-polo");
+    assert.equal(needsTeamPolo(db), false);
+    db.catalog = db.catalog.filter((i) => i.id !== "td-team-polo");
+    assert.equal(needsTeamPolo(db), false, "deleting it again sticks");
+  });
+
+  it("leaves a store that has it, or its own polo of that name, alone", () => {
+    const fresh = { meta: {}, catalog: structuredClone(SEED_CATALOG) };
+    assert.equal(applyTeamPolo(fresh), null);
+    assert.equal(fresh.catalog.filter((i) => i.id === "td-team-polo").length, 1);
+
+    const own = without();
+    own.catalog.push({ ...structuredClone(SEED_CATALOG[0]), id: "app-my-polo", sku: "APP-MY-POLO", name: " tropical distillery team polo " });
+    assert.equal(applyTeamPolo(own), null);
+  });
+
+  it("makes a new SKU if its old one has been taken", () => {
+    const db = without();
+    db.catalog.find((i) => i.id === "jfh-cap").sku = "TD-APP-002";
+    const polo = applyTeamPolo(db);
+    assert.notEqual(polo.sku, "TD-APP-002");
+    assert.match(polo.sku, /^APP-/);
+    assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
+  });
+
+  it("is already in place in a new store", () => {
+    const db = initialState();
+    assert.ok(db.catalog.some((i) => i.id === "td-team-polo"));
+  });
+});
+
 describe("starter catalog photos", () => {
   it("has a photo file for every starter item that names one", () => {
     for (const item of SEED_CATALOG) {
@@ -327,10 +370,10 @@ describe("starter catalog photos", () => {
     }
   });
 
-  it("shows the team polo in each of its colors, navy first", () => {
+  it("shows the team polo in each of its colors, royal first", () => {
     const polo = SEED_CATALOG.find((i) => i.id === "td-team-polo");
     assert.equal(polo.images.length, 9);
-    assert.equal(polo.image, "/assets/merch/td-team-polo-navy.jpg");
+    assert.equal(polo.image, "/assets/merch/td-team-polo-royal.jpg");
     assert.equal(imageFor(polo, "Carolina Blue"), "/assets/merch/td-team-polo-carolina-blue.jpg");
   });
 

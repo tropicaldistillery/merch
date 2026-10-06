@@ -26,12 +26,14 @@ import {
   applyMinimums,
   applyPoloColors,
   applySeedPhotos,
+  applyTeamPolo,
   applySeedTextFixes,
   needsCategoryMoves,
   needsColors,
   needsMinimums,
   needsPoloColors,
   needsSeedPhotos,
+  needsTeamPolo,
   needsSeedTextFixes,
   normalizeItem,
   publicItem,
@@ -219,6 +221,11 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   if (needsColors(initial)) {
     const added = await store.mutate((db) => applyColors(db));
     console.log(`[catalog] added colour choices to ${added} item(s)`);
+    initial = await store.read();
+  }
+  if (needsTeamPolo(initial)) {
+    const polo = await store.mutate((db) => applyTeamPolo(db));
+    if (polo) console.log(`[catalog] added ${polo.name} (${polo.sku}) in ${polo.colors.length} colors with ${polo.images.length} photos`);
     initial = await store.read();
   }
   if (needsPoloColors(initial)) {

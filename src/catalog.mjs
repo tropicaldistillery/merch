@@ -25,10 +25,11 @@ const SEED_COLORS = {
 // Product photos for the starter items, in public/assets/merch: one photo
 // named after the item, or one per colour (td-team-polo-navy.jpg), main
 // photo first. Bump the version when photos are added so existing stores
-// pick them up once.
+// pick them up once. The polo's main photo is Royal, the colour it was
+// actually photographed in.
 export const SEED_PHOTOS_VERSION = 1;
 const SEED_PHOTO_IDS = [];
-const SEED_MAIN_COLOR = { "td-team-polo": "Navy" };
+const SEED_MAIN_COLOR = { "td-team-polo": "Royal" };
 export const SEED_PHOTOS = Object.fromEntries([
   ...SEED_PHOTO_IDS.map((id) => [id, [{ url: `/assets/merch/${id}.jpg`, color: "" }]]),
   ...Object.entries(SEED_MAIN_COLOR).map(([id, main]) => [
@@ -284,6 +285,30 @@ export function applySeedPhotos(db) {
   }
   db.meta.seedPhotos = SEED_PHOTOS_VERSION;
   return changed;
+}
+
+/**
+ * Put the starter Team Polo, with its colours and photos, back in a store
+ * that no longer has it, once. A store with its own item of the same name is
+ * left alone, and the SKU is remade if another item has taken it. Returns
+ * the item added, or null.
+ */
+export function needsTeamPolo(db) {
+  return !db.meta?.teamPolo;
+}
+
+export function applyTeamPolo(db) {
+  db.meta.teamPolo = 1;
+  const seed = SEED_CATALOG.find((i) => i.id === "td-team-polo");
+  const name = seed.name.toLowerCase();
+  if (db.catalog.some((i) => i.id === seed.id || String(i.name).trim().toLowerCase() === name)) return null;
+  const polo = structuredClone(seed);
+  const taken = db.catalog.map((i) => i.sku);
+  if (taken.includes(polo.sku)) polo.sku = generateSku(polo.name, polo.category, taken);
+  // Back in its usual place, after the logo tee, when that's still there.
+  const after = db.catalog.findIndex((i) => i.id === "jfh-logo-tee");
+  db.catalog.splice(after >= 0 ? after + 1 : db.catalog.length, 0, polo);
+  return polo;
 }
 
 /**
