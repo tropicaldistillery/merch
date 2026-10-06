@@ -24,11 +24,13 @@ import {
   applyCategoryMoves,
   applyColors,
   applyMinimums,
+  applyPoloColors,
   applySeedPhotos,
   applySeedTextFixes,
   needsCategoryMoves,
   needsColors,
   needsMinimums,
+  needsPoloColors,
   needsSeedPhotos,
   needsSeedTextFixes,
   normalizeItem,
@@ -217,6 +219,11 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   if (needsColors(initial)) {
     const added = await store.mutate((db) => applyColors(db));
     console.log(`[catalog] added colour choices to ${added} item(s)`);
+    initial = await store.read();
+  }
+  if (needsPoloColors(initial)) {
+    const polos = await store.mutate((db) => applyPoloColors(db));
+    if (polos.length) console.log(`[catalog] offered ${polos.length} polo(s) in the nine colors: ${polos.join(", ")}`);
     initial = await store.read();
   }
   if (needsSeedPhotos(initial)) {

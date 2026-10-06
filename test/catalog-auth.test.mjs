@@ -12,11 +12,13 @@ import {
   applyCategoryMoves,
   applyColors,
   applyMinimums,
+  applyPoloColors,
   applySeedPhotos,
   applySeedTextFixes,
   needsCategoryMoves,
   needsColors,
   needsMinimums,
+  needsPoloColors,
   needsSeedPhotos,
   needsSeedTextFixes,
   normalizeItem,
@@ -280,6 +282,24 @@ describe("colors and photo galleries", () => {
     assert.deepEqual(moved.images.map((i) => i.url), [photo(7), photo(1)], "a new single image becomes the main one");
     assert.deepEqual(itemImages({ image: photo(9) }), [{ url: photo(9), color: "" }], "items saved before galleries");
     assert.deepEqual(itemImages({ image: "" }), []);
+  });
+
+  it("offers an admin's own polos in the nine colors, once", () => {
+    const db = {
+      meta: {},
+      catalog: [
+        { id: "a", name: "J.F. Haden's Royal Polo", colors: [] },
+        { id: "b", name: "Bartender POLOS (6-pack)", colors: [] },
+        { id: "c", name: "Polo already set", colors: ["Red"] },
+        { id: "d", name: "Polonaise Napkins", colors: [] },
+      ],
+    };
+    assert.equal(needsPoloColors(db), true);
+    assert.deepEqual(applyPoloColors(db), ["J.F. Haden's Royal Polo", "Bartender POLOS (6-pack)"]);
+    assert.equal(db.catalog[0].colors.length, 9);
+    assert.deepEqual(db.catalog[2].colors, ["Red"], "an admin's own choice stays");
+    assert.deepEqual(db.catalog[3].colors, []);
+    assert.equal(needsPoloColors(db), false);
   });
 
   it("gives older stores their colors once", () => {

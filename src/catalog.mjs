@@ -287,6 +287,26 @@ export function applySeedPhotos(db) {
 }
 
 /**
+ * Polos come in the nine standard colours: any item named as a polo that has
+ * no colours yet gets all nine, once, so an admin can trim them afterwards.
+ * Returns the names of the items changed.
+ */
+export function needsPoloColors(db) {
+  return !db.meta?.poloColors;
+}
+
+export function applyPoloColors(db) {
+  const changed = [];
+  for (const item of db.catalog) {
+    if (!/\bpolos?\b/i.test(item.name) || (item.colors ?? []).length) continue;
+    item.colors = COLOR_OPTIONS.map((c) => c.name);
+    changed.push(item.name);
+  }
+  db.meta.poloColors = 1;
+  return changed;
+}
+
+/**
  * Items saved before per-order minimums existed have none. Give the starter
  * items their suggested minimum and everything else a minimum of one, once.
  */

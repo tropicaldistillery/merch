@@ -65,7 +65,8 @@ shares nothing with SipScale.
   changes it), and a photo can be tagged with a color so the store shows it
   when that color is picked. Photos are stored with the rest of the data (in
   Postgres, or `DATA_DIR/images`).
-- Tick an item's **color choices** from the standard nine. Team members must
+- Tick an item's **color choices** from the standard nine (any item named as
+  a polo was given all nine once; untick the ones you don't carry). Team members must
   pick one; stock is counted per size across colors, and the color shows on
   the order, packing slip and CSV export.
 - Manage the **team list** (Team tab): paste names and emails, straight from a
