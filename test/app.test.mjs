@@ -399,6 +399,17 @@ describe("merch store over HTTP", () => {
     const cap = data.items.find((i) => i.id === "jfh-cap");
     const saved = await admin(`/api/admin/catalog/${cap.id}`, { method: "PUT", body: { ...cap, image: url } });
     assert.equal(saved.data.item.image, url);
+
+    // Several photos, one tagged with a colour the item comes in.
+    const second = (await (await upload(png(1200, 900).fill(7, 40), { Cookie: adminCookie })).json()).url;
+    const gallery = await admin(`/api/admin/catalog/${cap.id}`, {
+      method: "PUT",
+      body: { ...saved.data.item, colors: ["Navy", "Black"], images: [{ url: second, color: "Black" }, { url, color: "" }] },
+    });
+    assert.equal(gallery.status, 200);
+    assert.deepEqual(gallery.data.item.colors, ["Navy", "Black"]);
+    assert.deepEqual(gallery.data.item.images, [{ url: second, color: "Black" }, { url, color: "" }]);
+    assert.equal(gallery.data.item.image, second);
   });
 
   it("serves assets but nothing outside them", async () => {

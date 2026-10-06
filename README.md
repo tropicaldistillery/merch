@@ -21,6 +21,10 @@ shares nothing with SipScale.
   Distillery and that it's **free to them**; the cart and checkout show the
   order's value and "You pay $0.00". Small, cheap items can have a **minimum
   per order** (a jigger comes in threes), and the quantity picker starts there.
+- Pick a **color** for items that come in several (the Team Polo comes in
+  White, Navy, Burgundy, Black, Royal, Red, Forest Green, Grey and Carolina
+  Blue): the photo switches to that color, and one order can mix colors.
+  Arrows and dots page through an item's photos.
 - Use the **ROI calculator** in the cart: enter the cases the order should help
   sell and see the projected profit (at an average of $75 a case, set as
   `PROFIT_PER_CASE_CENTS` in `public/assets/shared.js`), the net return, the
@@ -54,10 +58,16 @@ shares nothing with SipScale.
 - A new item's **SKU is made from its category and name** as you type
   ("J.F. Haden's Throw Pillow" in VIP becomes `VIP-THROW-PILLOW`), and you can
   still type your own. Existing SKUs never change.
-- **Upload a photo** with the button or by dragging it onto the editor. It's
-  resized in the browser to 1200 × 900, so every product card matches: "Show
-  the whole photo" fits it on white, "Fill the frame" crops the edges. Photos
-  are stored with the rest of the data (in Postgres, or `DATA_DIR/images`).
+- **Upload photos**, up to 10 an item, with the button or by dragging several
+  onto the editor at once. Each is resized in the browser to 1200 × 900, so
+  every product card matches: "Show the whole photo" fits it on white, "Fill
+  the frame" crops the edges. The first photo is the main one (**Make main**
+  changes it), and a photo can be tagged with a color so the store shows it
+  when that color is picked. Photos are stored with the rest of the data (in
+  Postgres, or `DATA_DIR/images`).
+- Tick an item's **color choices** from the standard nine. Team members must
+  pick one; stock is counted per size across colors, and the color shows on
+  the order, packing slip and CSV export.
 - Manage the **team list** (Team tab): paste names and emails, straight from a
   spreadsheet if you like, and everyone gets a personal code built from their
   first name, like `tropical-jane-4821`. **New codes for everyone** reissues
@@ -97,7 +107,7 @@ The store opens with 24 items across J.F. Haden's (Mango, Espresso and Key Lime
 liqueurs), Twin P Whiskey and Tropical Distillery house branding. **Costs and
 stock levels are placeholders.** Set the real numbers in the admin console
 (Catalog & stock → Edit) before inviting the team, hide anything you don't
-stock, and upload a photo for any item to replace its illustration.
+stock, and upload photos for any item to replace its illustration.
 
 ## Run it on your computer
 

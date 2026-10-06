@@ -10,16 +10,18 @@ import {
   SEED_PHOTOS_VERSION,
   SEED_TEXT_FIXES,
   applyCategoryMoves,
+  applyColors,
   applyMinimums,
   applySeedPhotos,
   applySeedTextFixes,
   needsCategoryMoves,
+  needsColors,
   needsMinimums,
   needsSeedPhotos,
   needsSeedTextFixes,
   normalizeItem,
 } from "../src/catalog.mjs";
-import { CATEGORIES, generateSku, quantityRuleText } from "../public/assets/shared.js";
+import { CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, generateSku, imageFor, itemImages, quantityRuleText } from "../public/assets/shared.js";
 import { initialState } from "../src/store/initial-state.mjs";
 import { ValidationError } from "../src/validation.mjs";
 
@@ -229,6 +231,68 @@ describe("automatic SKUs", () => {
   });
 });
 
+describe("colors and photo galleries", () => {
+  const photo = (n) => `/images/${String(n).padStart(32, "0")}.webp`;
+
+  it("offers the team polo in the nine standard colors", () => {
+    const polo = SEED_CATALOG.find((i) => i.id === "td-team-polo");
+    assert.deepEqual(polo.colors, ["White", "Navy", "Burgundy", "Black", "Royal", "Red", "Forest Green", "Grey", "Carolina Blue"]);
+    assert.deepEqual(polo.colors, COLOR_OPTIONS.map((c) => c.name));
+    assert.deepEqual(SEED_CATALOG.find((i) => i.id === "jfh-cap").colors, []);
+  });
+
+  it("keeps known colors once each, in the order given", () => {
+    const item = normalizeItem({ ...VALID, colors: ["Navy", "Chartreuse", "navy", "Navy", "Red"] }, { catalog: SEED_CATALOG });
+    assert.deepEqual(item.colors, ["Navy", "Red"]);
+    assert.deepEqual(normalizeItem(VALID, { catalog: SEED_CATALOG }).colors, []);
+  });
+
+  it("saves several photos, main first, each tagged with one of the item's colors", () => {
+    const item = normalizeItem(
+      {
+        ...VALID,
+        colors: ["Navy", "Red"],
+        images: [{ url: photo(1) }, { url: photo(2), color: "Red" }, { url: photo(3), color: "Black" }, { url: photo(2), color: "Navy" }, { url: "" }],
+      },
+      { catalog: SEED_CATALOG }
+    );
+    assert.deepEqual(item.images, [
+      { url: photo(1), color: "" },
+      { url: photo(2), color: "Red" },
+      { url: photo(3), color: "" },
+    ]);
+    assert.equal(item.image, photo(1), "the main photo is the first");
+    assert.equal(imageFor(item, "Red"), photo(2));
+    assert.equal(imageFor(item, "Navy"), photo(1), "falls back to the main photo");
+    assert.equal(imageFor(item), photo(1));
+  });
+
+  it("refuses too many photos and bad links in a gallery", () => {
+    const many = Array.from({ length: MAX_IMAGES + 1 }, (_, i) => ({ url: photo(i + 1) }));
+    assert.match(errorsOf(() => normalizeItem({ ...VALID, images: many }, { catalog: SEED_CATALOG })).image, /at most/);
+    assert.ok(errorsOf(() => normalizeItem({ ...VALID, images: [{ url: "javascript:alert(1)" }] }, { catalog: SEED_CATALOG })).image);
+  });
+
+  it("still takes a single image from older clients", () => {
+    const item = normalizeItem({ ...VALID, image: photo(7) }, { catalog: SEED_CATALOG });
+    assert.deepEqual(item.images, [{ url: photo(7), color: "" }]);
+    const moved = normalizeItem({ ...VALID, images: [{ url: photo(1) }], image: photo(7) }, { catalog: SEED_CATALOG });
+    assert.deepEqual(moved.images.map((i) => i.url), [photo(7), photo(1)], "a new single image becomes the main one");
+    assert.deepEqual(itemImages({ image: photo(9) }), [{ url: photo(9), color: "" }], "items saved before galleries");
+    assert.deepEqual(itemImages({ image: "" }), []);
+  });
+
+  it("gives older stores their colors once", () => {
+    const catalog = structuredClone(SEED_CATALOG).map(({ colors, ...rest }) => rest);
+    const db = { meta: {}, catalog };
+    assert.equal(needsColors(db), true);
+    assert.equal(applyColors(db), 1);
+    assert.equal(db.catalog.find((i) => i.id === "td-team-polo").colors.length, 9);
+    assert.deepEqual(db.catalog.find((i) => i.id === "jfh-cap").colors, []);
+    assert.equal(needsColors(db), false);
+  });
+});
+
 describe("starter catalog photos", () => {
   it("has a photo file for every starter item that names one", () => {
     for (const item of SEED_CATALOG) {
@@ -240,7 +304,7 @@ describe("starter catalog photos", () => {
   });
 
   it("fills in photos once, keeping the admin's own and respecting removals", { skip: !Object.keys(SEED_PHOTOS).length && "no starter photos yet" }, () => {
-    const catalog = structuredClone(SEED_CATALOG).map((i) => ({ ...i, image: "" }));
+    const catalog = structuredClone(SEED_CATALOG).map((i) => ({ ...i, image: "", images: [] }));
     catalog.find((i) => i.id === "jfh-cap").image = "/images/0123456789abcdef0123456789abcdef.webp";
     const db = { meta: {}, catalog };
     assert.equal(needsSeedPhotos(db), true);

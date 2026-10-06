@@ -104,7 +104,9 @@ export function createCart(email) {
     try {
       const raw = JSON.parse(localStorage.getItem(key) || "[]");
       return Array.isArray(raw)
-        ? raw.filter((l) => l && typeof l.itemId === "string" && Number.isInteger(l.quantity) && l.quantity > 0)
+        ? raw
+            .filter((l) => l && typeof l.itemId === "string" && Number.isInteger(l.quantity) && l.quantity > 0)
+            .map((l) => ({ ...l, color: typeof l.color === "string" ? l.color : "" }))
         : [];
     } catch {
       return [];
@@ -122,7 +124,9 @@ export function createCart(email) {
     listeners.forEach((fn) => fn());
   }
 
-  const find = (itemId, variantId) => lines.find((l) => l.itemId === itemId && l.variantId === variantId);
+  // A line is one item in one option and one colour.
+  const same = (l, itemId, variantId, color) => l.itemId === itemId && l.variantId === variantId && l.color === color;
+  const find = (itemId, variantId, color) => lines.find((l) => same(l, itemId, variantId, color));
 
   window.addEventListener("storage", (event) => {
     if (event.key === key) {
@@ -138,21 +142,21 @@ export function createCart(email) {
       lines
         .filter((l) => l.itemId === itemId && (variantId === undefined || l.variantId === variantId))
         .reduce((sum, l) => sum + l.quantity, 0),
-    add(itemId, variantId, quantity) {
-      const line = find(itemId, variantId);
+    add(itemId, variantId, quantity, color = "") {
+      const line = find(itemId, variantId, color);
       if (line) line.quantity += quantity;
-      else lines.push({ itemId, variantId, quantity });
+      else lines.push({ itemId, variantId, color, quantity });
       save();
     },
-    set(itemId, variantId, quantity) {
-      const line = find(itemId, variantId);
+    set(itemId, variantId, quantity, color = "") {
+      const line = find(itemId, variantId, color);
       if (!line) return;
       if (quantity <= 0) lines = lines.filter((l) => l !== line);
       else line.quantity = quantity;
       save();
     },
-    remove(itemId, variantId) {
-      lines = lines.filter((l) => !(l.itemId === itemId && l.variantId === variantId));
+    remove(itemId, variantId, color = "") {
+      lines = lines.filter((l) => !same(l, itemId, variantId, color));
       save();
     },
     clear() {

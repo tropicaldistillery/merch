@@ -1146,6 +1146,165 @@ fieldset {
   aspect-ratio: 4 / 3;
 }
 
+/* Photo gallery on a product card. */
+.product-media {
+  position: relative;
+}
+
+.gallery-arrow {
+  position: absolute;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  margin-top: -17px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(20, 32, 58, 0.18);
+  color: var(--navy);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.gallery-arrow::before {
+  content: "";
+  display: block;
+  width: 9px;
+  height: 9px;
+  margin: 0 auto;
+  border: solid currentColor;
+  border-width: 0 2.5px 2.5px 0;
+  transform: translateX(-2px) rotate(-45deg);
+}
+
+.gallery-arrow.prev {
+  left: 10px;
+}
+
+.gallery-arrow.prev::before {
+  transform: translateX(2px) rotate(135deg);
+}
+
+.gallery-arrow.next {
+  right: 10px;
+}
+
+.product-media:hover .gallery-arrow,
+.gallery-arrow:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .gallery-arrow {
+    opacity: 1;
+  }
+}
+
+.gallery-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+}
+
+.gallery-dot {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.gallery-dot::before {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 8px;
+  margin: auto;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 0 0 1px rgba(20, 32, 58, 0.3);
+}
+
+.gallery-dot[aria-current="true"]::before {
+  background: var(--pink);
+  box-shadow: 0 0 0 1px #fff;
+}
+
+/* Colour swatches. */
+.swatches {
+  border: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.swatches legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.swatch-name {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.swatches[aria-invalid="true"] legend,
+.swatches[aria-invalid="true"] .swatch-name {
+  color: var(--error);
+}
+
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin-left: -2px;
+}
+
+.swatch {
+  position: relative;
+  display: inline-grid;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.swatch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.swatch-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgba(20, 32, 58, 0.18);
+  transition: box-shadow 0.15s;
+}
+
+.swatch.light .swatch-dot {
+  box-shadow: inset 0 0 0 1px rgba(20, 32, 58, 0.35);
+}
+
+.swatch input:checked + .swatch-dot {
+  box-shadow: inset 0 0 0 1px rgba(20, 32, 58, 0.25), 0 0 0 2px #fff, 0 0 0 4px var(--navy);
+}
+
+.swatch input:focus-visible + .swatch-dot {
+  box-shadow: var(--focus-ring);
+}
+
 .product-body {
   padding: 18px;
   display: flex;
@@ -2615,11 +2774,116 @@ dialog.confirm .dialog-actions {
   margin-top: 4px;
 }
 
-.photo-picker .link-button {
+.photo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.photo-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.photo-thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-alt);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--navy);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.photo-tile select {
+  min-height: 34px;
+  font-size: 13px;
+  padding-block: 4px;
+}
+
+.photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.photo-actions .link-button {
+  padding: 0;
+  font-size: 13px;
+}
+
+.photo-actions .link-button.danger {
   color: var(--error);
+}
+
+/* ------------------------------------------------------- colour choices */
+
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.color-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.color-choice:has(input:checked) {
+  background: var(--sky-surface);
+  border-color: var(--sky);
+}
+
+.color-choice input {
+  margin: 0;
+}
+
+.color-choice .swatch-dot {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+.color-choice.light .swatch-dot {
+  box-shadow: inset 0 0 0 1px rgba(20, 32, 58, 0.35);
+}
+
+.color-choices .inline-actions .link-button {
   padding-left: 0;
-  justify-self: start;
-  align-self: flex-start;
 }
 
 /* ------------------------------------------------------- ROI calculator */

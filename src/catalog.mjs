@@ -4,7 +4,7 @@
 // console (Catalog tab) with real numbers. The seed is only used when a store
 // is created for the first time; after that the catalog lives in the store.
 
-import { BRANDS, CATEGORIES, TONES, generateSku, suggestedMinPerOrder } from "../public/assets/shared.js";
+import { BRANDS, CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, TONES, generateSku, itemImages, suggestedMinPerOrder } from "../public/assets/shared.js";
 import { IMAGE_PATH_RE } from "./images.mjs";
 import { ValidationError, cleanText } from "./validation.mjs";
 
@@ -22,6 +22,11 @@ const SEED_PHOTO_IDS = [];
 export const SEED_PHOTOS = Object.fromEntries(SEED_PHOTO_IDS.map((id) => [id, `/assets/merch/${id}.jpg`]));
 
 const SIZES = ["S", "M", "L", "XL", "2XL", "3XL"];
+
+// Starter items offered in colours.
+const SEED_COLORS = {
+  "td-team-polo": ["White", "Navy", "Burgundy", "Black", "Royal", "Red", "Forest Green", "Grey", "Carolina Blue"],
+};
 
 function sized(stockBySize) {
   return SIZES.map((size, i) => ({ id: size.toLowerCase(), label: size, stock: stockBySize[i] }));
@@ -192,6 +197,8 @@ export const SEED_CATALOG = [
   minPerOrder: Math.min(suggestedMinPerOrder(item.costCents, item.category), item.maxPerOrder),
   orderIncrement: 1,
   image: SEED_PHOTOS[item.id] ?? "",
+  images: SEED_PHOTOS[item.id] ? [{ url: SEED_PHOTOS[item.id], color: "" }] : [],
+  colors: SEED_COLORS[item.id] ?? [],
   active: true,
 }));
 
@@ -259,8 +266,9 @@ export function applySeedPhotos(db) {
   let changed = 0;
   for (const item of db.catalog) {
     const photo = SEED_PHOTOS[item.id];
-    if (photo && !item.image) {
+    if (photo && !itemImages(item).length) {
       item.image = photo;
+      item.images = [{ url: photo, color: "" }];
       changed += 1;
     }
   }
@@ -326,6 +334,21 @@ export function applyCategoryMoves(db) {
   }
   db.meta.categories = CATEGORIES_VERSION;
   return moved;
+}
+
+/** Items saved before colours existed: starter items get theirs, others none. */
+export function needsColors(db) {
+  return db.catalog.some((item) => !Array.isArray(item.colors));
+}
+
+export function applyColors(db) {
+  let added = 0;
+  for (const item of db.catalog) {
+    if (Array.isArray(item.colors)) continue;
+    item.colors = SEED_COLORS[item.id] ? [...SEED_COLORS[item.id]] : [];
+    if (item.colors.length) added += 1;
+  }
+  return added;
 }
 
 /* ------------------------------------------------------------ admin edits */
@@ -404,8 +427,27 @@ export function normalizeItem(input, { catalog, existing = null }) {
   const art = cleanText(src.art, 30);
   if (!ART_KINDS.includes(art)) errors.art = "Choose an illustration.";
 
-  const image = cleanImage(src.image);
-  if (image === null) errors.image = "That photo couldn't be used. Upload it again.";
+  // Colours this item comes in, from the shared palette.
+  const colorNames = COLOR_OPTIONS.map((c) => c.name);
+  const colors = [...new Set((Array.isArray(src.colors) ? src.colors : []).map((c) => cleanText(c, 40)))].filter((c) => colorNames.includes(c));
+
+  // Photos: a gallery, main photo first, each optionally tagged with a colour.
+  // Older clients send a single image instead; one that isn't in the gallery
+  // becomes the main photo.
+  const rawImages = Array.isArray(src.images) ? [...src.images] : [];
+  if (typeof src.image === "string" && src.image && !rawImages.some((i) => (typeof i === "string" ? i : i?.url) === src.image)) {
+    rawImages.unshift({ url: src.image, color: "" });
+  }
+  const images = [];
+  if (rawImages.length > MAX_IMAGES) errors.image = `An item can have at most ${MAX_IMAGES} photos.`;
+  for (const raw of rawImages.slice(0, MAX_IMAGES)) {
+    const url = cleanImage(typeof raw === "string" ? raw : raw?.url);
+    if (url === null) { errors.image = "That photo couldn't be used. Upload it again."; continue; }
+    if (!url || images.some((i) => i.url === url)) continue;
+    const color = cleanText(raw?.color, 40);
+    images.push({ url, color: colors.includes(color) ? color : "" });
+  }
+  const image = images[0]?.url ?? "";
 
   const costCents = parseCents(src.costCents);
   if (costCents === null || costCents > 10_000_000) errors.costCents = "Enter a cost of $0 or more.";
@@ -484,6 +526,8 @@ export function normalizeItem(input, { catalog, existing = null }) {
     tone,
     art,
     image,
+    images,
+    colors,
     unit: cleanText(src.unit, 40) || "Each",
     description: cleanText(src.description, 600),
     costCents,
@@ -506,6 +550,8 @@ export function publicItem(item) {
     tone: item.tone,
     art: item.art,
     image: item.image,
+    images: itemImages(item),
+    colors: item.colors ?? [],
     unit: item.unit,
     description: item.description,
     costCents: item.costCents,

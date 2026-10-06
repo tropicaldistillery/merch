@@ -220,6 +220,39 @@ describe("placing an order", () => {
     assert.equal(placed.lines[0].sku, "TD-APP-001");
   });
 
+  it("needs one of the item's colors when it comes in colors", () => {
+    const db = initialState();
+    const polo = (color, variantId = "m", quantity = 1) => ({ itemId: "td-team-polo", variantId, color, quantity });
+    assert.match(fieldErrors(() => place(db, order({ lines: [polo("")] }))).lines, /Choose a color for Tropical Distillery Team Polo/);
+    assert.match(fieldErrors(() => place(db, order({ lines: [polo("Chartreuse")] }))).lines, /Choose a color/);
+
+    const photo = "/images/0000000000000000000000000000000a.webp";
+    db.catalog.find((i) => i.id === "td-team-polo").images = [{ url: photo, color: "Navy" }];
+    const placed = place(db, order({ lines: [polo("Navy", "m"), polo("Red", "l"), polo("Navy", "m")] }));
+    assert.deepEqual(placed.lines.map((l) => [l.color, l.variantLabel, l.quantity]), [["Navy", "M", 2], ["Red", "L", 1]]);
+    assert.equal(placed.lines[0].image, photo, "the line shows the chosen color's photo");
+    assert.equal(stock(db, "td-team-polo", "m"), 6);
+  });
+
+  it("ignores a color on an item that doesn't come in colors", () => {
+    const placed = place(initialState(), order({ lines: [{ itemId: "jfh-cap", quantity: 1, color: "Navy" }] }));
+    assert.equal(placed.lines[0].color, "");
+  });
+
+  it("shares an option's stock across colors and counts colors toward the limit", () => {
+    const db = initialState();
+    const lines = [
+      { itemId: "td-team-polo", variantId: "3xl", color: "Navy", quantity: 1 },
+      { itemId: "td-team-polo", variantId: "3xl", color: "Black", quantity: 2 },
+    ];
+    assert.match(fieldErrors(() => place(db, order({ lines }))).lines, /Only 2 left of Tropical Distillery Team Polo \(3XL\)/);
+    const tooMany = [
+      { itemId: "td-team-polo", variantId: "m", color: "Navy", quantity: 2 },
+      { itemId: "td-team-polo", variantId: "m", color: "Red", quantity: 2 },
+    ];
+    assert.match(fieldErrors(() => place(db, order({ lines: tooMany }))).lines, /up to 3 of Tropical Distillery Team Polo/);
+  });
+
   it("does not validate against the client's idea of price", () => {
     const { value } = validateOrderInput(
       order({ lines: [{ itemId: "jfh-logo-tee", variantId: "m", quantity: 1, unitCostCents: 1 }] }),
@@ -375,6 +408,7 @@ describe("CSV export", () => {
     const rows = ordersToCsv(db.orders).trim().split("\r\n");
     assert.equal(rows.length, 3);
     assert.match(rows[0], /^order_number,placed_at,status/);
+    assert.match(rows[0], /,item,color,option,quantity,/);
     assert.match(rows[1], /TD-1001/);
     assert.match(rows[1], /'@everyone$/);
   });

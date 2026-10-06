@@ -11,7 +11,21 @@ import {
   toast,
   wireHeader,
 } from "./core.js";
-import { BRANDS, CATEGORIES, PROFIT_PER_CASE_CENTS, formatMoney, labelFor, orderRule, quantityProblem, quantityRuleText, roiFor } from "./shared.js";
+import {
+  BRANDS,
+  CATEGORIES,
+  COLOR_OPTIONS,
+  PROFIT_PER_CASE_CENTS,
+  formatMoney,
+  imageFor,
+  itemImages,
+  labelFor,
+  optionText,
+  orderRule,
+  quantityProblem,
+  quantityRuleText,
+  roiFor,
+} from "./shared.js";
 
 const grid = $("#product-grid");
 const chips = $("#category-chips");
@@ -54,11 +68,16 @@ function roomFor(item, variant) {
   return Number.isFinite(room) ? Math.floor(room / step) * step : room;
 }
 
-// The most this cart line may hold, given the other lines for the same item.
+// The most this cart line may hold, given the other lines for the same item
+// (other sizes, or the same size in other colours, which share its stock).
 function lineLimit(item, variant, line) {
   const othersOfItem = cart.quantityOf(item.id) - line.quantity;
-  return Math.min(orderRule(item).max - othersOfItem, variantStock(variant));
+  const othersOfVariant = cart.quantityOf(item.id, variant.id) - line.quantity;
+  return Math.min(orderRule(item).max - othersOfItem, variantStock(variant) - othersOfVariant);
 }
+
+// A cart line's colour is fine if the item is still offered in it.
+const colorOk = (item, line) => ((item.colors ?? []).length ? item.colors.includes(line.color) : !line.color);
 
 // The fewest this cart line may hold so the item still meets its minimum.
 function lineFloor(item, line) {
@@ -125,9 +144,86 @@ function renderChips() {
   );
 }
 
+// The card's photo, with arrows and dots to page through the item's gallery.
+function gallery(item) {
+  const images = itemImages(item);
+  const media = el("div", { class: "product-media" });
+  let index = 0;
+  let art = artwork(item);
+  media.append(art);
+  if (images.length < 2) return { element: media, showUrl() {} };
+
+  const dots = images.map((image, i) =>
+    el("button", {
+      type: "button",
+      class: "gallery-dot",
+      "aria-label": `Photo ${i + 1} of ${images.length}${image.color ? ` (${image.color})` : ""}`,
+      onclick: () => show(i),
+    })
+  );
+  const arrow = (dir, label) =>
+    el("button", { type: "button", class: `gallery-arrow ${dir}`, "aria-label": `${label} photo of ${item.name}`, onclick: () => show(index + (dir === "prev" ? -1 : 1)) });
+  media.append(arrow("prev", "Previous"), arrow("next", "Next"), el("div", { class: "gallery-dots" }, dots));
+
+  function show(i) {
+    index = (i + images.length) % images.length;
+    const next = artwork({ ...item, image: images[index].url });
+    art.replaceWith(next);
+    art = next;
+    dots.forEach((dot, d) => dot.setAttribute("aria-current", String(d === index)));
+  }
+  show(0);
+  return {
+    element: media,
+    showUrl(url) {
+      const i = images.findIndex((image) => image.url === url);
+      if (i >= 0 && i !== index) show(i);
+    },
+  };
+}
+
+// Round colour swatches; the chosen colour's name shows in the legend.
+function colorPicker(item, onPick) {
+  const name = el("span", { class: "swatch-name", text: "choose one" });
+  const legend = el("legend", {}, "Color: ", name);
+  const set = el(
+    "fieldset",
+    { class: "swatches" },
+    legend,
+    el(
+      "div",
+      { class: "swatch-row" },
+      item.colors.map((color) => {
+        const dot = el("span", { class: "swatch-dot", "aria-hidden": "true" });
+        const hex = COLOR_OPTIONS.find((c) => c.name === color)?.hex ?? "#cccccc";
+        dot.style.setProperty("--swatch", hex);
+        const input = el("input", { type: "radio", name: `color-${item.id}`, value: color, "aria-label": color });
+        input.addEventListener("change", () => {
+          name.textContent = color;
+          set.removeAttribute("aria-invalid");
+          onPick(color);
+        });
+        return el("label", { class: `swatch${hex.toUpperCase() === "#FFFFFF" ? " light" : ""}`, title: color }, input, dot);
+      })
+    )
+  );
+  return {
+    element: set,
+    get value() {
+      return set.querySelector("input:checked")?.value ?? "";
+    },
+    invalid() {
+      set.setAttribute("aria-invalid", "true");
+      set.querySelector("input")?.focus();
+    },
+  };
+}
+
 function productCard(item) {
   const availability = itemAvailability(item);
   const withOptions = hasOptions(item);
+  const media = gallery(item);
+  const colors = (item.colors ?? []).length ? colorPicker(item, (color) => media.showUrl(imageFor(item, color))) : null;
 
   const select = withOptions
     ? el(
@@ -167,6 +263,12 @@ function productCard(item) {
 
   addButton.addEventListener("click", () => {
     const variant = selectedVariant();
+    const color = colors ? colors.value : "";
+    if (colors && !color) {
+      colors.invalid();
+      toast(`Choose a color for ${item.name} first.`, { tone: "error" });
+      return;
+    }
     if (!variant) {
       select.setAttribute("aria-invalid", "true");
       select.focus();
@@ -188,9 +290,10 @@ function productCard(item) {
       toast(`There aren't enough ${item.name} left to make up a full order quantity.`, { tone: "error" });
       return;
     }
-    cart.add(item.id, variant.id, quantity);
+    cart.add(item.id, variant.id, quantity, color);
     stepper.setValue(stillNeeded(item));
-    toast(`Added ${quantity} × ${item.name}${variant.label ? ` (${variant.label})` : ""}`, {
+    const chosen = optionText({ color, variantLabel: variant.label });
+    toast(`Added ${quantity} × ${item.name}${chosen ? ` (${chosen})` : ""}`, {
       action: { label: "View order", onClick: () => openCart() },
     });
   });
@@ -198,7 +301,7 @@ function productCard(item) {
   const card = el(
     "article",
     { class: "card product-card", "aria-labelledby": `name-${item.id}` },
-    artwork(item),
+    media.element,
     el(
       "div",
       { class: "product-body" },
@@ -218,6 +321,7 @@ function productCard(item) {
         ),
         el("span", { class: `stock ${availability.tone}`.trim(), text: availability.label })
       ),
+      colors?.element,
       el("div", { class: "product-actions" }, select, stepper.element, addButton),
       el("p", { class: "product-limit", text: limitText(item) })
     )
@@ -268,7 +372,7 @@ function renderGrid() {
 function cartLine(line) {
   const item = items.find((i) => i.id === line.itemId);
   const variant = item?.variants.find((v) => v.id === line.variantId);
-  const key = `${line.itemId}::${line.variantId}`;
+  const key = `${line.itemId}::${line.variantId}::${line.color}`;
 
   if (!item || !variant) {
     return el(
@@ -285,7 +389,7 @@ function cartLine(line) {
           class: "link-button",
           text: "Remove",
           dataset: { role: "remove" },
-          onclick: () => cart.remove(line.itemId, line.variantId),
+          onclick: () => cart.remove(line.itemId, line.variantId, line.color),
         })
       )
     );
@@ -294,7 +398,7 @@ function cartLine(line) {
   const limit = lineLimit(item, variant, line);
   // An item in one size steps by its increment; across sizes the total has to
   // come out right, so each line moves one at a time.
-  const single = item.variants.length === 1;
+  const single = item.variants.length === 1 && (item.colors ?? []).length <= 1;
   const step = single ? orderRule(item).step : 1;
   const floor = Math.min(single ? lineFloor(item, line) : 1, line.quantity);
   const problem = quantityProblem(item, cart.quantityOf(item.id));
@@ -304,22 +408,25 @@ function cartLine(line) {
     step,
     max: Math.max(1, Math.max(limit, line.quantity)),
     label: `Quantity of ${item.name}`,
-    onChange: (n) => cart.set(item.id, variant.id, n),
+    onChange: (n) => cart.set(item.id, variant.id, n, line.color),
   });
+  const chosen = optionText({ color: line.color, variantLabel: variant.label });
 
   return el(
     "div",
     { class: "cart-line", dataset: { line: key } },
-    artwork(item, "thumb"),
+    artwork({ ...item, image: imageFor(item, line.color) }, "thumb"),
     el(
       "div",
       { class: "cart-line-main" },
       el("p", { class: "cart-line-name", text: item.name }),
       el("p", {
         class: "cart-line-sub",
-        text: [variant.label, item.unit, `${formatMoney(item.costCents)} each`].filter(Boolean).join(" · "),
+        text: [chosen, item.unit, `${formatMoney(item.costCents)} each`].filter(Boolean).join(" · "),
       }),
-      line.quantity > limit
+      !colorOk(item, line)
+        ? el("p", { class: "warn", text: `No longer offered in ${line.color || "this color"} — remove it and choose another.` })
+        : line.quantity > limit
         ? el("p", {
             class: "warn",
             text: limit <= 0 ? "No longer available in this quantity — remove it." : `Only ${limit} can be ordered — lower the quantity.`,
@@ -337,8 +444,8 @@ function cartLine(line) {
           class: "link-button",
           text: "Remove",
           dataset: { role: "remove" },
-          "aria-label": `Remove ${item.name}${variant.label ? ` (${variant.label})` : ""}`,
-          onclick: () => cart.remove(item.id, variant.id),
+          "aria-label": `Remove ${item.name}${chosen ? ` (${chosen})` : ""}`,
+          onclick: () => cart.remove(item.id, variant.id, line.color),
         })
       )
     )
@@ -443,7 +550,7 @@ function renderCart() {
     }
     total += item.costCents * line.quantity;
     units += line.quantity;
-    if (line.quantity > lineLimit(item, variant, line)) blocked = true;
+    if (line.quantity > lineLimit(item, variant, line) || !colorOk(item, line)) blocked = true;
     if (quantityProblem(item, cart.quantityOf(item.id))) blocked = true;
   }
   $("#cart-total").textContent = formatMoney(total);

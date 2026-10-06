@@ -25,6 +25,8 @@ import {
   BRANDS,
   CARRIERS,
   CATEGORIES,
+  COLOR_OPTIONS,
+  MAX_IMAGES,
   OPEN_STATUSES,
   PURPOSES,
   STATUSES,
@@ -33,6 +35,7 @@ import {
   US_STATES,
   formatMoney,
   generateSku,
+  itemImages,
   labelFor,
   quantityRuleText,
   suggestedMaxPerOrder,
@@ -682,7 +685,7 @@ function renderOrderDetail(order) {
                 "tr",
                 {},
                 el("td", { text: line.sku }),
-                el("td", {}, el("div", { class: "cell-main", text: line.name }), el("div", { class: "cell-sub", text: [line.variantLabel, line.unit].filter(Boolean).join(" · ") })),
+                el("td", {}, el("div", { class: "cell-main", text: line.name }), el("div", { class: "cell-sub", text: [line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") })),
                 el("td", { class: "num", text: String(line.quantity) }),
                 el("td", { class: "num", text: formatMoney(line.lineTotalCents) })
               )
@@ -820,7 +823,7 @@ function renderCatalog() {
         el(
           "tr",
           {},
-          el("td", {}, el("div", { class: "item-cell" }, artwork(item, "thumb"), el("div", {}, el("div", { class: "cell-main", text: item.name }), el("div", { class: "cell-sub", text: `${item.sku} · ${item.unit}` })))),
+          el("td", {}, el("div", { class: "item-cell" }, artwork(item, "thumb"), el("div", {}, el("div", { class: "cell-main", text: item.name }), el("div", { class: "cell-sub", text: [item.sku, item.unit, item.colors?.length ? plural(item.colors.length, "color") : ""].filter(Boolean).join(" · ") })))),
           el("td", {}, el("div", { text: item.category }), el("div", { class: "cell-sub", text: labelFor(BRANDS, item.brand) })),
           el("td", { class: "num", text: formatMoney(item.costCents) }),
           el("td", {}, stockSummary(item)),
@@ -913,45 +916,109 @@ async function uploadPhoto(blob) {
 }
 
 /**
- * Upload a photo, by choosing a file or dropping one on the box. It is
- * resized to the standard size and stored, and `input` gets its path.
+ * The colours an item comes in, ticked from the standard list. Team members
+ * pick one when they order.
  */
-function photoPicker(input, onChange) {
-  let source = null; // the original, kept so changing the fit re-crops it
+function colorChoices(selected, onChange) {
+  const boxes = COLOR_OPTIONS.map(({ name, hex }) => {
+    const dot = el("span", { class: "swatch-dot", "aria-hidden": "true" });
+    dot.style.setProperty("--swatch", hex);
+    const input = el("input", { type: "checkbox", name: "colors", value: name, checked: selected.includes(name) });
+    input.addEventListener("change", onChange);
+    return el("label", { class: `color-choice${hex.toUpperCase() === "#FFFFFF" ? " light" : ""}` }, input, dot, el("span", { text: name }));
+  });
+  const setAll = (checked) => {
+    for (const label of boxes) label.querySelector("input").checked = checked;
+    onChange();
+  };
+  const element = el(
+    "fieldset",
+    { class: "field span-6 color-choices" },
+    el("legend", { class: "label", text: "Color choices" }),
+    el("p", { class: "hint", text: "Tick every color this item comes in; team members choose one when they order. Leave them all unticked if it only comes one way." }),
+    el("div", { class: "color-grid" }, boxes),
+    el(
+      "div",
+      { class: "inline-actions" },
+      el("button", { type: "button", class: "link-button", text: "Select all", onclick: () => setAll(true) }),
+      el("button", { type: "button", class: "link-button", text: "Clear", onclick: () => setAll(false) })
+    )
+  );
+  return {
+    element,
+    get value() {
+      return boxes.map((label) => label.querySelector("input")).filter((i) => i.checked).map((i) => i.value);
+    },
+  };
+}
+
+/**
+ * The item's photos: upload several at once by choosing files or dropping
+ * them on the box. Each is resized to the standard size and stored. The first
+ * is the main photo; any can be tagged with a colour so the store shows it
+ * when that colour is picked.
+ */
+function photoGallery({ images, colors, onChange }) {
+  // Photos uploaded in this visit keep their original, so changing the fit
+  // re-crops them.
+  let photos = images.map((i) => ({ url: i.url, color: i.color ?? "", source: null }));
   const status = el("p", { class: "hint", "aria-live": "polite" });
-  const file = el("input", { type: "file", accept: "image/jpeg,image/png,image/webp,image/gif", class: "sr-only", id: "photo-file" });
+  const list = el("ul", { class: "photo-list", "aria-label": "Photos" });
+  // Server errors about photos land here.
+  const anchor = el("input", { type: "hidden", name: "image" });
+  const file = el("input", { type: "file", accept: "image/jpeg,image/png,image/webp,image/gif", multiple: true, class: "sr-only", id: "photo-file" });
   const fitName = "photo-fit";
   const fits = el(
     "div",
-    { class: "chips", role: "radiogroup", "aria-label": "How to fit the photo" },
+    { class: "chips", role: "radiogroup", "aria-label": "How to fit photos" },
     [["whole", "Show the whole photo"], ["fill", "Fill the frame"]].map(([value, label]) =>
       el("label", { class: "check" }, el("input", { type: "radio", name: fitName, value, checked: value === "whole" }), label)
     )
   );
-  const remove = el("button", { type: "button", class: "link-button", text: "Remove photo" });
-  const chooseLabel = el("span", { text: "Upload image" });
+  const chooseLabel = el("span", { text: "Upload images" });
+  const fit = () => fits.querySelector("input:checked").value;
 
-  async function use(blob) {
-    if (!blob.type.startsWith("image/") && blob.type) {
-      status.textContent = "That file isn't an image. Use a JPG, PNG or WebP photo.";
+  function changed() {
+    render();
+    onChange();
+  }
+
+  async function prepare(blob) {
+    return uploadPhoto(await uniformPhoto(blob, fit()));
+  }
+
+  async function add(files) {
+    const usable = files.filter((f) => !f.type || f.type.startsWith("image/"));
+    if (!usable.length) {
+      status.textContent = "Those files aren't images. Use JPG, PNG or WebP photos.";
       return;
     }
-    source = blob;
-    status.textContent = "Resizing…";
-    try {
-      const fit = fits.querySelector("input:checked").value;
-      const resized = await uniformPhoto(blob, fit);
-      status.textContent = "Uploading…";
-      input.value = await uploadPhoto(resized);
-      status.textContent = `Photo ready at ${PHOTO_WIDTH} × ${PHOTO_HEIGHT}. Save the item to keep it.`;
-      onChange();
-    } catch (error) {
-      status.textContent = error.message;
+    const room = MAX_IMAGES - photos.length;
+    if (room <= 0) {
+      status.textContent = `An item can have up to ${MAX_IMAGES} photos. Remove one to add another.`;
+      return;
     }
+    const batch = usable.slice(0, room);
+    let done = 0;
+    for (const blob of batch) {
+      status.textContent = batch.length > 1 ? `Uploading ${done + 1} of ${batch.length}…` : "Uploading…";
+      try {
+        photos.push({ url: await prepare(blob), color: "", source: blob });
+        done += 1;
+        changed();
+      } catch (error) {
+        status.textContent = error.message;
+        return;
+      }
+    }
+    status.textContent =
+      (done === 1 ? "Photo added." : `${done} photos added.`) +
+      (usable.length > batch.length ? ` ${usable.length - batch.length} left out: the limit is ${MAX_IMAGES}.` : "") +
+      " Save the item to keep them.";
   }
 
   file.addEventListener("change", () => {
-    if (file.files[0]) use(file.files[0]);
+    add([...file.files]);
     file.value = "";
   });
 
@@ -960,7 +1027,7 @@ function photoPicker(input, onChange) {
     { class: "photo-drop" },
     el("label", { class: "btn btn-sm", for: "photo-file", tabindex: "0", role: "button", onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); file.click(); } } }, chooseLabel),
     file,
-    el("span", { class: "muted", text: "or drag a photo here" })
+    el("span", { class: "muted", text: "or drag photos here" })
   );
   for (const type of ["dragenter", "dragover"]) {
     drop.addEventListener(type, (event) => {
@@ -972,41 +1039,100 @@ function photoPicker(input, onChange) {
   drop.addEventListener("drop", (event) => {
     event.preventDefault();
     drop.classList.remove("over");
-    const dropped = [...(event.dataTransfer?.files ?? [])].find((f) => f.type.startsWith("image/"));
-    if (dropped) use(dropped);
-    else status.textContent = "Drop a photo file (JPG, PNG or WebP).";
+    const dropped = [...(event.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+    if (dropped.length) add(dropped);
+    else status.textContent = "Drop photo files (JPG, PNG or WebP).";
   });
 
   for (const radio of fits.querySelectorAll("input")) {
-    radio.addEventListener("change", () => {
-      if (source) use(source);
+    radio.addEventListener("change", async () => {
+      const fresh = photos.filter((p) => p.source);
+      if (!fresh.length) return;
+      status.textContent = "Re-cropping…";
+      try {
+        for (const photo of fresh) photo.url = await prepare(photo.source);
+        status.textContent = "Photos re-cropped. Save the item to keep them.";
+        changed();
+      } catch (error) {
+        status.textContent = error.message;
+      }
     });
   }
 
-  remove.addEventListener("click", () => {
-    input.value = "";
-    source = null;
-    status.textContent = "Photo removed; the illustration will show instead.";
-    onChange();
-  });
+  function tile(photo, index) {
+    const offered = colors();
+    const colorSelect = offered.length
+      ? el(
+          "select",
+          { "aria-label": `Color shown in photo ${index + 1}` },
+          el("option", { value: "", text: "Any color" }),
+          offered.map((c) => el("option", { value: c, text: c, selected: photo.color === c }))
+        )
+      : null;
+    colorSelect?.addEventListener("change", () => {
+      photo.color = colorSelect.value;
+      onChange();
+    });
+    const move = (to) => {
+      photos.splice(to, 0, ...photos.splice(index, 1));
+      changed();
+      list.children[to]?.querySelector("button")?.focus();
+    };
+    return el(
+      "li",
+      { class: "photo-tile" },
+      el("div", { class: "photo-thumb" }, el("img", { src: photo.url, alt: `Photo ${index + 1}` }), index === 0 ? el("span", { class: "photo-badge", text: "Main" }) : null),
+      colorSelect,
+      el(
+        "div",
+        { class: "photo-actions" },
+        index > 0 ? el("button", { type: "button", class: "link-button", text: "Make main", onclick: () => move(0) }) : null,
+        el("button", {
+          type: "button",
+          class: "link-button danger",
+          text: "Remove",
+          "aria-label": `Remove photo ${index + 1}`,
+          onclick: () => {
+            photos.splice(index, 1);
+            status.textContent = photos.length ? "Photo removed." : "Photos removed; the illustration will show instead.";
+            changed();
+          },
+        })
+      )
+    );
+  }
+
+  function render() {
+    // A photo tagged with a colour the item no longer comes in goes back to any.
+    const offered = colors();
+    for (const photo of photos) if (photo.color && !offered.includes(photo.color)) photo.color = "";
+    clear(list, photos.map(tile));
+    list.hidden = !photos.length;
+    chooseLabel.textContent = photos.length ? "Add more images" : "Upload images";
+    drop.hidden = photos.length >= MAX_IMAGES;
+  }
 
   const element = el(
     "div",
     { class: "field span-6 photo-picker" },
-    el("span", { class: "label", text: "Photo" }),
+    el("span", { class: "label", text: "Photos" }),
+    list,
     drop,
     fits,
-    el("p", { class: "hint", text: `Every photo is resized to ${PHOTO_WIDTH} × ${PHOTO_HEIGHT} so all items match. "Show the whole photo" never cuts anything off; "Fill the frame" crops the edges.` }),
+    el("p", {
+      class: "hint",
+      text: `Up to ${MAX_IMAGES} photos; the first is the main one. Tag a photo with a color to show it when that color is picked. Every photo is resized to ${PHOTO_WIDTH} × ${PHOTO_HEIGHT} so all items match: "Show the whole photo" never cuts anything off; "Fill the frame" crops the edges.`,
+    }),
     status,
-    remove,
-    input
+    anchor
   );
+  render();
 
   return {
     element,
-    refresh() {
-      remove.hidden = !input.value;
-      chooseLabel.textContent = input.value ? "Replace image" : "Upload image";
+    render,
+    get value() {
+      return photos.map(({ url, color }) => ({ url, color }));
     },
   };
 }
@@ -1015,7 +1141,7 @@ function openItem(item) {
   const editing = Boolean(item);
   const draft = item ?? {
     name: "", sku: "", brand: "jf-hadens", category: "Apparel", unit: "Each", costCents: 0, minPerOrder: 1, maxPerOrder: 6, orderIncrement: 1,
-    description: "", tone: "mango", art: "tee", image: "", active: true,
+    description: "", tone: "mango", art: "tee", image: "", images: [], colors: [], active: true,
     variants: [{ id: "default", label: "", stock: 0 }],
   };
   const hasOptions = draft.variants.length > 1 || Boolean(draft.variants[0]?.label);
@@ -1026,15 +1152,15 @@ function openItem(item) {
 
   const tone = el("select", { id: "item-tone", name: "tone" }, options(TONES, { selected: draft.tone }));
   const art = el("select", { id: "item-art", name: "art" }, options(Object.entries(ART_LABELS), { selected: draft.art }));
-  // The photo, as stored: an uploaded /images/ path (or an older link).
-  const image = el("input", { id: "item-image", name: "image", type: "hidden", value: draft.image });
-  const photo = photoPicker(image, () => renderPreview());
+  // Photos, as stored: uploaded /images/ paths (or older links), each maybe
+  // tagged with a colour.
+  const colorField = colorChoices(draft.colors ?? [], () => photos.render());
+  const photos = photoGallery({ images: itemImages(draft), colors: () => colorField.value, onChange: () => renderPreview() });
 
   function renderPreview() {
-    clear(preview, artwork({ tone: tone.value, art: art.value, image: image.value }, "art-preview"));
-    photo.refresh();
+    clear(preview, artwork({ tone: tone.value, art: art.value, image: photos.value[0]?.url ?? "" }, "art-preview"));
   }
-  for (const control of [tone, art, image]) control.addEventListener("change", renderPreview);
+  for (const control of [tone, art]) control.addEventListener("change", renderPreview);
 
   // Options and stock
   const singleStock = el("input", {
@@ -1212,7 +1338,8 @@ function openItem(item) {
       field("Colourway", tone, { span: 3 }),
       field("Illustration", art, { span: 3 }),
       preview,
-      photo.element,
+      colorField.element,
+      photos.element,
       el("fieldset", { class: "span-6", name: "variants" }, el("legend", { text: "Stock" }), modeRadios, singleBox, optionsBox)
     )
   );
@@ -1248,7 +1375,9 @@ function openItem(item) {
       description: form.elements.namedItem("description").value,
       tone: tone.value,
       art: art.value,
-      image: image.value,
+      image: photos.value[0]?.url ?? "",
+      images: photos.value,
+      colors: colorField.value,
       active: $("#item-active", form).checked,
       variants,
     };

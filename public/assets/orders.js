@@ -13,7 +13,7 @@ import {
   toast,
   wireHeader,
 } from "./core.js";
-import { ACCOUNT_TYPES, CARRIERS, PURPOSES, formatMoney, labelFor, orderRule, trackingUrl } from "./shared.js";
+import { ACCOUNT_TYPES, CARRIERS, PURPOSES, formatMoney, labelFor, optionText, orderRule, trackingUrl } from "./shared.js";
 
 const STEPS = [
   ["submitted", "Submitted"],
@@ -171,7 +171,7 @@ function orderCard(order) {
           "li",
           {},
           artwork(line, "thumb"),
-          el("span", {}, el("strong", { text: `${line.quantity} × ` }), line.name, line.variantLabel ? ` (${line.variantLabel})` : "")
+          el("span", {}, el("strong", { text: `${line.quantity} × ` }), line.name, optionText(line) ? ` (${optionText(line)})` : "")
         )
       )
     ),
@@ -233,7 +233,9 @@ async function reorder(order) {
   for (const line of order.lines) {
     const item = catalog.find((i) => i.id === line.itemId);
     const variant = item?.variants.find((v) => v.id === line.variantId);
-    if (!item || !variant) {
+    const colors = item?.colors ?? [];
+    const color = colors.includes(line.color) ? line.color : "";
+    if (!item || !variant || (colors.length && !color)) {
       skipped += 1;
       continue;
     }
@@ -245,7 +247,7 @@ async function reorder(order) {
     const want = Math.ceil(Math.max(line.quantity, min - have) / step) * step;
     const quantity = Math.min(want, room);
     if (quantity > 0 && have + quantity >= min) {
-      cart.add(item.id, variant.id, quantity);
+      cart.add(item.id, variant.id, quantity, color);
       added += 1;
     }
     if (quantity < line.quantity) skipped += 1;

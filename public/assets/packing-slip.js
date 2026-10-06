@@ -1,5 +1,5 @@
 import { addressLines, api, clear, el, formatCalendarDate, formatDate } from "./core.js";
-import { ACCOUNT_TYPES, PURPOSES, labelFor } from "./shared.js";
+import { ACCOUNT_TYPES, PURPOSES, labelFor, optionText } from "./shared.js";
 
 const slip = document.getElementById("slip");
 
@@ -65,7 +65,7 @@ try {
             el("td", {}, el("div", { class: "box", "aria-hidden": "true" })),
             el("td", { text: line.sku }),
             el("td", {}, el("div", { text: line.name }), el("div", { class: "cell-sub", text: line.unit })),
-            el("td", { text: line.variantLabel || "—" }),
+            el("td", { text: optionText(line) || "—" }),
             el("td", { text: String(line.quantity) })
           )
         )

@@ -13,7 +13,7 @@ import {
   teamApi,
   wireHeader,
 } from "./core.js";
-import { ACCOUNT_TYPES, PURPOSES, SHIPPING_SPEEDS, US_STATES, formatMoney } from "./shared.js";
+import { ACCOUNT_TYPES, PURPOSES, SHIPPING_SPEEDS, US_STATES, formatMoney, imageFor } from "./shared.js";
 
 const form = $("#checkout-form");
 const alertBox = $("#checkout-alert");
@@ -178,17 +178,21 @@ function renderSummary() {
         problems.push("An item in your order is no longer available. Edit your order to remove it.");
         return el("li", {}, el("div", { text: "Item no longer available" }));
       }
+      const colors = item.colors ?? [];
+      if (colors.length ? !colors.includes(line.color) : line.color) {
+        problems.push(`${item.name} isn't offered in ${line.color || "that color"} any more. Edit your order to change it.`);
+      }
       total += item.costCents * line.quantity;
       units += line.quantity;
       return el(
         "li",
         {},
-        artwork(item, "thumb"),
+        artwork({ ...item, image: imageFor(item, line.color) }, "thumb"),
         el(
           "div",
           { class: "line-info" },
           el("div", { class: "cell-main", text: item.name }),
-          el("div", { class: "cell-sub", text: [variant.label, `Qty ${line.quantity}`].filter(Boolean).join(" · ") })
+          el("div", { class: "cell-sub", text: [line.color, variant.label, `Qty ${line.quantity}`].filter(Boolean).join(" · ") })
         ),
         el("span", { text: formatMoney(item.costCents * line.quantity) })
       );

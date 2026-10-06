@@ -18,6 +18,37 @@ export const CATEGORIES = [
   "VIP",
 ];
 
+// Garment colours an item can be offered in, with swatch colours for the shop.
+export const COLOR_OPTIONS = [
+  { name: "White", hex: "#FFFFFF" },
+  { name: "Navy", hex: "#333366" },
+  { name: "Burgundy", hex: "#622D3F" },
+  { name: "Black", hex: "#222222" },
+  { name: "Royal", hex: "#304385" },
+  { name: "Red", hex: "#CD0000" },
+  { name: "Forest Green", hex: "#2F4F2F" },
+  { name: "Grey", hex: "#82817D" },
+  { name: "Carolina Blue", hex: "#6A91D4" },
+];
+export const MAX_IMAGES = 10;
+
+/** An item's photos, main one first; items saved before galleries had one. */
+export function itemImages(item) {
+  if (Array.isArray(item?.images) && item.images.length) return item.images;
+  return item?.image ? [{ url: item.image, color: "" }] : [];
+}
+
+/** The photo to show for a colour: one tagged with it, else the main photo. */
+export function imageFor(item, color = "") {
+  const images = itemImages(item);
+  return (color && images.find((i) => i.color === color)?.url) || images[0]?.url || "";
+}
+
+/** "Navy · L" for an order line or cart line. */
+export function optionText(line) {
+  return [line.color, line.variantLabel].filter(Boolean).join(" · ");
+}
+
 // Short codes that start each SKU.
 export const CATEGORY_CODES = {
   Apparel: "APP",

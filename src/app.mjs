@@ -22,10 +22,12 @@ import {
 } from "./auth.mjs";
 import {
   applyCategoryMoves,
+  applyColors,
   applyMinimums,
   applySeedPhotos,
   applySeedTextFixes,
   needsCategoryMoves,
+  needsColors,
   needsMinimums,
   needsSeedPhotos,
   needsSeedTextFixes,
@@ -219,6 +221,11 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   if (needsCategoryMoves(initial)) {
     const moved = await store.mutate((db) => applyCategoryMoves(db));
     console.log(`[catalog] moved ${moved} item(s) into the new categories`);
+    initial = await store.read();
+  }
+  if (needsColors(initial)) {
+    const added = await store.mutate((db) => applyColors(db));
+    console.log(`[catalog] added colour choices to ${added} item(s)`);
     initial = await store.read();
   }
   if (needsMinimums(initial)) {

@@ -12,6 +12,7 @@ import {
   STATUSES,
   TRANSITIONS,
   US_STATES,
+  imageFor,
   labelFor,
   quantityProblem,
 } from "../public/assets/shared.js";
@@ -78,26 +79,28 @@ function readLines(rawLines, catalog, errors) {
     return [];
   }
 
-  // Merge repeated item/option pairs so limits apply to the combined quantity.
+  // Merge repeated item/option/colour lines so limits apply to the combined quantity.
   const merged = new Map();
   for (const raw of rawLines) {
     const itemId = cleanLine(raw?.itemId, 80);
     const variantId = cleanLine(raw?.variantId, 80) || "default";
+    const color = cleanLine(raw?.color, 40);
     const quantity = Number(raw?.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY) {
       errors.lines = `Quantities must be whole numbers from 1 to ${MAX_QUANTITY}.`;
       return [];
     }
-    const key = `${itemId}::${variantId}`;
+    const key = `${itemId}::${variantId}::${color}`;
     const prior = merged.get(key);
-    merged.set(key, { itemId, variantId, quantity: (prior?.quantity ?? 0) + quantity });
+    merged.set(key, { itemId, variantId, color, quantity: (prior?.quantity ?? 0) + quantity });
   }
 
   const problems = [];
   const perItem = new Map();
+  const perVariant = new Map();
   const lines = [];
 
-  for (const { itemId, variantId, quantity } of merged.values()) {
+  for (const { itemId, variantId, color, quantity } of merged.values()) {
     const item = catalog.find((entry) => entry.id === itemId && entry.active);
     if (!item) {
       problems.push("An item in your cart is no longer available. Remove it and try again.");
@@ -108,15 +111,15 @@ function readLines(rawLines, catalog, errors) {
       problems.push(`Choose an option for ${item.name}.`);
       continue;
     }
-    if (Number.isInteger(variant.stock) && quantity > variant.stock) {
-      problems.push(
-        variant.stock === 0
-          ? `${describeVariant(item, variant)} is out of stock.`
-          : `Only ${variant.stock} left of ${describeVariant(item, variant)}.`
-      );
+    const colors = item.colors ?? [];
+    if (colors.length && !colors.includes(color)) {
+      problems.push(`Choose a color for ${item.name}.`);
       continue;
     }
     perItem.set(item.id, (perItem.get(item.id) ?? 0) + quantity);
+    // Stock is counted per option, whatever colours it is ordered in.
+    const variantKey = `${item.id}::${variant.id}`;
+    perVariant.set(variantKey, { item, variant, total: (perVariant.get(variantKey)?.total ?? 0) + quantity });
 
     lines.push({
       itemId: item.id,
@@ -124,14 +127,25 @@ function readLines(rawLines, catalog, errors) {
       sku: item.sku,
       name: item.name,
       variantLabel: variant.label,
+      color: colors.length ? color : "",
       unit: item.unit,
       tone: item.tone,
       art: item.art,
-      image: item.image,
+      image: imageFor(item, colors.length ? color : ""),
       quantity,
       unitCostCents: item.costCents,
       lineTotalCents: item.costCents * quantity,
     });
+  }
+
+  for (const { item, variant, total } of perVariant.values()) {
+    if (Number.isInteger(variant.stock) && total > variant.stock) {
+      problems.push(
+        variant.stock === 0
+          ? `${describeVariant(item, variant)} is out of stock.`
+          : `Only ${variant.stock} left of ${describeVariant(item, variant)}.`
+      );
+    }
   }
 
   for (const [itemId, total] of perItem) {
@@ -506,6 +520,7 @@ export const CSV_COLUMNS = [
   ["rush_reason", (o) => o.rushReason],
   ["sku", (o, l) => l.sku],
   ["item", (o, l) => l.name],
+  ["color", (o, l) => l.color ?? ""],
   ["option", (o, l) => l.variantLabel],
   ["quantity", (o, l) => l.quantity],
   ["unit_cost", (o, l) => (l.unitCostCents / 100).toFixed(2)],
