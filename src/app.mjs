@@ -214,7 +214,7 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   let initial = await store.read();
   if (needsSeedTextFixes(initial)) {
     const changed = await store.mutate((db) => applySeedTextFixes(db));
-    console.log(`[catalog] brought ${changed} starter-catalog field(s) in line with tropicaldistillery.com`);
+    console.log(`[catalog] brought ${changed} starter-catalog field(s) up to date`);
     initial = await store.read();
   }
   // Colours before photos: a starter item's photos are tagged with its colours.

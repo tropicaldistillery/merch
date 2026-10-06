@@ -310,7 +310,7 @@ describe("colors and photo galleries", () => {
     const db = { meta: {}, catalog };
     assert.equal(needsColors(db), true);
     assert.equal(applyColors(db), 3);
-    assert.equal(db.catalog.find((i) => i.id === "jfh-good-spirits-tee").colors.length, 9);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-good-spirits-tee").colors.length, 7);
     assert.equal(db.catalog.find((i) => i.id === "td-team-polo").colors.length, 9);
     assert.equal(db.catalog.find((i) => i.id === "jfh-polo").colors.length, 9);
     assert.deepEqual(db.catalog.find((i) => i.id === "jfh-cap").colors, []);
@@ -385,8 +385,40 @@ describe("starter items added to existing stores", () => {
     const pin = db.catalog.find((i) => i.id === "jfh-lychee-pin");
     assert.deepEqual([pin.minPerOrder, pin.maxPerOrder, pin.orderIncrement], [10, 50, 10]);
     const gso = db.catalog.find((i) => i.id === "jfh-good-spirits-tee");
-    assert.equal(imageFor(gso, "Black"), "/assets/merch/jfh-good-spirits-tee-model.jpg");
-    assert.equal(imageFor(gso, "Red"), "/assets/merch/jfh-good-spirits-tee-red.jpg");
+    assert.equal(imageFor(gso, "Black"), "/assets/merch/jfh-good-spirits-tee-black.jpg");
+    assert.equal(imageFor(gso, "Navy"), "/assets/merch/jfh-good-spirits-tee-navy.jpg");
+    assert.ok(!gso.colors.includes("Red") && !gso.colors.includes("Royal"));
+  });
+
+  it("moves an untouched Good Spirits Only Tee to the back print without Red and Royal, once", () => {
+    const id = "jfh-good-spirits-tee";
+    const ALL = ["White", "Navy", "Burgundy", "Black", "Royal", "Red", "Forest Green", "Grey", "Carolina Blue"];
+    const firstVersion = () => ({
+      ...structuredClone(SEED_CATALOG.find((i) => i.id === id)),
+      colors: [...ALL],
+      image: `/assets/merch/${id}-model.jpg`,
+      images: [{ url: `/assets/merch/${id}-model.jpg`, color: "Black" },
+        ...["Black", "White", "Navy", "Burgundy", "Royal", "Red", "Forest Green", "Grey", "Carolina Blue"].map((c) => ({ url: `/assets/merch/${id}-${c.toLowerCase().replace(" ", "-")}.jpg`, color: c }))],
+      description: "Retro striped GOOD SPIRITS ONLY in orange, sky blue and pink, with the J.F. Haden's logo.",
+    });
+    const db = { meta: {}, catalog: [firstVersion()] };
+    assert.equal(needsSeedTextFixes(db), true);
+    assert.equal(applySeedTextFixes(db), 4);
+    const tee = db.catalog[0];
+    assert.deepEqual(tee.colors, ["White", "Navy", "Burgundy", "Black", "Forest Green", "Grey", "Carolina Blue"]);
+    assert.equal(tee.images.length, 7);
+    assert.equal(tee.image, `/assets/merch/${id}-black.jpg`);
+    assert.match(tee.description, /printed on the back/);
+    assert.equal(needsSeedTextFixes(db), false);
+
+    // an admin's own photos and colours stay
+    const edited = firstVersion();
+    edited.images = [{ url: "/images/0123456789abcdef0123456789abcdef.webp", color: "" }];
+    edited.colors = ["Red"];
+    const db2 = { meta: {}, catalog: [edited] };
+    applySeedTextFixes(db2);
+    assert.deepEqual(db2.catalog[0].colors, ["Red"]);
+    assert.equal(db2.catalog[0].images.length, 1);
   });
 });
 

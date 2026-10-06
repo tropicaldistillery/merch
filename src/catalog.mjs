@@ -22,7 +22,7 @@ const ALL_COLORS = ["White", "Navy", "Burgundy", "Black", "Royal", "Red", "Fores
 const SEED_COLORS = {
   "td-team-polo": ALL_COLORS,
   "jfh-polo": ALL_COLORS,
-  "jfh-good-spirits-tee": ALL_COLORS,
+  "jfh-good-spirits-tee": ["White", "Navy", "Burgundy", "Black", "Forest Green", "Grey", "Carolina Blue"],
 };
 
 // Product photos for the starter items, in public/assets/merch, main photo
@@ -41,8 +41,8 @@ export const SEED_PHOTOS = {
   "jfh-polo": perColor("jfh-polo", "Royal"),
   "jfh-espresso-tee": numbered("jfh-espresso-tee", 5),
   "jfh-espresso-tank": one("jfh-espresso-tank"),
-  // the model in black first, then the tee in every colour
-  "jfh-good-spirits-tee": [photo("jfh-good-spirits-tee-model", "Black"), ...perColor("jfh-good-spirits-tee", "Black")],
+  // printed on the back: black first, then every colour
+  "jfh-good-spirits-tee": perColor("jfh-good-spirits-tee", "Black"),
   "jfh-cap": one("jfh-cap"),
   "twinp-trucker": one("twinp-trucker"),
   "jfh-bar-mat": one("jfh-bar-mat"),
@@ -98,7 +98,7 @@ export const SEED_CATALOG = [
   {
     id: "jfh-good-spirits-tee", sku: "TD-APP-009", name: "Good Spirits Only Tee",
     brand: "jf-hadens", category: "Apparel", tone: "mango", art: "tee", unit: "Each",
-    description: "Retro striped GOOD SPIRITS ONLY in orange, sky blue and pink, with the J.F. Haden's logo.",
+    description: "Retro striped GOOD SPIRITS ONLY in orange, sky blue and pink, with the J.F. Haden's logo, printed on the back.",
     costCents: 1400, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
   },
   {
@@ -327,10 +327,27 @@ export const SEED_TEXT_FIXES = [
     field: "description",
     from: "Pocket recipe cards for the Mango Mule, Espresso Martini and Key Lime Pie Martini. Printed to order.",
   },
+
+  // Good Spirits Only moved to the back of the tee and dropped Red and Royal.
+  // Each field changes only while it is still exactly as first added.
+  ...(() => {
+    const id = "jfh-good-spirits-tee";
+    const old = ["Black", "White", "Navy", "Burgundy", "Royal", "Red", "Forest Green", "Grey", "Carolina Blue"];
+    return [
+      { id, field: "colors", from: ALL_COLORS },
+      { id, field: "images", from: [photo(`${id}-model`, "Black"), ...old.map((c) => photo(`${id}-${slug(c)}`, c))] },
+      { id, field: "image", from: `/assets/merch/${id}-model.jpg` },
+      { id, field: "description", from: "Retro striped GOOD SPIRITS ONLY in orange, sky blue and pink, with the J.F. Haden's logo." },
+    ];
+  })(),
 ].map((fix) => ({ ...fix, to: SEED_CATALOG.find((item) => item.id === fix.id)[fix.field] }));
 
 function pendingFixes(catalog) {
-  return SEED_TEXT_FIXES.filter((fix) => catalog.find((item) => item.id === fix.id)?.[fix.field] === fix.from);
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  return SEED_TEXT_FIXES.filter((fix) => {
+    const item = catalog.find((entry) => entry.id === fix.id);
+    return item !== undefined && same(item[fix.field], fix.from);
+  });
 }
 
 export function needsSeedTextFixes(db) {
@@ -341,7 +358,7 @@ export function needsSeedTextFixes(db) {
 export function applySeedTextFixes(db) {
   const pending = pendingFixes(db.catalog);
   for (const fix of pending) {
-    db.catalog.find((item) => item.id === fix.id)[fix.field] = fix.to;
+    db.catalog.find((item) => item.id === fix.id)[fix.field] = structuredClone(fix.to);
   }
   return pending.length;
 }
