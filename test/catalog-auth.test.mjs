@@ -485,6 +485,17 @@ describe("starter items added to existing stores", () => {
     assert.ok(edited.catalog.some((i) => i.id === "jfh-sunglasses"));
   });
 
+  it("adds the lip balm once, after the pool koozie, sold in tens", () => {
+    const db = { meta: { teamPolo: 1, jfhPolo: 1, merchDrop2: 1, martiniTee: 1, proofDrop: 1, sunglassesSplit: 1 }, catalog: structuredClone(SEED_CATALOG).filter((i) => i.id !== "jfh-lip-balm") };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["jfh-lip-balm"]);
+    const ids = db.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("jfh-pool-koozie") + 1], "jfh-lip-balm");
+    const balm = db.catalog.find((i) => i.id === "jfh-lip-balm");
+    assert.deepEqual([balm.minPerOrder, balm.maxPerOrder, balm.orderIncrement], [10, 50, 10]);
+    assert.equal(balm.image, "/assets/merch/jfh-lip-balm.jpg");
+    assert.equal(balm.supplier.company, "Ten 10 Design LLC");
+  });
+
   it("fills in where to order starter items once, leaving an admin's details alone", () => {
     const db = { meta: {}, catalog: structuredClone(SEED_CATALOG).map(({ supplier, ...rest }) => rest) };
     db.catalog.find((i) => i.id === "jfh-wine-bag").supplier = { company: "Our own vendor" };

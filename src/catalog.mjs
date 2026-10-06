@@ -67,6 +67,7 @@ export const SEED_PHOTOS = {
   "jfh-phone-stand": one("jfh-phone-stand"),
   "jfh-napkin-caddy": one("jfh-napkin-caddy"),
   "jfh-wine-bag": one("jfh-wine-bag"),
+  "jfh-lip-balm": one("jfh-lip-balm"),
   "jfh-sunglasses-laser": one("jfh-sunglasses-laser"),
   "jfh-sunglasses-vicky": one("jfh-sunglasses-vicky"),
   "jfh-sunglasses-rainbow": one("jfh-sunglasses-rainbow"),
@@ -86,6 +87,7 @@ const SEED_SUPPLIERS = {
   "jfh-tote-bag": { itemNumber: "337572 Full Color Sublimated Canvas Everyday Bag with Zipper Closure", notes: "Top zipper in white; base band PMS 4260 C; logo front and back." },
   "jfh-beach-towel": { company: TEN10, itemNumber: "BP1518SB sublimated towel, 28 × 56 in, white", notes: "Sales order 1282403; 50 ordered." },
   "jfh-pool-koozie": { notes: "Inflatable stars-and-stripes drink float, 7.87 in." },
+  "jfh-lip-balm": { itemNumber: "IBALM, Orange, Vanilla flavor", notes: "SO6664443, WO1267123. Logo printed in black on top." },
   "jfh-sunglasses-laser": { itemNumber: "Laser sunglasses, black, dark UV400 lenses", notes: "Proof 44400: logo screen printed white on the left arm (1.16 × 0.3 in) and the left lens corner (0.55 × 1.14 in)." },
   "jfh-sunglasses-vicky": { itemNumber: "Vicky sunglasses, stock green, dark UV400 lenses", notes: "Proof 44400: logo screen printed white on the left arm (0.72 × 0.18 in)." },
   "jfh-sunglasses-rainbow": { itemNumber: "Retro Pride Rainbow sunglasses, dark UV400 lenses", notes: "Proof 44400: logo UV printed white on the left arm (1.45 × 0.37 in)." },
@@ -366,6 +368,12 @@ export const SEED_CATALOG = [
     description, costCents: 450, maxPerOrder: 20, variants: single(50),
   })),
   {
+    id: "jfh-lip-balm", sku: "TD-GIV-018", name: "J.F. Haden's Lip Balm",
+    brand: "jf-hadens", category: "Giveaways", tone: "mango", art: "kit", unit: "Each",
+    description: "Vanilla lip balm in a round orange ball, with the J.F. Haden's logo on top. Ordered in tens.",
+    costCents: 150, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
+  },
+  {
     id: "jfh-drake-tumbler", sku: "TD-GIV-009", name: "J.F. Haden's Drake Tumbler",
     brand: "jf-hadens", category: "Giveaways", tone: "palm", art: "tumbler", unit: "16 oz",
     description: "16 oz vacuum-insulated tumbler in Midnight Blue with a slide lid. J.F. Haden's logo laser-engraved.",
@@ -549,6 +557,7 @@ const ADDED_ITEMS = [
   { flag: "sunglassesSplit", id: "jfh-sunglasses-rainbow", after: "jfh-sunglasses-vicky" },
   { flag: "sunglassesSplit", id: "jfh-sunglasses-andy-green", after: "jfh-sunglasses-rainbow" },
   { flag: "sunglassesSplit", id: "jfh-sunglasses-andy-black", after: "jfh-sunglasses-andy-green" },
+  { flag: "lipBalm", id: "jfh-lip-balm", after: ["jfh-pool-koozie", "jfh-koozies"] },
 ];
 
 // The first version of the sunglasses: one item with the five styles as
