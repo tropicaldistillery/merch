@@ -2972,3 +2972,24 @@ dialog.confirm .dialog-actions {
 .inline-actions .push-end {
   margin-left: auto;
 }
+
+/* Admin-only supplier details in the item editor */
+fieldset.admin-only {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-control);
+  padding: 14px 16px 16px;
+  background: var(--surface-alt);
+}
+fieldset.admin-only > legend {
+  padding: 0 6px;
+}
+fieldset.admin-only > legend .tag {
+  margin-left: 4px;
+  vertical-align: 1px;
+}
+fieldset.admin-only > .hint {
+  margin: 0 0 12px;
+}
+.supplier-line {
+  color: var(--pink-text);
+}

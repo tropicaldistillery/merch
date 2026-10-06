@@ -685,7 +685,7 @@ function renderOrderDetail(order) {
                 "tr",
                 {},
                 el("td", { text: line.sku }),
-                el("td", {}, el("div", { class: "cell-main", text: line.name }), el("div", { class: "cell-sub", text: [line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") })),
+                el("td", {}, el("div", { class: "cell-main", text: line.name }), el("div", { class: "cell-sub", text: [line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") }), supplierLine(catalog.find((i) => i.id === line.itemId))),
                 el("td", { class: "num", text: String(line.quantity) }),
                 el("td", { class: "num", text: formatMoney(line.lineTotalCents) })
               )
@@ -801,6 +801,18 @@ function stockSummary(item) {
   );
 }
 
+/** "From Ten 10 Design LLC · #1602-14", for admins only. */
+function supplierText(item) {
+  const s = item?.supplier ?? {};
+  const who = s.company || s.contact;
+  if (!who && !s.itemNumber) return "";
+  return [who ? `From ${who}` : "", s.itemNumber].filter(Boolean).join(" · ");
+}
+function supplierLine(item) {
+  const text = supplierText(item);
+  return text ? el("div", { class: "cell-sub supplier-line", text }) : null;
+}
+
 function renderCatalog() {
   const query = ui.catalogQuery.toLowerCase();
   const visible = catalog.filter(
@@ -823,7 +835,7 @@ function renderCatalog() {
         el(
           "tr",
           {},
-          el("td", {}, el("div", { class: "item-cell" }, artwork(item, "thumb"), el("div", {}, el("div", { class: "cell-main", text: item.name }), el("div", { class: "cell-sub", text: [item.sku, item.unit, item.colors?.length ? plural(item.colors.length, "color") : ""].filter(Boolean).join(" · ") })))),
+          el("td", {}, el("div", { class: "item-cell" }, artwork(item, "thumb"), el("div", {}, el("div", { class: "cell-main", text: item.name }), el("div", { class: "cell-sub", text: [item.sku, item.unit, item.colors?.length ? plural(item.colors.length, "color") : ""].filter(Boolean).join(" · ") }), supplierLine(item)))),
           el("td", {}, el("div", { text: item.category }), el("div", { class: "cell-sub", text: labelFor(BRANDS, item.brand) })),
           el("td", { class: "num", text: formatMoney(item.costCents) }),
           el("td", {}, stockSummary(item)),
@@ -1319,6 +1331,37 @@ function openItem(item) {
   }
   category.addEventListener("change", minSetting.refresh);
 
+  // Where to order it from: admin-only, never part of what the store shows.
+  const supplier = draft.supplier ?? {};
+  const supplierInput = (key, attrs = {}) =>
+    el("input", { id: `item-supplier-${key}`, name: `supplier${key[0].toUpperCase()}${key.slice(1)}`, type: "text", value: supplier[key] ?? "", ...attrs });
+  const supplierFields = {
+    company: supplierInput("company", { maxlength: "120", placeholder: "e.g. Ten 10 Design LLC" }),
+    contact: supplierInput("contact", { maxlength: "120", autocomplete: "off" }),
+    email: supplierInput("email", { type: "email", maxlength: "160", autocomplete: "off" }),
+    phone: supplierInput("phone", { type: "tel", maxlength: "40", autocomplete: "off" }),
+    website: supplierInput("website", { maxlength: "300", placeholder: "company.com" }),
+    itemNumber: supplierInput("itemNumber", { maxlength: "160", placeholder: "Their item or style number" }),
+    notes: el("textarea", { id: "item-supplier-notes", name: "supplierNotes", rows: "2", maxlength: "600", value: supplier.notes ?? "", placeholder: "PO numbers, imprint specs, lead times…" }),
+  };
+  const supplierBox = el(
+    "fieldset",
+    { class: "span-6 admin-only" },
+    el("legend", {}, "Where to order ", el("span", { class: "tag", text: "Admin only" })),
+    el("p", { class: "hint", text: "For reordering. Team members never see this." }),
+    el(
+      "div",
+      { class: "form-grid" },
+      field("Supplier", supplierFields.company, { span: 3, optional: true }),
+      field("Contact", supplierFields.contact, { span: 3, optional: true }),
+      field("Email", supplierFields.email, { span: 3, optional: true }),
+      field("Phone", supplierFields.phone, { span: 3, optional: true }),
+      field("Website", supplierFields.website, { span: 3, optional: true }),
+      field("Their item #", supplierFields.itemNumber, { span: 3, optional: true }),
+      field("Notes", supplierFields.notes, { optional: true })
+    )
+  );
+
   form.append(
     alertBox,
     el(
@@ -1340,7 +1383,8 @@ function openItem(item) {
       preview,
       colorField.element,
       photos.element,
-      el("fieldset", { class: "span-6", name: "variants" }, el("legend", { text: "Stock" }), modeRadios, singleBox, optionsBox)
+      el("fieldset", { class: "span-6", name: "variants" }, el("legend", { text: "Stock" }), modeRadios, singleBox, optionsBox),
+      supplierBox
     )
   );
 
@@ -1380,6 +1424,7 @@ function openItem(item) {
       colors: colorField.value,
       active: $("#item-active", form).checked,
       variants,
+      supplier: Object.fromEntries(Object.entries(supplierFields).map(([key, input]) => [key, input.value])),
     };
 
     const submit = $("#item-save");

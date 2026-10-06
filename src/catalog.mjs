@@ -67,8 +67,34 @@ export const SEED_PHOTOS = {
   "jfh-phone-stand": one("jfh-phone-stand"),
   "jfh-napkin-caddy": one("jfh-napkin-caddy"),
   "jfh-wine-bag": one("jfh-wine-bag"),
-  // one photo per style, in the order of the options
-  "jfh-sunglasses": numbered("jfh-sunglasses", 5),
+  "jfh-sunglasses-laser": one("jfh-sunglasses-laser"),
+  "jfh-sunglasses-vicky": one("jfh-sunglasses-vicky"),
+  "jfh-sunglasses-rainbow": one("jfh-sunglasses-rainbow"),
+  "jfh-sunglasses-andy-green": one("jfh-sunglasses-andy-green"),
+  "jfh-sunglasses-andy-black": one("jfh-sunglasses-andy-black"),
+};
+
+// Where an admin orders each starter item from, as far as the vendor proofs
+// say. Only admins see this; it is never part of what the store shows.
+export const SUPPLIER_FIELDS = { company: 120, contact: 120, email: 160, phone: 40, website: 300, itemNumber: 160, notes: 600 };
+const emptySupplier = () => Object.fromEntries(Object.keys(SUPPLIER_FIELDS).map((k) => [k, ""]));
+const TEN10 = "Ten 10 Design LLC";
+const SEED_SUPPLIERS = {
+  "jfh-tote-bag": { itemNumber: "337572 Full Color Sublimated Canvas Everyday Bag with Zipper Closure", notes: "Top zipper in white; base band PMS 4260 C; logo front and back." },
+  "jfh-beach-towel": { company: TEN10, itemNumber: "BP1518SB sublimated towel, 28 × 56 in, white", notes: "Sales order 1282403; 50 ordered." },
+  "jfh-pool-koozie": { notes: "Inflatable stars-and-stripes drink float, 7.87 in." },
+  "jfh-sunglasses-laser": { itemNumber: "Laser sunglasses, black, dark UV400 lenses", notes: "Proof 44400: logo screen printed white on the left arm (1.16 × 0.3 in) and the left lens corner (0.55 × 1.14 in)." },
+  "jfh-sunglasses-vicky": { itemNumber: "Vicky sunglasses, stock green, dark UV400 lenses", notes: "Proof 44400: logo screen printed white on the left arm (0.72 × 0.18 in)." },
+  "jfh-sunglasses-rainbow": { itemNumber: "Retro Pride Rainbow sunglasses, dark UV400 lenses", notes: "Proof 44400: logo UV printed white on the left arm (1.45 × 0.37 in)." },
+  "jfh-sunglasses-andy-green": { itemNumber: "Andy sunglasses, stock green, pink mirror lenses", notes: "Logo on the left arm (1.10 × 0.25 in) in PMS 1495 C, PMS 732 C and black." },
+  "jfh-sunglasses-andy-black": { itemNumber: "Andy sunglasses, black, pink mirror lenses", notes: "Logo on the left arm (1.10 × 0.25 in) in PMS 1495 C, PMS 732 C and white." },
+  "jfh-drake-tumbler": { company: TEN10, itemNumber: "PCNA 1602-14 Drake Eco-Friendly Vacuum Insulated Tumbler 16 oz, Midnight Blue", notes: "Leed's proof 496309, order L0461549-0, PO 8574-6309. Laser engraved 1.5 × 0.34 in, centred 3.23 in up." },
+  "jfh-square-coasters": { company: TEN10, itemNumber: "D-C35SQ35 35 pt 3.5 in square coaster, 1-sided", notes: "SO 709242, PO 8574-6312. 250 ordered, packed 25." },
+  "jfh-phone-stand": { itemNumber: "WSC195 bamboo phone stand", notes: "Job 9406544, order 1304439. Laser engraved." },
+  "jfh-wine-bag": { company: TEN10, itemNumber: "Chablis wine bag, black", notes: "PO 8596-6213, proof 2620042. HM-9 Metallic Gold, 3.5 × 0.8 in, centred. 300 ordered." },
+  "jfh-cobbler-shaker": { notes: "Matte black cobbler shaker; J.F. Haden's on one side, Miami in a Bottle on the other, white." },
+  "jfh-napkin-caddy": { itemNumber: "#7107-01 bar caddy", notes: "Proof 25_261b_PM. Full-colour logo on the front." },
+  "jfh-bluetooth-speaker": { company: TEN10, itemNumber: "PCNA 7195-78 Micro Mag Magnetic Bluetooth Speaker, Black", notes: "Leed's proof 496308, order L0461549-0, PO 8574-6309. White, 0.85 × 0.19 in above the power button." },
 };
 
 function sized(stockBySize) {
@@ -325,18 +351,17 @@ export const SEED_CATALOG = [
     description: "Inflatable stars-and-stripes drink float, 7.87 in across, that holds a can or cup in the pool. J.F. Haden's logo on the ring. Ordered in tens.",
     costCents: 250, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
   },
-  {
-    id: "jfh-sunglasses", sku: "TD-GIV-008", name: "J.F. Haden's Sunglasses",
-    brand: "jf-hadens", category: "Giveaways", tone: "mango", art: "kit", unit: "Each",
-    description: "UV400 sunglasses with the J.F. Haden's logo on the left arm, in five styles: Laser in black (logo on the lens too), Vicky in green, Retro Pride Rainbow, and Andy with pink mirror lenses in green or black.",
-    costCents: 450, maxPerOrder: 20, variants: [
-      { id: "laser-black", label: "Laser, Black", stock: 50 },
-      { id: "vicky-green", label: "Vicky, Green", stock: 50 },
-      { id: "retro-rainbow", label: "Retro Pride Rainbow", stock: 50 },
-      { id: "andy-green", label: "Andy, Green, Pink Mirror", stock: 50 },
-      { id: "andy-black", label: "Andy, Black, Pink Mirror", stock: 50 },
-    ],
-  },
+  ...[
+    ["laser", "Laser Sunglasses", "Square-front Laser sunglasses in black with dark UV400 lenses, the J.F. Haden's logo in white on the left arm and the corner of the left lens.", "espresso"],
+    ["vicky", "Vicky Sunglasses", "Round Vicky sunglasses in green with dark UV400 lenses and the J.F. Haden's logo in white on the left arm.", "lime"],
+    ["rainbow", "Retro Pride Rainbow Sunglasses", "Classic-shape sunglasses printed in rainbow stripes, white inside, with dark UV400 lenses and the J.F. Haden's logo in white on the left arm.", "palm"],
+    ["andy-green", "Andy Sunglasses, Green", "Round Andy sunglasses in green with pink mirror lenses and the full-colour J.F. Haden's logo on the left arm.", "lime"],
+    ["andy-black", "Andy Sunglasses, Black", "Round Andy sunglasses in black with pink mirror lenses and the J.F. Haden's logo on the left arm.", "espresso"],
+  ].map(([style, name, description, tone], i) => ({
+    id: `jfh-sunglasses-${style}`, sku: `TD-GIV-${String(13 + i).padStart(3, "0")}`, name: `J.F. Haden's ${name}`,
+    brand: "jf-hadens", category: "Giveaways", tone, art: "kit", unit: "Each",
+    description, costCents: 450, maxPerOrder: 20, variants: single(50),
+  })),
   {
     id: "jfh-drake-tumbler", sku: "TD-GIV-009", name: "J.F. Haden's Drake Tumbler",
     brand: "jf-hadens", category: "Giveaways", tone: "palm", art: "tumbler", unit: "16 oz",
@@ -386,6 +411,7 @@ export const SEED_CATALOG = [
   image: SEED_PHOTOS[item.id]?.[0].url ?? "",
   images: structuredClone(SEED_PHOTOS[item.id] ?? []),
   colors: SEED_COLORS[item.id] ?? [],
+  supplier: { ...emptySupplier(), ...SEED_SUPPLIERS[item.id] },
   active: true,
 }));
 
@@ -507,21 +533,35 @@ const ADDED_ITEMS = [
   { flag: "proofDrop", id: "jfh-tote-bag", after: "jfh-espresso-coasters" },
   { flag: "proofDrop", id: "jfh-beach-towel", after: "jfh-tote-bag" },
   { flag: "proofDrop", id: "jfh-pool-koozie", after: "jfh-koozies" },
-  { flag: "proofDrop", id: "jfh-sunglasses", after: "jfh-beach-towel" },
   { flag: "proofDrop", id: "jfh-drake-tumbler", after: "td-tumbler" },
   { flag: "proofDrop", id: "jfh-square-coasters", after: "jfh-espresso-coasters" },
-  { flag: "proofDrop", id: "jfh-phone-stand", after: "jfh-sunglasses" },
+  { flag: "proofDrop", id: "jfh-phone-stand", after: "jfh-beach-towel" },
   { flag: "proofDrop", id: "jfh-wine-bag", after: "jfh-phone-stand" },
   { flag: "proofDrop", id: "jfh-cobbler-shaker", after: "jfh-jigger" },
   { flag: "proofDrop", id: "jfh-napkin-caddy", after: "jfh-cobbler-shaker" },
   { flag: "proofDrop", id: "jfh-bluetooth-speaker", after: "jfh-throw-pillow" },
+  // the sunglasses as one item per style, where the single item with style options was
+  { flag: "sunglassesSplit", id: "jfh-sunglasses-laser", after: ["jfh-sunglasses", "jfh-beach-towel"] },
+  { flag: "sunglassesSplit", id: "jfh-sunglasses-vicky", after: "jfh-sunglasses-laser" },
+  { flag: "sunglassesSplit", id: "jfh-sunglasses-rainbow", after: "jfh-sunglasses-vicky" },
+  { flag: "sunglassesSplit", id: "jfh-sunglasses-andy-green", after: "jfh-sunglasses-rainbow" },
+  { flag: "sunglassesSplit", id: "jfh-sunglasses-andy-black", after: "jfh-sunglasses-andy-green" },
 ];
+
+// The first version of the sunglasses: one item with the five styles as
+// options. It goes when the separate items come in, unless an admin has
+// renamed it or changed its options.
+const COMBINED_SUNGLASSES = {
+  id: "jfh-sunglasses",
+  name: "J.F. Haden's Sunglasses",
+  labels: ["Laser, Black", "Vicky, Green", "Retro Pride Rainbow", "Andy, Green, Pink Mirror", "Andy, Black, Pink Mirror"],
+};
 
 export function needsAddedItems(db) {
   return ADDED_ITEMS.some(({ flag }) => !db.meta?.[flag]);
 }
 
-/** Returns the items added. */
+/** Returns the items added; any item they replace is listed in `.removed`. */
 export function applyAddedItems(db) {
   const pending = new Set(ADDED_ITEMS.filter(({ flag }) => !db.meta[flag]).map(({ flag }) => flag));
   const added = [];
@@ -533,12 +573,43 @@ export function applyAddedItems(db) {
     const item = structuredClone(seed);
     const taken = db.catalog.map((i) => i.sku);
     if (taken.includes(item.sku)) item.sku = generateSku(item.name, item.category, taken);
-    const at = db.catalog.findIndex((i) => i.id === after);
+    const anchor = [after].flat().find((a) => db.catalog.some((i) => i.id === a));
+    const at = db.catalog.findIndex((i) => i.id === anchor);
     db.catalog.splice(at >= 0 ? at + 1 : db.catalog.length, 0, item);
     added.push(item);
   }
+  Object.defineProperty(added, "removed", { value: [], enumerable: false });
+  if (pending.has("sunglassesSplit")) {
+    const old = db.catalog.find((i) => i.id === COMBINED_SUNGLASSES.id);
+    const untouched = old && old.name === COMBINED_SUNGLASSES.name &&
+      JSON.stringify(old.variants.map((v) => v.label)) === JSON.stringify(COMBINED_SUNGLASSES.labels);
+    if (untouched) {
+      db.catalog.splice(db.catalog.indexOf(old), 1);
+      added.removed.push(old);
+    }
+  }
   for (const flag of pending) db.meta[flag] = 1;
   return added;
+}
+
+/**
+ * Where to order each starter item, from the vendor proofs: filled in once
+ * for starter items that have no supplier details yet.
+ */
+export function needsSeedSuppliers(db) {
+  return !db.meta?.seedSuppliers;
+}
+
+export function applySeedSuppliers(db) {
+  let changed = 0;
+  for (const item of db.catalog) {
+    const seed = SEED_SUPPLIERS[item.id];
+    if (!seed || Object.values(item.supplier ?? {}).some(Boolean)) continue;
+    item.supplier = { ...emptySupplier(), ...seed };
+    changed += 1;
+  }
+  db.meta.seedSuppliers = 1;
+  return changed;
 }
 
 /**
@@ -791,6 +862,25 @@ export function normalizeItem(input, { catalog, existing = null }) {
     }
   }
 
+  // Where to order it: admin-only details. A client that doesn't send them
+  // leaves them as they were.
+  const supplier = emptySupplier();
+  const rawSupplier = src.supplier && typeof src.supplier === "object" ? src.supplier : existing?.supplier ?? {};
+  for (const [key, max] of Object.entries(SUPPLIER_FIELDS)) supplier[key] = cleanText(rawSupplier[key], max);
+  if (supplier.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supplier.email)) {
+    errors.supplierEmail = "Enter an email address like name@company.com, or leave it blank.";
+  }
+  if (supplier.website) {
+    const withScheme = /^https?:\/\//i.test(supplier.website) ? supplier.website : `https://${supplier.website}`;
+    try {
+      const url = new URL(withScheme);
+      if (!url.hostname.includes(".")) throw new Error("no host");
+      supplier.website = url.href;
+    } catch {
+      errors.supplierWebsite = "Enter a web address like company.com, or leave it blank.";
+    }
+  }
+
   if (Object.keys(errors).length) {
     throw new ValidationError("Some details need attention.", errors);
   }
@@ -820,6 +910,7 @@ export function normalizeItem(input, { catalog, existing = null }) {
     maxPerOrder,
     orderIncrement,
     variants,
+    supplier,
     active: src.active !== false,
   };
 }

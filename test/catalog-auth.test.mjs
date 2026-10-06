@@ -15,6 +15,7 @@ import {
   applyMinimums,
   applyPoloColors,
   applySeedPhotos,
+  applySeedSuppliers,
   applySeedTextFixes,
   needsAddedItems,
   needsCategoryMoves,
@@ -22,8 +23,10 @@ import {
   needsMinimums,
   needsPoloColors,
   needsSeedPhotos,
+  needsSeedSuppliers,
   needsSeedTextFixes,
   normalizeItem,
+  publicItem,
 } from "../src/catalog.mjs";
 import { CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, generateSku, imageFor, itemImages, quantityRuleText } from "../public/assets/shared.js";
 import { initialState } from "../src/store/initial-state.mjs";
@@ -96,6 +99,24 @@ describe("catalog items", () => {
     );
     assert.equal(edited.id, "jfh-logo-tee");
     assert.deepEqual(edited.variants.map((v) => v.id), ["m", "xs"]);
+  });
+
+  it("keeps where-to-order details for admins only", () => {
+    const supplier = { company: "Ten 10 Design LLC", contact: "Sam", email: "sam@example.com", phone: "555-0100", website: "example.com/order", itemNumber: "1602-14", notes: "PO 1" };
+    const item = normalizeItem({ ...VALID, supplier }, { catalog: SEED_CATALOG });
+    assert.deepEqual(item.supplier, { ...supplier, website: "https://example.com/order" });
+    assert.equal("supplier" in publicItem(item), false);
+    // a client that doesn't send them leaves them as they were
+    const edited = normalizeItem({ ...VALID, name: "Renamed" }, { catalog: SEED_CATALOG, existing: item });
+    assert.equal(edited.supplier.company, "Ten 10 Design LLC");
+    // and clearing them clears them
+    assert.equal(normalizeItem({ ...VALID, supplier: {} }, { catalog: SEED_CATALOG, existing: item }).supplier.company, "");
+  });
+
+  it("refuses a bad supplier email or website", () => {
+    const errors = errorsOf(() => normalizeItem({ ...VALID, supplier: { email: "not an email", website: "nope" } }, { catalog: SEED_CATALOG }));
+    assert.ok(errors.supplierEmail);
+    assert.ok(errors.supplierWebsite);
   });
 
   it("refuses unlabelled or repeated options", () => {
@@ -406,7 +427,8 @@ describe("starter items added to existing stores", () => {
   });
 
   it("adds the items made from vendor proofs once, each next to its kind, with their photos", () => {
-    const PROOFS = ["jfh-tote-bag", "jfh-beach-towel", "jfh-pool-koozie", "jfh-sunglasses", "jfh-drake-tumbler", "jfh-square-coasters", "jfh-phone-stand", "jfh-wine-bag", "jfh-cobbler-shaker", "jfh-napkin-caddy", "jfh-bluetooth-speaker"];
+    const SHADES = ["laser", "vicky", "rainbow", "andy-green", "andy-black"].map((s) => `jfh-sunglasses-${s}`);
+    const PROOFS = ["jfh-tote-bag", "jfh-beach-towel", "jfh-pool-koozie", "jfh-drake-tumbler", "jfh-square-coasters", "jfh-phone-stand", "jfh-wine-bag", "jfh-cobbler-shaker", "jfh-napkin-caddy", "jfh-bluetooth-speaker", ...SHADES];
     const db = { meta: { teamPolo: 1, jfhPolo: 1, merchDrop2: 1, martiniTee: 1 }, catalog: structuredClone(SEED_CATALOG).filter((i) => !PROOFS.includes(i.id)) };
     assert.equal(needsAddedItems(db), true);
     assert.deepEqual(applyAddedItems(db).map((i) => i.id).sort(), [...PROOFS].sort());
@@ -423,10 +445,49 @@ describe("starter items added to existing stores", () => {
     const koozie = db.catalog.find((i) => i.id === "jfh-pool-koozie");
     assert.deepEqual(koozie.images.map((p) => p.url), ["/assets/merch/jfh-pool-koozie-1.jpg", "/assets/merch/jfh-pool-koozie-2.jpg"]);
     assert.deepEqual([koozie.minPerOrder, koozie.maxPerOrder, koozie.orderIncrement], [10, 50, 10]);
-    const shades = db.catalog.find((i) => i.id === "jfh-sunglasses");
-    assert.equal(shades.variants.length, 5);
-    assert.equal(shades.images.length, 5);
+    assert.deepEqual(ids.slice(ids.indexOf("jfh-beach-towel") + 1, ids.indexOf("jfh-beach-towel") + 7), [...SHADES, "jfh-phone-stand"]);
+    for (const id of SHADES) assert.equal(db.catalog.find((i) => i.id === id).image, `/assets/merch/${id}.jpg`);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-drake-tumbler").supplier.company, "Ten 10 Design LLC");
     assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
+  });
+
+  it("swaps the sunglasses with style options for one item per style, in its place", () => {
+    const SHADES = ["laser", "vicky", "rainbow", "andy-green", "andy-black"].map((s) => `jfh-sunglasses-${s}`);
+    const combined = () => ({
+      ...structuredClone(SEED_CATALOG.find((i) => i.id === "jfh-tote-bag")),
+      id: "jfh-sunglasses", sku: "TD-GIV-008", name: "J.F. Haden's Sunglasses",
+      variants: ["Laser, Black", "Vicky, Green", "Retro Pride Rainbow", "Andy, Green, Pink Mirror", "Andy, Black, Pink Mirror"].map((label, i) => ({ id: `s${i}`, label, stock: 50 })),
+    });
+    const store = () => {
+      const catalog = structuredClone(SEED_CATALOG).filter((i) => !SHADES.includes(i.id));
+      catalog.splice(catalog.findIndex((i) => i.id === "jfh-beach-towel") + 1, 0, combined());
+      return { meta: { teamPolo: 1, jfhPolo: 1, merchDrop2: 1, martiniTee: 1, proofDrop: 1 }, catalog };
+    };
+    const db = store();
+    const added = applyAddedItems(db);
+    assert.deepEqual(added.map((i) => i.id), SHADES);
+    assert.deepEqual(added.removed.map((i) => i.id), ["jfh-sunglasses"]);
+    const ids = db.catalog.map((i) => i.id);
+    assert.ok(!ids.includes("jfh-sunglasses"));
+    assert.deepEqual(ids.slice(ids.indexOf("jfh-beach-towel") + 1, ids.indexOf("jfh-beach-towel") + 6), SHADES);
+
+    // one an admin has changed stays
+    const edited = store();
+    edited.catalog.find((i) => i.id === "jfh-sunglasses").name = "Sunnies";
+    assert.equal(applyAddedItems(edited).removed.length, 0);
+    assert.ok(edited.catalog.some((i) => i.id === "jfh-sunglasses"));
+  });
+
+  it("fills in where to order starter items once, leaving an admin's details alone", () => {
+    const db = { meta: {}, catalog: structuredClone(SEED_CATALOG).map(({ supplier, ...rest }) => rest) };
+    db.catalog.find((i) => i.id === "jfh-wine-bag").supplier = { company: "Our own vendor" };
+    assert.equal(needsSeedSuppliers(db), true);
+    const changed = applySeedSuppliers(db);
+    assert.ok(changed >= 10);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-wine-bag").supplier.company, "Our own vendor");
+    assert.match(db.catalog.find((i) => i.id === "jfh-bluetooth-speaker").supplier.itemNumber, /7195-78/);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-logo-tee").supplier, undefined);
+    assert.equal(needsSeedSuppliers(db), false);
   });
 
   it("moves an untouched Good Spirits Only Tee to the back print without Red and Royal, once", () => {

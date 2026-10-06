@@ -27,6 +27,7 @@ import {
   applyMinimums,
   applyPoloColors,
   applySeedPhotos,
+  applySeedSuppliers,
   applySeedTextFixes,
   needsAddedItems,
   needsCategoryMoves,
@@ -34,6 +35,7 @@ import {
   needsMinimums,
   needsPoloColors,
   needsSeedPhotos,
+  needsSeedSuppliers,
   needsSeedTextFixes,
   normalizeItem,
   publicItem,
@@ -228,6 +230,12 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     for (const item of added) {
       console.log(`[catalog] added ${item.name} (${item.sku}) in ${item.colors.length} colors with ${item.images.length} photos`);
     }
+    for (const item of added.removed) console.log(`[catalog] replaced ${item.name} (${item.sku}) with the items above`);
+    initial = await store.read();
+  }
+  if (needsSeedSuppliers(initial)) {
+    const changed = await store.mutate((db) => applySeedSuppliers(db));
+    console.log(`[catalog] added where-to-order details to ${changed} starter item(s)`);
     initial = await store.read();
   }
   if (needsPoloColors(initial)) {
