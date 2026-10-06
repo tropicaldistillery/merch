@@ -192,7 +192,9 @@ describe("per-order minimums", () => {
     catalog.push({ ...structuredClone(catalog[0]), id: "custom-item" });
     const db = { catalog };
     assert.equal(needsMinimums(db), true);
-    assert.equal(applyMinimums(db), 2);
+    const raised = catalog.filter((i) => i.id !== "custom-item" && Math.min(SEED_CATALOG.find((s) => s.id === i.id).minPerOrder, i.maxPerOrder) > 1).length;
+    assert.ok(raised >= 2);
+    assert.equal(applyMinimums(db), raised);
     assert.equal(db.catalog.find((i) => i.id === "jfh-jigger").minPerOrder, 3);
     assert.equal(db.catalog.find((i) => i.id === "jfh-lychee-pin").minPerOrder, 10);
     assert.equal(db.catalog.find((i) => i.id === "td-sample-cups").minPerOrder, 1);
@@ -401,6 +403,30 @@ describe("starter items added to existing stores", () => {
     assert.equal(tee.image, "/assets/merch/jfh-martini-tee-woman.jpg");
     assert.equal(imageFor(tee, "Navy"), "/assets/merch/jfh-martini-tee-navy.jpg");
     assert.equal(needsAddedItems(db), false);
+  });
+
+  it("adds the items made from vendor proofs once, each next to its kind, with their photos", () => {
+    const PROOFS = ["jfh-tote-bag", "jfh-beach-towel", "jfh-pool-koozie", "jfh-sunglasses", "jfh-drake-tumbler", "jfh-square-coasters", "jfh-phone-stand", "jfh-wine-bag", "jfh-cobbler-shaker", "jfh-napkin-caddy", "jfh-bluetooth-speaker"];
+    const db = { meta: { teamPolo: 1, jfhPolo: 1, merchDrop2: 1, martiniTee: 1 }, catalog: structuredClone(SEED_CATALOG).filter((i) => !PROOFS.includes(i.id)) };
+    assert.equal(needsAddedItems(db), true);
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id).sort(), [...PROOFS].sort());
+    const ids = db.catalog.map((i) => i.id);
+    const after = (id) => ids[ids.indexOf(id) + 1];
+    assert.equal(after("jfh-koozies"), "jfh-pool-koozie");
+    assert.equal(after("jfh-espresso-coasters"), "jfh-square-coasters");
+    assert.equal(after("td-tumbler"), "jfh-drake-tumbler");
+    assert.equal(after("jfh-jigger"), "jfh-cobbler-shaker");
+    assert.equal(after("jfh-cobbler-shaker"), "jfh-napkin-caddy");
+    assert.equal(after("jfh-throw-pillow"), "jfh-bluetooth-speaker");
+    assert.equal(db.meta.proofDrop, 1);
+    assert.equal(needsAddedItems(db), false);
+    const koozie = db.catalog.find((i) => i.id === "jfh-pool-koozie");
+    assert.deepEqual(koozie.images.map((p) => p.url), ["/assets/merch/jfh-pool-koozie-1.jpg", "/assets/merch/jfh-pool-koozie-2.jpg"]);
+    assert.deepEqual([koozie.minPerOrder, koozie.maxPerOrder, koozie.orderIncrement], [10, 50, 10]);
+    const shades = db.catalog.find((i) => i.id === "jfh-sunglasses");
+    assert.equal(shades.variants.length, 5);
+    assert.equal(shades.images.length, 5);
+    assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
   });
 
   it("moves an untouched Good Spirits Only Tee to the back print without Red and Royal, once", () => {

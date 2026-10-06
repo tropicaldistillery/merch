@@ -56,6 +56,19 @@ export const SEED_PHOTOS = {
   "jfh-espresso-stickers": one("jfh-espresso-stickers"),
   "jfh-throw-pillow": numbered("jfh-throw-pillow", 2),
   "jfh-key-lime-colada-talkers": one("jfh-key-lime-colada-talkers"),
+  "jfh-tote-bag": one("jfh-tote-bag"),
+  "jfh-beach-towel": one("jfh-beach-towel"),
+  "jfh-cobbler-shaker": one("jfh-cobbler-shaker"),
+  // the photo from the pool first, then the studio shot
+  "jfh-pool-koozie": numbered("jfh-pool-koozie", 2),
+  "jfh-bluetooth-speaker": one("jfh-bluetooth-speaker"),
+  "jfh-drake-tumbler": one("jfh-drake-tumbler"),
+  "jfh-square-coasters": one("jfh-square-coasters"),
+  "jfh-phone-stand": one("jfh-phone-stand"),
+  "jfh-napkin-caddy": one("jfh-napkin-caddy"),
+  "jfh-wine-bag": one("jfh-wine-bag"),
+  // one photo per style, in the order of the options
+  "jfh-sunglasses": numbered("jfh-sunglasses", 5),
 };
 
 function sized(stockBySize) {
@@ -294,6 +307,78 @@ export const SEED_CATALOG = [
     description: "12 x 12 in rubber spill mat for the service well, with the J.F. Haden's logo.",
     costCents: 1800, maxPerOrder: 4, variants: single(20),
   },
+  {
+    id: "jfh-tote-bag", sku: "TD-GIV-005", name: "J.F. Haden's Zipper Tote Bag",
+    brand: "jf-hadens", category: "Giveaways", tone: "oak", art: "kit", unit: "Each",
+    description: "Soft sublimated canvas tote, 17.5 × 12.5 in with a 5 in gusset and a white top zipper. Cream with a tan base and the J.F. Haden's logo on both sides.",
+    costCents: 1400, maxPerOrder: 6, variants: single(30),
+  },
+  {
+    id: "jfh-beach-towel", sku: "TD-GIV-006", name: "J.F. Haden's Beach Towel",
+    brand: "jf-hadens", category: "Giveaways", tone: "oak", art: "table-throw", unit: "Each",
+    description: "28 × 56 in sublimated beach towel, cream with tan stripes and the J.F. Haden's logo.",
+    costCents: 1800, maxPerOrder: 4, variants: single(50),
+  },
+  {
+    id: "jfh-pool-koozie", sku: "TD-GIV-007", name: "J.F. Haden's Pool Koozie",
+    brand: "jf-hadens", category: "Giveaways", tone: "sky", art: "tumbler", unit: "Each",
+    description: "Inflatable stars-and-stripes drink float, 7.87 in across, that holds a can or cup in the pool. J.F. Haden's logo on the ring. Ordered in tens.",
+    costCents: 250, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
+  },
+  {
+    id: "jfh-sunglasses", sku: "TD-GIV-008", name: "J.F. Haden's Sunglasses",
+    brand: "jf-hadens", category: "Giveaways", tone: "mango", art: "kit", unit: "Each",
+    description: "UV400 sunglasses with the J.F. Haden's logo on the left arm, in five styles: Laser in black (logo on the lens too), Vicky in green, Retro Pride Rainbow, and Andy with pink mirror lenses in green or black.",
+    costCents: 450, maxPerOrder: 20, variants: [
+      { id: "laser-black", label: "Laser, Black", stock: 50 },
+      { id: "vicky-green", label: "Vicky, Green", stock: 50 },
+      { id: "retro-rainbow", label: "Retro Pride Rainbow", stock: 50 },
+      { id: "andy-green", label: "Andy, Green, Pink Mirror", stock: 50 },
+      { id: "andy-black", label: "Andy, Black, Pink Mirror", stock: 50 },
+    ],
+  },
+  {
+    id: "jfh-drake-tumbler", sku: "TD-GIV-009", name: "J.F. Haden's Drake Tumbler",
+    brand: "jf-hadens", category: "Giveaways", tone: "palm", art: "tumbler", unit: "16 oz",
+    description: "16 oz vacuum-insulated tumbler in Midnight Blue with a slide lid. J.F. Haden's logo laser-engraved.",
+    costCents: 1800, maxPerOrder: 4, variants: single(30),
+  },
+  {
+    id: "jfh-square-coasters", sku: "TD-GIV-010", name: "J.F. Haden's Square Coasters",
+    brand: "jf-hadens", category: "Giveaways", tone: "mango", art: "cards", unit: "Pack of 25",
+    description: "3.5 in square pulpboard coasters, 35 pt, with the full-colour J.F. Haden's logo.",
+    costCents: 900, maxPerOrder: 10, variants: single(10),
+  },
+  {
+    id: "jfh-phone-stand", sku: "TD-GIV-011", name: "J.F. Haden's Bamboo Phone Stand",
+    brand: "jf-hadens", category: "Giveaways", tone: "oak", art: "table-tent", unit: "Each",
+    description: "Bamboo desk stand for a phone, with the J.F. Haden's logo laser-engraved on the front panel.",
+    costCents: 1200, maxPerOrder: 4, variants: single(25),
+  },
+  {
+    id: "jfh-wine-bag", sku: "TD-GIV-012", name: "J.F. Haden's Bottle Gift Bag",
+    brand: "jf-hadens", category: "Giveaways", tone: "espresso", art: "kit", unit: "Each",
+    description: "Black single-bottle gift bag with loop handles and the J.F. Haden's logo in metallic gold foil. Ordered in tens.",
+    costCents: 150, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(300),
+  },
+  {
+    id: "jfh-cobbler-shaker", sku: "TD-BAR-003", name: "J.F. Haden's Cobbler Shaker",
+    brand: "jf-hadens", category: "Bar Tools", tone: "espresso", art: "shaker", unit: "Each",
+    description: "Matte black cobbler shaker with a built-in strainer and cap. J.F. Haden's on one side, Miami in a Bottle on the other, printed white.",
+    costCents: 1600, maxPerOrder: 6, variants: single(24),
+  },
+  {
+    id: "jfh-napkin-caddy", sku: "TD-BAR-004", name: "J.F. Haden's Bar Napkin Caddy",
+    brand: "jf-hadens", category: "Bar Tools", tone: "espresso", art: "kit", unit: "Each",
+    description: "Black bar caddy for cocktail napkins, with a V-notch at the back and the full-colour J.F. Haden's logo on the front.",
+    costCents: 1400, maxPerOrder: 4, variants: single(20),
+  },
+  {
+    id: "jfh-bluetooth-speaker", sku: "TD-VIP-002", name: "J.F. Haden's Bluetooth Speaker",
+    brand: "jf-hadens", category: "VIP", tone: "espresso", art: "kit", unit: "Each",
+    description: "Compact magnetic Bluetooth speaker in black, with the J.F. Haden's logo in white above the power button. A thank-you for top accounts.",
+    costCents: 1500, maxPerOrder: 2, variants: single(20),
+  },
 ].map((item) => ({
   ...item,
   minPerOrder: item.minPerOrder ?? Math.min(suggestedMinPerOrder(item.costCents, item.category), item.maxPerOrder),
@@ -399,10 +484,11 @@ export function applySeedPhotos(db) {
 /**
  * Starter items put into existing stores once, with their colours and
  * photos: the Team Polo (back in stores that had deleted it), the J.F.
- * Haden's Polo, and the second merch drop. Each goes after the item named,
- * when that's still there. A store that has the item, or its own item of the
- * same name, is left alone; the SKU is remade if another item has taken it;
- * and deleting one afterwards sticks, since each group is only tried once.
+ * Haden's Polo, the second merch drop, and the items made from vendor
+ * proofs. Each goes after the item named, when that's still there. A store
+ * that has the item, or its own item of the same name, is left alone; the
+ * SKU is remade if another item has taken it; and deleting one afterwards
+ * sticks, since each group is only tried once.
  */
 const ADDED_ITEMS = [
   { flag: "teamPolo", id: "td-team-polo", after: "jfh-logo-tee" },
@@ -418,6 +504,17 @@ const ADDED_ITEMS = [
   { flag: "merchDrop2", id: "jfh-key-lime-colada-talkers", after: "jfh-key-lime-table-tents" },
   { flag: "merchDrop2", id: "jfh-spill-mat", after: "jfh-bar-mat" },
   { flag: "martiniTee", id: "jfh-martini-tee", after: "jfh-good-spirits-tee" },
+  { flag: "proofDrop", id: "jfh-tote-bag", after: "jfh-espresso-coasters" },
+  { flag: "proofDrop", id: "jfh-beach-towel", after: "jfh-tote-bag" },
+  { flag: "proofDrop", id: "jfh-pool-koozie", after: "jfh-koozies" },
+  { flag: "proofDrop", id: "jfh-sunglasses", after: "jfh-beach-towel" },
+  { flag: "proofDrop", id: "jfh-drake-tumbler", after: "td-tumbler" },
+  { flag: "proofDrop", id: "jfh-square-coasters", after: "jfh-espresso-coasters" },
+  { flag: "proofDrop", id: "jfh-phone-stand", after: "jfh-sunglasses" },
+  { flag: "proofDrop", id: "jfh-wine-bag", after: "jfh-phone-stand" },
+  { flag: "proofDrop", id: "jfh-cobbler-shaker", after: "jfh-jigger" },
+  { flag: "proofDrop", id: "jfh-napkin-caddy", after: "jfh-cobbler-shaker" },
+  { flag: "proofDrop", id: "jfh-bluetooth-speaker", after: "jfh-throw-pillow" },
 ];
 
 export function needsAddedItems(db) {
