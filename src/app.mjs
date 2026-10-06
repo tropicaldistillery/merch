@@ -213,6 +213,12 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     console.log(`[catalog] brought ${changed} starter-catalog field(s) in line with tropicaldistillery.com`);
     initial = await store.read();
   }
+  // Colours before photos: a starter item's photos are tagged with its colours.
+  if (needsColors(initial)) {
+    const added = await store.mutate((db) => applyColors(db));
+    console.log(`[catalog] added colour choices to ${added} item(s)`);
+    initial = await store.read();
+  }
   if (needsSeedPhotos(initial)) {
     const changed = await store.mutate((db) => applySeedPhotos(db));
     console.log(`[catalog] added product photos to ${changed} starter item(s)`);
@@ -221,11 +227,6 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   if (needsCategoryMoves(initial)) {
     const moved = await store.mutate((db) => applyCategoryMoves(db));
     console.log(`[catalog] moved ${moved} item(s) into the new categories`);
-    initial = await store.read();
-  }
-  if (needsColors(initial)) {
-    const added = await store.mutate((db) => applyColors(db));
-    console.log(`[catalog] added colour choices to ${added} item(s)`);
     initial = await store.read();
   }
   if (needsMinimums(initial)) {

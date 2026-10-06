@@ -296,25 +296,45 @@ describe("colors and photo galleries", () => {
 describe("starter catalog photos", () => {
   it("has a photo file for every starter item that names one", () => {
     for (const item of SEED_CATALOG) {
-      assert.equal(item.image, SEED_PHOTOS[item.id] ?? "");
-      if (!SEED_PHOTOS[item.id]) continue;
-      assert.ok(existsSync(new URL(`../public${SEED_PHOTOS[item.id]}`, import.meta.url)), `${SEED_PHOTOS[item.id]} is missing`);
-      assert.equal(normalizeItem(structuredClone(item), { catalog: SEED_CATALOG, existing: item }).image, item.image);
+      const gallery = SEED_PHOTOS[item.id] ?? [];
+      assert.deepEqual(item.images, gallery);
+      assert.equal(item.image, gallery[0]?.url ?? "");
+      for (const { url, color } of gallery) {
+        assert.ok(existsSync(new URL(`../public${url}`, import.meta.url)), `${url} is missing`);
+        assert.ok(!color || item.colors.includes(color), `${url} is tagged with a color the item doesn't come in`);
+      }
+      assert.deepEqual(normalizeItem(structuredClone(item), { catalog: SEED_CATALOG, existing: item }).images, gallery);
     }
   });
 
-  it("fills in photos once, keeping the admin's own and respecting removals", { skip: !Object.keys(SEED_PHOTOS).length && "no starter photos yet" }, () => {
-    const catalog = structuredClone(SEED_CATALOG).map((i) => ({ ...i, image: "", images: [] }));
-    catalog.find((i) => i.id === "jfh-cap").image = "/images/0123456789abcdef0123456789abcdef.webp";
-    const db = { meta: {}, catalog };
-    assert.equal(needsSeedPhotos(db), true);
-    assert.equal(applySeedPhotos(db), SEED_CATALOG.length - 1);
-    assert.equal(db.catalog.find((i) => i.id === "jfh-cap").image, "/images/0123456789abcdef0123456789abcdef.webp");
-    assert.equal(db.catalog.find((i) => i.id === "jfh-logo-tee").image, "/assets/merch/jfh-logo-tee.jpg");
-    assert.equal(db.meta.seedPhotos, SEED_PHOTOS_VERSION);
+  it("shows the team polo in each of its colors, navy first", () => {
+    const polo = SEED_CATALOG.find((i) => i.id === "td-team-polo");
+    assert.equal(polo.images.length, 9);
+    assert.equal(polo.image, "/assets/merch/td-team-polo-navy.jpg");
+    assert.equal(imageFor(polo, "Carolina Blue"), "/assets/merch/td-team-polo-carolina-blue.jpg");
+  });
 
-    db.catalog.find((i) => i.id === "jfh-logo-tee").image = "";
-    assert.equal(needsSeedPhotos(db), false);
+  it("fills in photos once, keeping the admin's own and respecting removals", () => {
+    const fresh = () => structuredClone(SEED_CATALOG).map((i) => ({ ...i, image: "", images: [] }));
+    const db = { meta: {}, catalog: fresh() };
+    assert.equal(needsSeedPhotos(db), true);
+    assert.equal(applySeedPhotos(db), Object.keys(SEED_PHOTOS).length);
+    assert.deepEqual(db.catalog.find((i) => i.id === "td-team-polo").images, SEED_PHOTOS["td-team-polo"]);
+    assert.equal(db.meta.seedPhotos, SEED_PHOTOS_VERSION);
+    db.catalog.find((i) => i.id === "td-team-polo").images = [];
+    assert.equal(needsSeedPhotos(db), false, "a removed photo doesn't come back");
+
+    const own = { meta: {}, catalog: fresh() };
+    const polo = own.catalog.find((i) => i.id === "td-team-polo");
+    polo.image = "/images/0123456789abcdef0123456789abcdef.webp";
+    applySeedPhotos(own);
+    assert.deepEqual(itemImages(polo), [{ url: "/images/0123456789abcdef0123456789abcdef.webp", color: "" }], "an admin's own photo stays");
+
+    const fewer = { meta: {}, catalog: fresh() };
+    const trimmed = fewer.catalog.find((i) => i.id === "td-team-polo");
+    trimmed.colors = ["Red", "Black"];
+    applySeedPhotos(fewer);
+    assert.deepEqual(trimmed.images.map((i) => i.color), ["Black", "Red"], "only colors still offered");
   });
 
   it("has nothing to do for a fresh store", () => {

@@ -15,18 +15,27 @@ export const ART_KINDS = [
   "sticker", "bottle",
 ];
 
-// Product photos for the starter items, in public/assets/merch. Bump the
-// version when photos are added so existing stores pick them up once.
-export const SEED_PHOTOS_VERSION = 0;
-const SEED_PHOTO_IDS = [];
-export const SEED_PHOTOS = Object.fromEntries(SEED_PHOTO_IDS.map((id) => [id, `/assets/merch/${id}.jpg`]));
-
 const SIZES = ["S", "M", "L", "XL", "2XL", "3XL"];
 
 // Starter items offered in colours.
 const SEED_COLORS = {
   "td-team-polo": ["White", "Navy", "Burgundy", "Black", "Royal", "Red", "Forest Green", "Grey", "Carolina Blue"],
 };
+
+// Product photos for the starter items, in public/assets/merch: one photo
+// named after the item, or one per colour (td-team-polo-navy.jpg), main
+// photo first. Bump the version when photos are added so existing stores
+// pick them up once.
+export const SEED_PHOTOS_VERSION = 1;
+const SEED_PHOTO_IDS = [];
+const SEED_MAIN_COLOR = { "td-team-polo": "Navy" };
+export const SEED_PHOTOS = Object.fromEntries([
+  ...SEED_PHOTO_IDS.map((id) => [id, [{ url: `/assets/merch/${id}.jpg`, color: "" }]]),
+  ...Object.entries(SEED_MAIN_COLOR).map(([id, main]) => [
+    id,
+    [main, ...SEED_COLORS[id].filter((c) => c !== main)].map((color) => ({ url: `/assets/merch/${id}-${slug(color)}.jpg`, color })),
+  ]),
+]);
 
 function sized(stockBySize) {
   return SIZES.map((size, i) => ({ id: size.toLowerCase(), label: size, stock: stockBySize[i] }));
@@ -196,8 +205,8 @@ export const SEED_CATALOG = [
   ...item,
   minPerOrder: Math.min(suggestedMinPerOrder(item.costCents, item.category), item.maxPerOrder),
   orderIncrement: 1,
-  image: SEED_PHOTOS[item.id] ?? "",
-  images: SEED_PHOTOS[item.id] ? [{ url: SEED_PHOTOS[item.id], color: "" }] : [],
+  image: SEED_PHOTOS[item.id]?.[0].url ?? "",
+  images: structuredClone(SEED_PHOTOS[item.id] ?? []),
   colors: SEED_COLORS[item.id] ?? [],
   active: true,
 }));
@@ -265,12 +274,13 @@ export function needsSeedPhotos(db) {
 export function applySeedPhotos(db) {
   let changed = 0;
   for (const item of db.catalog) {
-    const photo = SEED_PHOTOS[item.id];
-    if (photo && !itemImages(item).length) {
-      item.image = photo;
-      item.images = [{ url: photo, color: "" }];
-      changed += 1;
-    }
+    const gallery = SEED_PHOTOS[item.id];
+    if (!gallery || itemImages(item).length) continue;
+    // Only the colours the item is still offered in; failing that, the main photo.
+    const offered = gallery.filter((photo) => !photo.color || (item.colors ?? []).includes(photo.color));
+    item.images = (offered.length ? offered : [{ ...gallery[0], color: "" }]).map((photo) => ({ ...photo }));
+    item.image = item.images[0].url;
+    changed += 1;
   }
   db.meta.seedPhotos = SEED_PHOTOS_VERSION;
   return changed;
