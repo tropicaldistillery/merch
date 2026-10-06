@@ -60,7 +60,8 @@ shares nothing with SipScale.
   are stored with the rest of the data (in Postgres, or `DATA_DIR/images`).
 - Manage the **team list** (Team tab): paste names and emails, straight from a
   spreadsheet if you like, and everyone gets a personal code built from their
-  first name, like `jane-tropical-mango-42`. Look up or copy a code, issue a new one (the old
+  first name, like `tropical-jane-4821`. **New codes for everyone** reissues
+  the whole list in one go. Look up or copy a code, issue a new one (the old
   one stops working at once), download every code as a CSV, and see each
   person's orders, units and order value this month and overall. People who
   have used the shared code but aren't on the list yet are listed so they can
@@ -203,8 +204,8 @@ that, the next step is real tables.
 
 - With **personal codes** on, each order is tied to the person whose code was
   used, and one person can be locked out without affecting anyone else. Codes
-  are meant to be easy (first name, "tropical", a word and a number: about
-  9,000 possibilities per name), so wrong guesses are limited per email as
+  are meant to be easy ("tropical", first name and a four-digit number: 9,000
+  possibilities per name), so wrong guesses are limited per email as
   well as per address, and every order still needs the admin's approval.
   Codes are kept retrievable so the admin can look one
   up again; anyone who can read the database can already read every order, so

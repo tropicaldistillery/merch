@@ -492,14 +492,21 @@ describe("personal codes", () => {
       const admin = await signedInAdmin(app);
       const { added } = (await admin("/api/admin/team", { method: "POST", body: { entries: "Jane Rep, jane@tropicaldistillery.com\nSam, sam@tropicaldistillery.com" } })).data;
       const [jane, sam] = added;
-      assert.match(jane.code, /^jane-tropical-[a-z]+-\d{2}$/);
+      assert.match(jane.code, /^tropical-jane-\d{4}$/);
       await admin("/api/admin/team/mode", { method: "PUT", body: { mode: "personal" } });
       const anon = app.client();
       const attempt = (email, code) => anon("/api/session", { method: "POST", body: { email, code } });
-      assert.equal((await attempt("jane@tropicaldistillery.com", "jane-tropical-mango-10")).status, 401);
-      assert.equal((await attempt("jane@tropicaldistillery.com", "jane-tropical-mango-11")).status, 401);
+      assert.equal((await attempt("jane@tropicaldistillery.com", "tropical-jane-0010")).status, 401);
+      assert.equal((await attempt("jane@tropicaldistillery.com", "tropical-jane-0011")).status, 401);
       assert.equal((await attempt("jane@tropicaldistillery.com", jane.code)).status, 429, "even the right code waits");
       assert.equal((await attempt("sam@tropicaldistillery.com", sam.code)).status, 200, "other people are unaffected");
+
+      // New codes for everyone: old ones stop working, new ones do.
+      const reset = (await admin("/api/admin/team/reset-codes", { method: "POST" })).data.people;
+      const newSam = reset.find((p) => p.email === "sam@tropicaldistillery.com");
+      assert.match(newSam.code, /^tropical-sam-\d{4}$/);
+      assert.equal((await attempt("sam@tropicaldistillery.com", sam.code)).status, 401);
+      assert.equal((await attempt("sam@tropicaldistillery.com", newSam.code)).status, 200);
     } finally {
       await app.close();
       await fs.rm(dir, { recursive: true, force: true });

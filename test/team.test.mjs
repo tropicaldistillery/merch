@@ -49,8 +49,8 @@ describe("team list", () => {
     const first = addPeople(db, "Jane, jane@tropicaldistillery.com\nlee@tropicaldistillery.com", { by: "Allie", at: AT });
     assert.equal(first.added.length, 2);
     assert.equal(first.added[1].name, "Lee Known", "falls back to the name they signed in with");
-    assert.match(first.added[0].code, /^jane-tropical-[a-z]+-\d{2}$/, "starts with their first name");
-    assert.match(first.added[1].code, /^lee-tropical-[a-z]+-\d{2}$/);
+    assert.match(first.added[0].code, /^tropical-jane-\d{4}$/, "tropical, their first name, a number");
+    assert.match(first.added[1].code, /^tropical-lee-\d{4}$/);
     assert.notEqual(first.added[0].code, first.added[1].code);
 
     const second = addPeople(db, "JANE@tropicaldistillery.com\nnew@tropicaldistillery.com", { by: "Allie", at: AT });
@@ -111,10 +111,10 @@ describe("team list", () => {
   });
 
   it("builds codes from the first name, however it is written", () => {
-    assert.match(generateCode(new Set(), { name: "José Álvarez" }), /^jose-tropical-[a-z]+-\d{2}$/);
-    assert.match(generateCode(new Set(), { name: "", email: "marco.ambassador@gmail.com" }), /^marco-tropical-/);
-    assert.match(generateCode(new Set(), { name: "Mary-Kate O'Neil" }), /^mary-tropical-/);
-    assert.match(generateCode(new Set(), { name: "", email: "42@x.com" }), /^team-tropical-/);
+    assert.match(generateCode(new Set(), { name: "José Álvarez" }), /^tropical-jose-\d{4}$/);
+    assert.match(generateCode(new Set(), { name: "", email: "marco.ambassador@gmail.com" }), /^tropical-marco-\d{4}$/);
+    assert.match(generateCode(new Set(), { name: "Mary-Kate O'Neil" }), /^tropical-mary-\d{4}$/);
+    assert.match(generateCode(new Set(), { name: "", email: "42@x.com" }), /^tropical-team-\d{4}$/);
   });
 
   it("makes codes unique even when the space is crowded", () => {

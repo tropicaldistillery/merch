@@ -41,15 +41,7 @@ import {
   placeOrder,
   updateOrder,
 } from "./orders.mjs";
-import {
-  addPeople,
-  personForSignIn,
-  removePerson,
-  setMode,
-  teamReport,
-  teamState,
-  updatePerson,
-} from "./team.mjs";
+import { addPeople, personForSignIn, removePerson, resetAllCodes, setMode, teamReport, teamState, updatePerson } from "./team.mjs";
 import { OPEN_STATUSES, STATUSES, byCategory } from "../public/assets/shared.js";
 import { ValidationError, cleanLine, isValidEmail, normalizeEmail } from "./validation.mjs";
 
@@ -564,6 +556,13 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
         already: result.already,
         invalid: result.invalid,
       });
+    }],
+
+    // Everyone gets a new code at once; their old codes stop working.
+    ["POST", "/api/admin/team/reset-codes", "admin", async ({ res }) => {
+      const people = await store.mutate((db) => resetAllCodes(db, { at: clock().toISOString() }));
+      accessChanged();
+      sendJson(res, 200, { ok: true, people: people.map(({ id, name, email, code }) => ({ id, name, email, code })) });
     }],
 
     ["PUT", "/api/admin/team/mode", "admin", async ({ req, res }) => {

@@ -1690,6 +1690,25 @@ for (const radio of $$("input[name=team-mode]")) {
   });
 }
 
+$("#team-reset-all").addEventListener("click", async () => {
+  if (!team.people.length) return toast("Add people to the team list first.", { tone: "error" });
+  const ok = await confirmDialog({
+    title: `New codes for all ${plural(team.people.length, "person", "people")}?`,
+    body: "Everyone gets a new tropical-name-number code. Their current codes stop working and they're signed out, so send the new codes straight away.",
+    confirmLabel: "Make new codes",
+    cancelLabel: "Keep current codes",
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const { people } = await adminApi("/api/admin/team/reset-codes", { method: "POST" });
+    await reloadTeam();
+    showNewCodes(people, `${plural(people.length, "new code")}`);
+  } catch (error) {
+    toast(error.message, { tone: "error" });
+  }
+});
+
 async function resetCode(p) {
   const ok = await confirmDialog({
     title: `New code for ${p.name || p.email}?`,

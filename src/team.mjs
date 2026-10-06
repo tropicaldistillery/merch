@@ -20,24 +20,10 @@ import { ValidationError, cleanLine, isValidEmail, normalizeEmail } from "./vali
 export const MODES = ["shared", "personal"];
 export const MAX_PEOPLE = 1000;
 
-// Codes are easy to remember: the person's first name, "tropical", a
-// tropical word and a number, like jane-tropical-mango-42. That is about
-// 9,000 possible codes for each name; sign-in throttling, per address and per
-// email, keeps guessing one impractical, and every order still needs approval.
-const WORDS = [...new Set(`
-  mango papaya guava coconut lychee citrus lime lemon orange cherry melon peach
-  pineapple passion kiwi banana plantain tamarind palm coral reef lagoon island
-  beach shore tide wave surf breeze sunset sunrise sunny harbor marina anchor
-  sail pelican heron flamingo dolphin marlin tarpon turtle manatee parrot toucan
-  gecko iguana orchid hibiscus jasmine mangrove banyan ginger cinnamon vanilla
-  cocoa espresso honey sugar caramel toffee amber coral jade pearl shell
-  starfish driftwood lantern cabana hammock patio garden bayou grove orchard
-  cask oak barrel cheers shaker jigger garnish twist splash fizz tonic mojito
-  daiquiri julep spritz punch rumba salsa mambo conga bongo calypso fiesta
-  carnival parade holiday weekend twilight moonlight ocean bay cove sand
-  rainbow summer kayak paddle snorkel sandal visor bonfire skyline rooftop
-  miami biscayne keywest everglades sundown seabreeze
-`.trim().split(/\s+/))];
+// Codes are easy to remember: "tropical", the person's first name and a
+// four-digit number, like tropical-jane-4821. That leaves 9,000 possible codes
+// for each name; sign-in throttling, per address and per email, keeps guessing
+// one impractical, and every order still needs the admin's approval.
 
 /** The first name, as plain lowercase letters, to start someone's code. */
 function codeName(name, email) {
@@ -54,7 +40,7 @@ function codeName(name, email) {
 export function generateCode(taken = new Set(), { name = "", email = "" } = {}) {
   const who = codeName(name, email);
   for (;;) {
-    const code = `${who}-tropical-${WORDS[randomInt(WORDS.length)]}-${randomInt(10, 100)}`;
+    const code = `tropical-${who}-${randomInt(1000, 10000)}`;
     if (!taken.has(code)) return code;
   }
 }
@@ -188,6 +174,18 @@ export function updatePerson(db, id, patch, { at }) {
     person.codeSetAt = at;
   }
   return person;
+}
+
+/** A new code for everyone on the list, e.g. after changing the code style. */
+export function resetAllCodes(db, { at }) {
+  const team = ensureTeam(db);
+  const taken = new Set();
+  for (const person of team.people) {
+    person.code = generateCode(taken, person);
+    person.codeSetAt = at;
+    taken.add(person.code);
+  }
+  return team.people;
 }
 
 export function removePerson(db, id) {
