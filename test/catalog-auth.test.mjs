@@ -267,6 +267,7 @@ describe("automatic SKUs", () => {
     assert.equal(skuPrefix("jf-hadens", "Apparel"), "JFH-APP");
     assert.equal(skuPrefix("twin-p", "Bar Tools"), "TWI-BAR");
     assert.equal(skuPrefix("tropical-distillery", "Sampling & Events"), "TRO-SAM");
+    assert.equal(skuPrefix("twin-p", "Samples"), "TWI-SMP", "so Samples don't share SAM");
     assert.equal(generateSku("jf-hadens", "Giveaways"), "JFH-GIV-001");
     // after the highest number with the same start, so a deleted item's isn't reused
     assert.equal(generateSku("jf-hadens", "Giveaways", ["JFH-GIV-001", "jfh-giv-007", "JFH-APP-020", "TD-GIV-009"]), "JFH-GIV-008");
@@ -300,6 +301,23 @@ describe("automatic SKUs", () => {
     assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
     assert.equal(needsSkuFormat(db), false);
     assert.equal(needsSkuFormat(initialState()), false);
+  });
+
+  it("moves a version 2 store's Samples from SAM to SMP, touching nothing else", () => {
+    const db = initialState();
+    db.meta.skuFormat = 2;
+    for (const item of db.catalog) if (item.category === "Samples") item.sku = item.sku.replace("-SMP-", "-SAM-");
+    const kit = db.catalog.find((i) => i.id === "td-tasting-kit");
+    kit.sku = "TRO-SAM-001";
+    const tee = db.catalog.find((i) => i.id === "jfh-logo-tee");
+    tee.sku = "MY-OWN-TEE"; // an admin's own SKU since
+    assert.equal(needsSkuFormat(db), true);
+    assert.equal(applySkuFormat(db), 14);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, "JFH-SMP-001");
+    assert.equal(db.catalog.find((i) => i.id === "twinp-case").sku, "TWI-SMP-002");
+    assert.equal(kit.sku, "TRO-SAM-001", "Sampling & Events keeps SAM");
+    assert.equal(tee.sku, "MY-OWN-TEE");
+    assert.equal(needsSkuFormat(db), false);
   });
 });
 
@@ -576,7 +594,7 @@ describe("starter items added to existing stores", () => {
     assert.equal(box.unit, "Case of 6 × 750 ml");
     assert.equal(box.costCents, 6 * bottle.costCents);
     assert.equal(box.brand, "twin-p");
-    const expected = [...Array.from({ length: 12 }, (_, i) => `JFH-SAM-${String(i + 1).padStart(3, "0")}`), "TWI-SAM-001", "TWI-SAM-002"];
+    const expected = [...Array.from({ length: 12 }, (_, i) => `JFH-SMP-${String(i + 1).padStart(3, "0")}`), "TWI-SMP-001", "TWI-SMP-002"];
     assert.deepEqual(SPIRIT_IDS.map((id) => db.catalog.find((i) => i.id === id).sku), expected);
     const booklet = db.catalog.find((i) => i.id === "td-booklet");
     assert.equal(booklet.variants[0].stock, null, "printed to order");
@@ -597,7 +615,7 @@ describe("starter items added to existing stores", () => {
     const added = applyAddedItems(db);
     assert.deepEqual(added.removed.map((i) => i.id), ["jfh-sample-citrus", "twinp-sample"]);
     assert.ok(db.catalog.some((i) => i.id === "jfh-sample-mango"));
-    assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, "JFH-SAM-001");
+    assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, "JFH-SMP-001");
     assert.equal(db.catalog.find((i) => i.id === "jfh-sample-mango").sku, "TD-EVT-009", "the kept sample keeps its SKU");
     assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length, "SKUs stay unique");
   });

@@ -57,9 +57,12 @@ function firstThreeLetters(text) {
   return (letters || "ITM").padEnd(3, "X").slice(0, 3);
 }
 
+// Categories whose first three letters would clash with another's.
+const CATEGORY_SKU_CODES = { Samples: "SMP" };
+
 /** The start of every SKU for a brand and category: JFH-APP. */
 export function skuPrefix(brand, category) {
-  return `${firstThreeLetters(labelFor(BRANDS, brand))}-${firstThreeLetters(category)}`;
+  return `${firstThreeLetters(labelFor(BRANDS, brand))}-${CATEGORY_SKU_CODES[category] ?? firstThreeLetters(category)}`;
 }
 
 /**

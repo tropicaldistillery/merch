@@ -285,7 +285,7 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   // After the category moves, as the SKU says the category.
   if (needsSkuFormat(initial)) {
     const changed = await store.mutate((db) => applySkuFormat(db));
-    console.log(`[catalog] renumbered ${changed} SKU(s) as brand-category-number, e.g. JFH-APP-001`);
+    console.log(`[catalog] updated ${changed} SKU(s) to brand-category-number (Samples as SMP), e.g. JFH-APP-001`);
     initial = await store.read();
   }
   if (needsStockCleared(initial)) {

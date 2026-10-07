@@ -853,7 +853,8 @@ export function applyCategoryMoves(db) {
 
 // Version 2: every SKU is the first three letters of the brand and of the
 // category and a number, numbered in the store's order: JFH-APP-001.
-export const SKU_FORMAT_VERSION = 2;
+// Version 3: Samples use SMP, so they don't share SAM with Sampling & Events.
+export const SKU_FORMAT_VERSION = 3;
 
 /** Give every item a brand-category-number SKU, in the store's order. */
 export function renumberSkus(items) {
@@ -871,10 +872,29 @@ export function needsSkuFormat(db) {
   return (db.meta?.skuFormat ?? 1) < SKU_FORMAT_VERSION;
 }
 
-/** Renumber an existing store's SKUs once. Past orders keep the SKUs they were placed with. */
+/**
+ * Bring an existing store's SKUs up to date once: a store from before
+ * version 2 is renumbered throughout; one on version 2 only has its Samples
+ * moved from SAM to SMP, keeping their numbers, so nothing else an admin
+ * has changed since is touched. Past orders keep the SKUs they were placed
+ * with.
+ */
 export function applySkuFormat(db) {
   const before = new Map(db.catalog.map((item) => [item.id, item.sku]));
-  renumberSkus(db.catalog);
+  if ((db.meta.skuFormat ?? 1) < 2) {
+    renumberSkus(db.catalog);
+  } else {
+    const taken = new Set(db.catalog.map((item) => item.sku));
+    for (const item of db.catalog) {
+      const match = item.category === "Samples" && /^([A-Z]{3})-SAM-(\d+)$/.exec(item.sku);
+      if (!match) continue;
+      let next = `${match[1]}-SMP-${match[2]}`;
+      if (taken.has(next)) next = generateSku(item.brand, item.category, [...taken]);
+      taken.delete(item.sku);
+      taken.add(next);
+      item.sku = next;
+    }
+  }
   db.meta.skuFormat = SKU_FORMAT_VERSION;
   return db.catalog.filter((item) => before.get(item.id) !== item.sku).length;
 }
