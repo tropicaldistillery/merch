@@ -180,9 +180,10 @@ describe("categories", () => {
   });
 
   it("moves an older store over once, respecting the admin's own choices", () => {
-    const old = { "td-tumbler": "Drinkware", "jfh-led-sign": "Point of Sale", "jfh-stickers": "Print", "jfh-bar-mat": "Point of Sale" };
+    const old = { "td-tumbler": "Drinkware", "jfh-led-sign": "Point of Sale", "jfh-stickers": "Print", "jfh-bar-mat": "Point of Sale", "twinp-case": "Sampling & Events", "jfh-mango-bottle": "Sampling & Events" };
     const catalog = structuredClone(SEED_CATALOG).map((i) => ({ ...i, category: old[i.id] ?? i.category }));
     catalog.find((i) => i.id === "jfh-bar-mat").category = "Sampling & Events"; // the admin moved it
+    catalog.find((i) => i.id === "jfh-mango-bottle").category = "VIP"; // and this one
     catalog.push({ ...structuredClone(catalog[0]), id: "custom-glass", category: "Drinkware" });
     catalog.push({ ...structuredClone(catalog[0]), id: "custom-sign", category: "Point of Sale" });
     const db = { meta: {}, catalog };
@@ -195,6 +196,8 @@ describe("categories", () => {
     assert.equal(of("jfh-bar-mat"), "Sampling & Events");
     assert.equal(of("custom-glass"), "Giveaways");
     assert.equal(of("custom-sign"), "Print");
+    assert.equal(of("twinp-case"), "Samples", "bottles and cases get their own category");
+    assert.equal(of("jfh-mango-bottle"), "VIP");
     assert.equal(db.meta.categories, CATEGORIES_VERSION);
     assert.equal(needsCategoryMoves(db), false);
     assert.equal(needsCategoryMoves(initialState()), false);
@@ -534,6 +537,7 @@ describe("starter items added to existing stores", () => {
 
     const bottle = db.catalog.find((i) => i.id === "jfh-lychee-bottle");
     assert.equal(bottle.name, "J.F. Haden's Lychee Liqueur, 750 ml");
+    assert.equal(bottle.category, "Samples");
     assert.equal(bottle.image, "/assets/merch/jfh-lychee-bottle.jpg");
     assert.equal(bottle.minPerOrder, 1);
     assert.match(bottle.supplier.notes, /USPS/);

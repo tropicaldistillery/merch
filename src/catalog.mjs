@@ -336,13 +336,13 @@ export const SEED_CATALOG = [
     kind === "case"
       ? {
           id, sku, name: `${product}, Case of ${CASE_SIZE}`,
-          brand, category: "Sampling & Events", tone, art: "bottle", unit: `Case of ${CASE_SIZE} × 750 ml`,
+          brand, category: "Samples", tone, art: "bottle", unit: `Case of ${CASE_SIZE} × 750 ml`,
           description: `A case of ${CASE_SIZE} bottles (750 ml each) of ${product}, for events, activations and accounts. ${made}`,
           costCents: BOTTLE_COST_CENTS * CASE_SIZE, minPerOrder: 1, maxPerOrder: 2, variants: single(10),
         }
       : {
           id, sku, name: `${product}, 750 ml`,
-          brand, category: "Sampling & Events", tone, art: "bottle", unit: "750 ml bottle",
+          brand, category: "Samples", tone, art: "bottle", unit: "750 ml bottle",
           description: `A 750 ml bottle of ${product} for account visits, tastings and events. ${made}`,
           costCents: BOTTLE_COST_CENTS, minPerOrder: 1, maxPerOrder: 6, variants: single(24),
         }
@@ -810,8 +810,10 @@ export function applyMinimums(db) {
  * VIP. Move each starter item an admin hasn't recategorized to its new home,
  * and anything else left in a retired category to the nearest new one, once.
  */
-export const CATEGORIES_VERSION = 1;
+// Version 2 gave the 750 ml bottles and cases their own Samples category.
+export const CATEGORIES_VERSION = 2;
 const CATEGORY_MOVES = {
+  ...Object.fromEntries(SPIRITS.map(({ id }) => [id, "Sampling & Events"])),
   "jfh-rocks-12": "Drinkware",
   "jfh-shot-24": "Drinkware",
   "twinp-glencairn-6": "Drinkware",

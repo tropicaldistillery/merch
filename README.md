@@ -1,8 +1,8 @@
 # Tropical Distillery team merch store
 
 An internal ordering site for the Tropical Distillery team. Sales reps and brand
-ambassadors order from six categories (Apparel, Giveaways, Print, Bar Tools,
-Sampling & Events and VIP) and choose for each order whether it ships **to themselves** or
+ambassadors order from seven categories (Apparel, Giveaways, Print, Bar Tools,
+Samples, Sampling & Events and VIP) and choose for each order whether it ships **to themselves** or
 **straight to an account**: a bar, restaurant, store, distributor or event. An
 admin approves, ships and tracks every order.
 

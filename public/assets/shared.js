@@ -14,6 +14,7 @@ export const CATEGORIES = [
   "Giveaways",
   "Print",
   "Bar Tools",
+  "Samples",
   "Sampling & Events",
   "VIP",
 ];
@@ -56,6 +57,7 @@ export const CATEGORY_CODES = {
   Giveaways: "GIV",
   Print: "PRT",
   "Bar Tools": "BAR",
+  Samples: "SMP",
   "Sampling & Events": "EVT",
   VIP: "VIP",
 };
