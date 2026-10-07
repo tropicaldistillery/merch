@@ -33,6 +33,7 @@ import {
   TONES,
   TRANSITIONS,
   US_STATES,
+  byCategory,
   formatMoney,
   generateSku,
   itemImages,
@@ -1367,6 +1368,8 @@ const fieldEdits = new Map(); // item id → { field: value as typed }
 const stockEdits = new Map(); // item id + option id → value as typed
 const bulkSelected = new Set();
 const stockKey = (item, variant) => `${item.id}\u0000${variant.id}`;
+let pendingOrder = null; // item ids in a new store order, until saved
+let bulkSort = null; // { key, dir } while the grid is sorted by a column
 
 const EDIT_FIELDS = [
   "name", "sku", "category", "brand", "unit", "costCents", "minPerOrder", "maxPerOrder", "orderIncrement", "active",
@@ -1452,15 +1455,117 @@ function changedItemCount() {
   return new Set([...itemPatches().map((p) => p.id), ...stockChanges().map((c) => c.itemId)]).size;
 }
 
+/* -------- order: the store lists items in this order within each category */
+
+function currentOrder() {
+  return pendingOrder ?? catalog.map((i) => i.id);
+}
+
+function setOrder(order, focusId = null) {
+  pendingOrder = order.join("\n") === catalog.map((i) => i.id).join("\n") ? null : order;
+  renderCatalog();
+  if (focusId) $(`[data-move="${CSS.escape(focusId)}"]`)?.focus();
+}
+
+/** Items as the store will list them: by category, then the (new) order. */
+function storeOrdered(list) {
+  const rank = new Map(currentOrder().map((id, i) => [id, i]));
+  return byCategory([...list].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity)));
+}
+
+function moveItem(id, targetId, before) {
+  if (id === targetId) return;
+  const [a, b] = [catalog.find((i) => i.id === id), catalog.find((i) => i.id === targetId)];
+  if (!a || !b) return;
+  if (a.category !== b.category) {
+    toast("Items stay with their category. Change an item's category to move it to another.", { tone: "error" });
+    return;
+  }
+  const order = currentOrder().filter((x) => x !== id);
+  order.splice(order.indexOf(targetId) + (before ? 0 : 1), 0, id);
+  setOrder(order, id);
+}
+
+/** Up or down one place among the items shown in its category. */
+function nudgeItem(item, step) {
+  const sameCategory = storeOrdered(visibleCatalog()).filter((i) => i.category === item.category);
+  const neighbor = sameCategory[sameCategory.findIndex((i) => i.id === item.id) + step];
+  if (neighbor) moveItem(item.id, neighbor.id, step < 0);
+}
+
+/* -------- sorting: a view of the grid, until it's made the store order */
+
+const SORTS = {
+  Item: (i) => String(editedValue(i, "name")).toLowerCase(),
+  SKU: (i) => String(editedValue(i, "sku")).toUpperCase(),
+  Category: (i) => CATEGORIES.indexOf(editedValue(i, "category")),
+  Brand: (i) => labelFor(BRANDS, editedValue(i, "brand")),
+  Unit: (i) => String(editedValue(i, "unit")).toLowerCase(),
+  "Cost ($)": (i) => parseDollars(editedValue(i, "costCents")),
+  Min: (i) => Number(editedValue(i, "minPerOrder")),
+  Max: (i) => Number(editedValue(i, "maxPerOrder")),
+  Steps: (i) => Number(editedValue(i, "orderIncrement")),
+  Stock: (i) =>
+    i.variants.reduce((sum, v) => {
+      const typed = (stockEdits.get(stockKey(i, v)) ?? "").trim();
+      const n = typed !== "" ? Number(typed) : v.stock;
+      return sum + (Number.isFinite(n) ? n : 0);
+    }, 0),
+  "In store": (i) => (editedValue(i, "active") ? 0 : 1),
+  Supplier: (i) => String(editedValue(i, "supplier.company")).toLowerCase(),
+  "Their item #": (i) => String(editedValue(i, "supplier.itemNumber")).toLowerCase(),
+  "Order link": (i) => String(editedValue(i, "supplier.link")).toLowerCase(),
+  Description: (i) => String(editedValue(i, "description")).toLowerCase(),
+};
+
+function sortedRows(list) {
+  const rows = storeOrdered(list);
+  if (!bulkSort) return rows;
+  const value = SORTS[bulkSort.key];
+  const dir = bulkSort.dir === "desc" ? -1 : 1;
+  const compare = (a, b) => {
+    const [x, y] = [value(a), value(b)];
+    if (typeof x === "number" && typeof y === "number") return (Number.isNaN(x) ? Infinity : x) - (Number.isNaN(y) ? Infinity : y);
+    return String(x).localeCompare(String(y), undefined, { numeric: true });
+  };
+  return [...rows].sort((a, b) => dir * compare(a, b));
+}
+
+function toggleSort(key) {
+  if (!bulkSort || bulkSort.key !== key) bulkSort = { key, dir: "asc" };
+  else if (bulkSort.dir === "asc") bulkSort = { key, dir: "desc" };
+  else bulkSort = null;
+  renderCatalog();
+}
+
+/** Make the sorted view the store order: the items shown are re-sequenced
+ * in the places they already hold, category by category. */
+function useSortedOrder() {
+  const sorted = sortedRows(visibleCatalog());
+  const order = currentOrder();
+  const result = [...order];
+  for (const category of new Set(sorted.map((i) => i.category))) {
+    const items = sorted.filter((i) => i.category === category);
+    const ids = new Set(items.map((i) => i.id));
+    const slots = order.map((id, at) => (ids.has(id) ? at : -1)).filter((at) => at >= 0);
+    items.forEach((item, k) => {
+      result[slots[k]] = item.id;
+    });
+  }
+  bulkSort = null;
+  setOrder(result);
+  toast("This becomes the store's order when you save.");
+}
+
 async function setBulkMode(mode) {
   const countsChange = (bulkMode === "add") !== (mode === "add");
-  const losing = mode === null ? changedItemCount() : countsChange ? new Set(stockChanges().map((c) => c.itemId)).size : 0;
+  const losing = mode === null ? changedItemCount() + (pendingOrder ? 1 : 0) : countsChange ? new Set(stockChanges().map((c) => c.itemId)).size : 0;
   if (losing) {
     const ok = await confirmDialog({
       title: mode === null ? "Discard your changes?" : "Discard the stock you typed?",
       body:
         mode === null
-          ? `Changes to ${plural(losing, "item")} haven't been saved.`
+          ? [changedItemCount() ? `Changes to ${plural(changedItemCount(), "item")}` : "", pendingOrder ? "the new order" : ""].filter(Boolean).join(" and ").replace(/^./, (c) => c.toUpperCase()) + " haven't been saved."
           : `Stock typed for ${plural(losing, "item")} hasn't been saved. ${mode === "add" ? "A delivery adds to what's there" : "Stock levels replace what's there"}, so those numbers start over.`,
       confirmLabel: "Discard",
       cancelLabel: "Keep editing",
@@ -1472,6 +1577,8 @@ async function setBulkMode(mode) {
     fieldEdits.clear();
     stockEdits.clear();
     bulkSelected.clear();
+    pendingOrder = null;
+    bulkSort = null;
   } else if (countsChange) {
     stockEdits.clear();
   }
@@ -1486,12 +1593,13 @@ let bulkSaveButton = null;
 function updateBulkCount() {
   if (!bulkCountNode) return;
   const count = changedItemCount();
-  bulkCountNode.textContent = count ? `${plural(count, "item")} changed` : "No changes yet";
-  bulkSaveButton.disabled = !count;
+  const parts = [count ? `${plural(count, "item")} changed` : "", pendingOrder ? "new order" : ""].filter(Boolean);
+  bulkCountNode.textContent = parts.length ? parts.join(" · ") : "No changes yet";
+  bulkSaveButton.disabled = !parts.length;
 }
 
 const BULK_HINTS = {
-  all: "Edit any cell. Tick items to change one thing on all of them at once.",
+  all: "Edit any cell. Click a heading to sort; drag ⠿ or use ▲▼ to change the store's order. Tick items to change one thing on all of them.",
   set: "Type the new count for anything that's changed.",
   add: "Type how many arrived; they're added to what's there.",
 };
@@ -1512,6 +1620,12 @@ function renderCatalogBulkBar() {
       bulkCountNode,
       bulkSaveButton,
       el("button", { type: "button", class: "btn btn-sm btn-secondary", text: "Done", onclick: () => setBulkMode(null) })),
+    bulkMode === "all" && bulkSort
+      ? el("div", { class: "bulk-sorted" },
+          el("span", { text: `Sorted by ${bulkSort.key.replace(" ($)", "")}, ${bulkSort.dir === "asc" ? "A→Z / low→high" : "Z→A / high→low"}.` }),
+          el("button", { type: "button", class: "btn btn-sm", text: "Use this order in the store", onclick: useSortedOrder }),
+          el("button", { type: "button", class: "link-button", text: "Back to store order", onclick: () => { bulkSort = null; renderCatalog(); } }))
+      : null,
     el("div", { class: "bulk-apply", id: "bulk-apply" })
   );
   updateBulkCount();
@@ -1629,10 +1743,81 @@ function bulkStockInputs(item, { compact }) {
   });
 }
 
+let dragId = null;
+
+// ⠿ and ▲▼ on a row. The handle drags; with it focused, the arrow keys move.
+function moveTools(item) {
+  const sorted = Boolean(bulkSort);
+  return el(
+    "div",
+    { class: "move-tools" },
+    el("button", { type: "button", class: "move-btn", text: "▲", disabled: sorted, "aria-label": `Move ${item.name} up`, onclick: () => nudgeItem(item, -1) }),
+    el("span", {
+      class: "grip",
+      text: "⠿",
+      tabindex: sorted ? null : "0",
+      role: "button",
+      draggable: sorted ? null : "true",
+      "data-move": item.id,
+      "aria-disabled": sorted ? "true" : null,
+      "aria-label": `Move ${item.name}: drag, or press the up and down arrow keys`,
+      title: sorted ? "Back to store order to move items" : "Drag to move",
+      onkeydown: (event) => {
+        if (sorted || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+        event.preventDefault();
+        nudgeItem(item, event.key === "ArrowUp" ? -1 : 1);
+      },
+      ondragstart: (event) => {
+        dragId = item.id;
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", item.id);
+        const row = event.target.closest("tr");
+        event.dataTransfer.setDragImage(row, 40, 24);
+        row.classList.add("dragging");
+      },
+      ondragend: (event) => {
+        dragId = null;
+        event.target.closest("tr")?.classList.remove("dragging");
+        $$(".bulk-table .drop-before, .bulk-table .drop-after").forEach((r) => r.classList.remove("drop-before", "drop-after"));
+      },
+    }),
+    el("button", { type: "button", class: "move-btn", text: "▼", disabled: sorted, "aria-label": `Move ${item.name} down`, onclick: () => nudgeItem(item, 1) })
+  );
+}
+
+function dropTarget(row, item) {
+  row.addEventListener("dragover", (event) => {
+    if (!dragId || dragId === item.id) return;
+    event.preventDefault();
+    const box = row.getBoundingClientRect();
+    const before = event.clientY < box.top + box.height / 2;
+    row.classList.toggle("drop-before", before);
+    row.classList.toggle("drop-after", !before);
+  });
+  row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after"));
+  row.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const before = row.classList.contains("drop-before");
+    row.classList.remove("drop-before", "drop-after");
+    if (dragId) moveItem(dragId, item.id, before);
+  });
+  return row;
+}
+
 function renderBulkGrid(visible) {
   const form = $("#bulk-editor");
+  visible = sortedRows(visible);
   const allTicked = visible.length > 0 && visible.every((i) => bulkSelected.has(i.id));
   const head = ["Item", "SKU", "Category", "Brand", "Unit", "Cost ($)", "Min", "Max", "Steps", "Stock", "In store", "Supplier", "Their item #", "Order link", "Description"];
+  const heading = (h, i) => {
+    const sorted = bulkSort?.key === h ? bulkSort.dir : null;
+    return el(
+      "th",
+      { scope: "col", class: i === 0 ? "sticky-col item-col" : "", "aria-sort": sorted ? (sorted === "asc" ? "ascending" : "descending") : null },
+      el("button", { type: "button", class: `sort-btn${sorted ? " sorted" : ""}`, onclick: () => toggleSort(h) },
+        h, el("span", { class: "sort-mark", "aria-hidden": "true", text: sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : "↕" }))
+    );
+  };
   clear(
     form,
     el(
@@ -1648,11 +1833,11 @@ function renderBulkGrid(visible) {
             renderCatalog();
           },
         })),
-        head.map((h, i) => el("th", { scope: "col", class: i === 0 ? "sticky-col item-col" : "", text: h })))),
+        head.map(heading))),
       el("tbody", {}, visible.length
-        ? visible.map((item) =>
-            el("tr", { class: bulkSelected.has(item.id) ? "selected" : "" },
-              el("td", { class: "select-col sticky-col" }, el("input", {
+        ? visible.map((item, index) => dropTarget(
+            el("tr", { class: [bulkSelected.has(item.id) ? "selected" : "", index && visible[index - 1].category !== item.category ? "category-start" : ""].filter(Boolean).join(" ") },
+              el("td", { class: "select-col sticky-col" }, el("div", { class: "row-tools" }, el("input", {
                 type: "checkbox",
                 checked: bulkSelected.has(item.id),
                 "aria-label": `Tick ${item.name}`,
@@ -1661,7 +1846,7 @@ function renderBulkGrid(visible) {
                   event.target.closest("tr").classList.toggle("selected", event.target.checked);
                   renderApplyPanel();
                 },
-              })),
+              }), moveTools(item))),
               el("td", { class: "sticky-col item-col" },
                 el("div", { class: "item-cell" }, artwork(item, "thumb"),
                   el("div", { class: "bulk-name" },
@@ -1681,7 +1866,7 @@ function renderBulkGrid(visible) {
               el("td", {}, bulkText(item, "supplier.itemNumber", { label: "Their item number", maxlength: "160", class: "w-supplier" })),
               el("td", {}, bulkText(item, "supplier.link", { label: "Order link", maxlength: "500", class: "w-link", placeholder: "https://…" })),
               el("td", {}, bulkText(item, "description", { label: "Description", rows: "2", maxlength: "600", class: "w-desc" }))
-            )
+            ), item)
           )
         : el("tr", {}, el("td", { class: "empty", colspan: String(head.length + 1), text: "No items match." })))
     )
@@ -1691,7 +1876,7 @@ function renderBulkGrid(visible) {
 // One row per option, for counting stock or taking in a delivery.
 function renderStockRows(visible) {
   const form = $("#bulk-editor");
-  const rows = visible.flatMap((item) =>
+  const rows = storeOrdered(visible).flatMap((item) =>
     item.variants.map((variant, i) => {
       const tracked = Number.isInteger(variant.stock);
       const key = stockKey(item, variant);
@@ -1772,22 +1957,30 @@ $("#bulk-editor").addEventListener("submit", async (event) => {
   clearFieldErrors(form);
   const items = itemPatches();
   const stock = stockChanges();
-  if (!items.length && !stock.length) return;
+  const order = pendingOrder;
+  if (!items.length && !stock.length && !order) return;
   bulkSaveButton.disabled = true;
   try {
-    const result = await adminApi("/api/admin/catalog/bulk", { method: "POST", body: { items, stock } });
-    const fresh = new Map(result.items.map((item) => [item.id, item]));
-    catalog = catalog.map((item) => fresh.get(item.id) ?? item);
+    const result = await adminApi("/api/admin/catalog/bulk", { method: "POST", body: { items, stock, ...(order ? { order } : {}) } });
+    if (order) {
+      ({ items: catalog } = await adminApi("/api/admin/catalog"));
+    } else {
+      const fresh = new Map(result.items.map((item) => [item.id, item]));
+      catalog = catalog.map((item) => fresh.get(item.id) ?? item);
+    }
     fieldEdits.clear();
     stockEdits.clear();
     bulkSelected.clear();
+    pendingOrder = null;
+    bulkSort = null;
     bulkMode = null;
     renderCatalog();
     renderKpis();
     const adjusted = result.adjusted.length
       ? ` ${plural(result.adjusted.length, "stock level")} also took account of orders placed while you were editing.`
       : "";
-    toast(`Saved changes to ${plural(result.changed, "item")}.${adjusted}`, { timeout: adjusted ? 9000 : 5000 });
+    const what = [result.changed ? `changes to ${plural(result.changed, "item")}` : "", order ? "the new store order" : ""].filter(Boolean).join(" and ");
+    toast(`Saved ${what}.${adjusted}`, { timeout: adjusted ? 9000 : 5000 });
   } catch (error) {
     bulkSaveButton.disabled = false;
     toast(error.message, { tone: "error", timeout: 8000 });

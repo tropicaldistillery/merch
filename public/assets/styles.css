@@ -3259,7 +3259,7 @@ dialog.password-dialog .field {
 }
 
 .bulk-table .item-col {
-  left: 44px;
+  left: 84px;
   min-width: 300px;
   box-shadow: 1px 0 0 var(--line);
 }
@@ -3408,4 +3408,129 @@ dialog.password-dialog .field {
 .hscroll::-webkit-scrollbar-thumb:hover,
 .table-wrap::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
+}
+
+/* sorting and reordering in the bulk editor */
+
+.bulk-table .select-col {
+  width: 84px;
+  min-width: 84px;
+  padding-right: 4px;
+}
+
+.row-tools {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.row-tools > input[type="checkbox"] {
+  margin-top: 10px;
+}
+
+.move-tools {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+}
+
+.move-btn {
+  width: 30px;
+  height: 20px;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--ink-2);
+  background: var(--surface-alt);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.move-btn:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.move-btn:disabled,
+.grip[aria-disabled="true"] {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.grip {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 22px;
+  font-size: 16px;
+  color: var(--ink-2);
+  cursor: grab;
+  border-radius: 6px;
+  user-select: none;
+}
+
+.grip:active {
+  cursor: grabbing;
+}
+
+.grip:focus-visible {
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+.bulk-table tr.dragging td {
+  opacity: 0.45;
+}
+
+.bulk-table tr.drop-before td {
+  box-shadow: inset 0 3px 0 var(--pink);
+}
+
+.bulk-table tr.drop-after td {
+  box-shadow: inset 0 -3px 0 var(--pink);
+}
+
+.bulk-table tr.category-start td {
+  border-top: 2px solid var(--line-strong);
+}
+
+.sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.sort-btn:hover,
+.sort-btn.sorted {
+  color: var(--ink);
+}
+
+.sort-mark {
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+.sort-btn.sorted .sort-mark {
+  opacity: 1;
+  color: var(--pink-text);
+}
+
+.bulk-sorted {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
 }

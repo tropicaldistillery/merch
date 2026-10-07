@@ -839,6 +839,17 @@ describe("bulk catalog edits", () => {
     assert.throws(() => bulkEditCatalog(db, {}), ValidationError);
   });
 
+  it("puts items in the order given, keeping any it wasn't told about at the end", () => {
+    const db = initialState();
+    const ids = db.catalog.map((i) => i.id);
+    const wanted = [...ids.slice(1).reverse(), "not-an-item"];
+    const { reordered, changed } = bulkEditCatalog(db, { order: wanted });
+    assert.equal(reordered, true);
+    assert.equal(changed, 0);
+    assert.deepEqual(db.catalog.map((i) => i.id), [...ids.slice(1).reverse(), ids[0]], "the unlisted first item goes last");
+    assert.equal(bulkEditCatalog(db, { order: db.catalog.map((i) => i.id) }).reordered, false, "the same order moves nothing");
+  });
+
   it("edits SKUs, lets two items swap theirs, and refuses duplicates", () => {
     const db = initialState();
     const [cap, mat] = [find(db, "jfh-cap"), find(db, "jfh-bar-mat")];

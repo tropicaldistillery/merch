@@ -968,13 +968,16 @@ export const MAX_BULK_ITEMS = 1000;
  * The console's bulk editor: `items` are `{ id, patch }` with any of
  * BULK_FIELDS and `supplier` (BULK_SUPPLIER_FIELDS), each checked with the
  * same rules as the one-item editor; `stock` are stock changes as in
- * updateStock. Problems come back per field as "<item id>.<field>" (or
- * "stock.<item id>.<option id>"), and any problem changes nothing.
+ * updateStock; `order` is item ids in the order the store should list them
+ * (within each category). Problems come back per field as
+ * "<item id>.<field>" (or "stock.<item id>.<option id>"), and any problem
+ * changes nothing.
  */
 export function bulkEditCatalog(db, input) {
   const rawItems = Array.isArray(input?.items) ? input.items : [];
   const stock = Array.isArray(input?.stock) ? input.stock : [];
-  if (!rawItems.length && !stock.length) throw new ValidationError("Change at least one thing.", {});
+  const order = Array.isArray(input?.order) ? input.order.slice(0, MAX_BULK_ITEMS * 2).map((id) => cleanText(id, 80)) : null;
+  if (!rawItems.length && !stock.length && !order?.length) throw new ValidationError("Change at least one thing.", {});
   if (rawItems.length > MAX_BULK_ITEMS) throw new ValidationError(`Change at most ${MAX_BULK_ITEMS} items at a time.`, {});
 
   const errors = {};
@@ -1025,8 +1028,24 @@ export function bulkEditCatalog(db, input) {
 
   for (const [id, item] of edited) db.catalog[db.catalog.findIndex((i) => i.id === id)] = item;
   const { adjusted } = applyStockPlan(db, plan);
+  const reordered = order?.length ? reorderCatalog(db, order) : false;
   const ids = new Set([...edited.keys(), ...plan.map((p) => p.itemId)]);
-  return { items: db.catalog.filter((i) => ids.has(i.id)), changed: ids.size, adjusted };
+  return { items: db.catalog.filter((i) => ids.has(i.id)), changed: ids.size, adjusted, reordered };
+}
+
+/**
+ * Put the catalog in the given order. Ids it doesn't know are ignored, and
+ * items it doesn't list (one added meanwhile) keep their order after the
+ * rest. The store still groups items by category, so this decides the
+ * order within each. Returns whether anything moved.
+ */
+export function reorderCatalog(db, order) {
+  const rank = new Map();
+  for (const id of order) if (!rank.has(id)) rank.set(id, rank.size);
+  const before = db.catalog.map((i) => i.id).join("\n");
+  const at = (item) => rank.get(item.id) ?? Infinity;
+  db.catalog = db.catalog.map((item, i) => [item, i]).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map(([item]) => item);
+  return db.catalog.map((i) => i.id).join("\n") !== before;
 }
 
 // Images are an uploaded photo, one of our own files, or (from before

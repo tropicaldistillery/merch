@@ -80,14 +80,20 @@ shares nothing with SipScale.
     and description. Changed cells are highlighted, the item stays in view as
     the grid scrolls sideways, and its sideways scrollbar stays at the bottom
     of the window. SKUs must stay unique, but two items can swap theirs in
-    one save. Tick items to set one thing
+    one save.
+  - **Sort** by clicking any heading (again for high-to-low, a third time
+    for the store's order). **Use this order in the store** makes a sorted
+    view the order items appear in the store, for the items shown.
+  - **Reorder** by dragging a row's ⠿ handle, with its ▲▼ buttons, or with
+    the arrow keys on the handle. Items stay grouped by category in the
+    store, so this sets the order within each category. Tick items to set one thing
     (category, brand, in store, cost, limits, unit, supplier or order link) on
     all of them, then check and save.
   - **Stock levels** lists every option to type new counts; **Add a
     delivery** takes how many arrived and adds them.
 
-  One **Save changes** saves everything typed in any view, including rows the
-  filters hide. Each item is checked with the same rules as the one-item
+  One **Save changes** saves everything typed in any view, and the new
+  order, including rows the filters hide. Each item is checked with the same rules as the one-item
   editor, and if anything is wrong nothing is saved and the problem is shown
   on its cell. Orders placed while you're typing still count: a stock level
   moves by the change you made rather than being overwritten. Photos, options
