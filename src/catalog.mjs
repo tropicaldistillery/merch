@@ -854,7 +854,8 @@ export function applyCategoryMoves(db) {
 // Version 2: every SKU is the first three letters of the brand and of the
 // category and a number, numbered in the store's order: JFH-APP-001.
 // Version 3: Samples use SMP, so they don't share SAM with Sampling & Events.
-export const SKU_FORMAT_VERSION = 3;
+// Version 4: Sampling & Events use EVNT.
+export const SKU_FORMAT_VERSION = 4;
 
 /** Give every item a brand-category-number SKU, in the store's order. */
 export function renumberSkus(items) {
@@ -874,29 +875,36 @@ export function needsSkuFormat(db) {
 
 /**
  * Bring an existing store's SKUs up to date once: a store from before
- * version 2 is renumbered throughout; one on version 2 only has its Samples
- * moved from SAM to SMP, keeping their numbers, so nothing else an admin
- * has changed since is touched. Past orders keep the SKUs they were placed
- * with.
+ * version 2 is renumbered throughout; a later one only has the category
+ * codes that changed since swapped (Samples SAM → SMP, then Sampling &
+ * Events SAM → EVNT), keeping their numbers, so nothing else an admin has
+ * changed is touched. Past orders keep the SKUs they were placed with.
  */
 export function applySkuFormat(db) {
   const before = new Map(db.catalog.map((item) => [item.id, item.sku]));
-  if ((db.meta.skuFormat ?? 1) < 2) {
+  const version = db.meta.skuFormat ?? 1;
+  if (version < 2) {
     renumberSkus(db.catalog);
   } else {
-    const taken = new Set(db.catalog.map((item) => item.sku));
-    for (const item of db.catalog) {
-      const match = item.category === "Samples" && /^([A-Z]{3})-SAM-(\d+)$/.exec(item.sku);
-      if (!match) continue;
-      let next = `${match[1]}-SMP-${match[2]}`;
-      if (taken.has(next)) next = generateSku(item.brand, item.category, [...taken]);
-      taken.delete(item.sku);
-      taken.add(next);
-      item.sku = next;
-    }
+    if (version < 3) swapCategoryCode(db, "Samples", "SAM", "SMP");
+    if (version < 4) swapCategoryCode(db, "Sampling & Events", "SAM", "EVNT");
   }
   db.meta.skuFormat = SKU_FORMAT_VERSION;
   return db.catalog.filter((item) => before.get(item.id) !== item.sku).length;
+}
+
+function swapCategoryCode(db, category, from, to) {
+  const taken = new Set(db.catalog.map((item) => item.sku));
+  const pattern = new RegExp(`^([A-Z]{3})-${from}-(\\d+)$`);
+  for (const item of db.catalog) {
+    const match = item.category === category && pattern.exec(item.sku);
+    if (!match) continue;
+    let next = `${match[1]}-${to}-${match[2]}`;
+    if (taken.has(next)) next = generateSku(item.brand, item.category, [...taken]);
+    taken.delete(item.sku);
+    taken.add(next);
+    item.sku = next;
+  }
 }
 
 /* ------------------------------------------------------ one-off resets */

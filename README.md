@@ -106,8 +106,8 @@ shares nothing with SipScale.
   them (after the highest one used, so a deleted item's number isn't
   reused), and you can still type your own. Every existing SKU was
   renumbered this way once, in the store's order; past orders keep the SKUs
-  they were placed with. Samples use SMP, so they don't share SAM with
-  Sampling & Events.
+  they were placed with. Samples use SMP and Sampling & Events use EVNT
+  (TRO-EVNT-001), so the two don't share SAM.
 - **Reorder** the catalog list with each row's ⠿ handle (drag), its ▲▼
   buttons or the arrow keys on the handle. Items stay grouped by category,
   so this sets the order within each, and it's saved straight away, with an

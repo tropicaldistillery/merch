@@ -266,7 +266,7 @@ describe("automatic SKUs", () => {
   it("is the brand's and category's first three letters and the next number", () => {
     assert.equal(skuPrefix("jf-hadens", "Apparel"), "JFH-APP");
     assert.equal(skuPrefix("twin-p", "Bar Tools"), "TWI-BAR");
-    assert.equal(skuPrefix("tropical-distillery", "Sampling & Events"), "TRO-SAM");
+    assert.equal(skuPrefix("tropical-distillery", "Sampling & Events"), "TRO-EVNT");
     assert.equal(skuPrefix("twin-p", "Samples"), "TWI-SMP", "so Samples don't share SAM");
     assert.equal(generateSku("jf-hadens", "Giveaways"), "JFH-GIV-001");
     // after the highest number with the same start, so a deleted item's isn't reused
@@ -285,7 +285,9 @@ describe("automatic SKUs", () => {
     assert.equal(sku("jfh-logo-tee"), "JFH-APP-001");
     assert.equal(sku("td-team-polo"), "TRO-APP-001");
     assert.equal(sku("twinp-trucker"), "TWI-APP-001");
-    assert.ok(SEED_CATALOG.every((i) => /^[A-Z]{3}-[A-Z]{3}-\d{3}$/.test(i.sku)), "every SKU in the new format");
+    assert.ok(SEED_CATALOG.every((i) => /^[A-Z]{3}-[A-Z]{3,4}-\d{3}$/.test(i.sku)), "every SKU in the new format");
+    assert.equal(sku("td-tasting-kit"), "TRO-EVNT-001");
+    assert.equal(generateSku("tropical-distillery", "Sampling & Events", SEED_CATALOG.map((i) => i.sku)), "TRO-EVNT-005");
   });
 
   it("renumbers an existing store's SKUs once, in store order", () => {
@@ -312,12 +314,22 @@ describe("automatic SKUs", () => {
     const tee = db.catalog.find((i) => i.id === "jfh-logo-tee");
     tee.sku = "MY-OWN-TEE"; // an admin's own SKU since
     assert.equal(needsSkuFormat(db), true);
-    assert.equal(applySkuFormat(db), 14);
+    assert.equal(applySkuFormat(db), 14 + 1, "the 14 samples, and the kit (the only Sampling & Events item given SAM here)");
     assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, "JFH-SMP-001");
     assert.equal(db.catalog.find((i) => i.id === "twinp-case").sku, "TWI-SMP-002");
-    assert.equal(kit.sku, "TRO-SAM-001", "Sampling & Events keeps SAM");
+    assert.equal(kit.sku, "TRO-EVNT-001", "and Sampling & Events moves to EVNT");
     assert.equal(tee.sku, "MY-OWN-TEE");
     assert.equal(needsSkuFormat(db), false);
+  });
+
+  it("moves a version 3 store's Sampling & Events from SAM to EVNT, touching nothing else", () => {
+    const db = initialState();
+    db.meta.skuFormat = 3;
+    for (const item of db.catalog) if (item.category === "Sampling & Events") item.sku = item.sku.replace("-EVNT-", "-SAM-");
+    const sampleSku = db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku;
+    assert.equal(applySkuFormat(db), 4);
+    assert.equal(db.catalog.find((i) => i.id === "td-pullup-banner").sku, "TRO-EVNT-004");
+    assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, sampleSku);
   });
 });
 

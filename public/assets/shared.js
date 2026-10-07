@@ -57,8 +57,9 @@ function firstThreeLetters(text) {
   return (letters || "ITM").padEnd(3, "X").slice(0, 3);
 }
 
-// Categories whose first three letters would clash with another's.
-const CATEGORY_SKU_CODES = { Samples: "SMP" };
+// Categories that don't use their first three letters, which Samples and
+// Sampling & Events would otherwise share.
+const CATEGORY_SKU_CODES = { Samples: "SMP", "Sampling & Events": "EVNT" };
 
 /** The start of every SKU for a brand and category: JFH-APP. */
 export function skuPrefix(brand, category) {
@@ -74,7 +75,7 @@ export function generateSku(brand, category, taken = []) {
   const prefix = skuPrefix(brand, category);
   let highest = 0;
   for (const sku of taken) {
-    const match = /^([A-Z]{3}-[A-Z]{3})-(\d+)$/.exec(String(sku).toUpperCase());
+    const match = /^([A-Z]{3}-[A-Z]{3,4})-(\d+)$/.exec(String(sku).toUpperCase());
     if (match && match[1] === prefix) highest = Math.max(highest, Number(match[2]));
   }
   return `${prefix}-${String(highest + 1).padStart(3, "0")}`;
