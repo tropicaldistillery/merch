@@ -564,7 +564,7 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       const order = await store.mutate((db) =>
         cancelOwnOrder(db, params[0], { email: user.email, name: user.name, now: clock() })
       );
-      notify("order.cancelled", order);
+      notify("order.cancelled", order, { byRequester: true });
       sendJson(res, 200, { ok: true, order });
     }],
 

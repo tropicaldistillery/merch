@@ -127,10 +127,39 @@ is one click.
 
 Every order is saved in the store's database and appears in the admin
 console's **Orders** tab (`/admin`), newest first, with the ones needing action
-on top. Nothing is emailed by the store itself. To hear about orders as they
-come in, set `ORDER_WEBHOOK_URL` (below): each new order and status change is
-then posted there, to a Slack channel as-is, or through Zapier or Make to
-email.
+on top.
+
+With **order emails** on (through [Resend](https://resend.com), settings
+below):
+
+- every new order emails the admins in `ORDER_EMAIL_TO` (rush orders say so in
+  the subject), with the items, where it ships and a button straight to the
+  order; replying goes to the person who placed it
+- the person who placed it gets a confirmation, then an email when it's
+  approved, shipped (with the carrier's tracking link), delivered, declined
+  (with the reason) or cancelled; replying goes to the admins
+- a requester cancelling their own order emails the admins
+
+Emails go out one at a time in the background, retried if Resend is busy, and
+never more than once for the same change. If sending fails the order is still
+saved and the failure is logged.
+
+To turn them on:
+
+1. Sign up at [resend.com](https://resend.com). The free plan covers 3,000
+   emails a month, at most 100 a day.
+2. **Domains → Add domain**: add `tropicaldistillery.com` (or a subdomain
+   such as `mail.tropicaldistillery.com`) and create the DNS records Resend
+   shows at your DNS host. Wait for it to show **Verified**.
+3. **API Keys → Create API key** with **Sending access**.
+4. On the Render service's **Environment** page, add `RESEND_API_KEY` (the
+   key), `ORDER_EMAIL_FROM` (e.g. `Tropical Distillery Merch
+   <merch@tropicaldistillery.com>`, on the verified domain), `ORDER_EMAIL_TO`
+   (the admins' addresses, comma-separated) and, if it isn't set yet,
+   `PUBLIC_URL`. Saving redeploys; the log then shows "Order emails on".
+
+`ORDER_WEBHOOK_URL` (below) still works alongside the emails, for posting
+orders to a Slack channel.
 
 ## The starter catalog
 
@@ -163,7 +192,10 @@ Open <http://localhost:4100>. Without `DATABASE_URL`, data is kept in
 | `REQUIRE_DATABASE` | Set to `1` on any host without a permanent disk. The site then refuses to start without `DATABASE_URL`, instead of keeping orders in a file that vanishes on the next restart. |
 | `DATA_DIR` | Where `store.json` lives when there's no database. Default `./data`. |
 | `ORDER_WEBHOOK_URL` | Optional. Every new order and status change is POSTed here as JSON with a ready-made `text` summary. A Slack incoming webhook works as-is; a Zapier or Make webhook can turn it into emails to the requester. |
-| `PUBLIC_URL` | Optional. The site's address, e.g. `https://merch.tropicaldistillery.com`, so notifications link straight to the order. |
+| `RESEND_API_KEY` | Optional. A [Resend](https://resend.com) API key with sending access. With it and `ORDER_EMAIL_FROM`, the store sends order emails (see "Where orders go"). |
+| `ORDER_EMAIL_FROM` | The address order emails come from, on a domain verified in Resend, e.g. `Tropical Distillery Merch <merch@tropicaldistillery.com>`. |
+| `ORDER_EMAIL_TO` | The admins who get an email for every new order, comma-separated. |
+| `PUBLIC_URL` | Optional. The site's address, e.g. `https://merch.tropicaldistillery.com`, so notifications and emails link straight to the order. |
 | `ORDER_PREFIX` | Order-number prefix. Default `TD` (TD-1001, TD-1002, …). |
 | `TIMEZONE` | Where "today" is for needed-by dates. Default `America/New_York`. |
 | `COOKIE_SECURE` | `auto` (default), `always` (set this on any HTTPS host) or `never`. |
@@ -185,7 +217,9 @@ The production store runs entirely on Tropical Distillery's own accounts:
 The service's Environment page holds `TEAM_ACCESS_CODE`, `ADMIN_PASSWORD`,
 `TEAM_EMAIL_DOMAINS`, `COOKIE_SECURE=always`, `REQUIRE_DATABASE=1`,
 `TIMEZONE`, `PUBLIC_URL` and `DATABASE_URL` (the database's *Internal
-Database URL*). Values live only there, never in this repository.
+Database URL*), plus `RESEND_API_KEY`, `ORDER_EMAIL_FROM` and
+`ORDER_EMAIL_TO` once order emails are set up. Values live only there, never
+in this repository.
 
 Automatic deploys depend on Render's GitHub app having access to this
 repository. If deploys stop starting on their own, check
@@ -297,6 +331,7 @@ src/team.mjs            team list, personal codes, per-person tracking
 src/images.mjs          photo checks for uploads
 src/auth.mjs            signed sessions and sign-in throttling
 src/notify.mjs          webhook messages
+src/email.mjs           order emails through Resend
 src/store/              JSON-file and Postgres stores
 public/                 the pages; assets/shared.js is imported by the server too
 test/                   node:test suites
