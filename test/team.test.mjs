@@ -8,11 +8,17 @@ import {
   generateCode,
   normalizeCode,
   parseTeamEntries,
+  credentialOf,
+  hashPassword,
+  passwordProblem,
   personForSignIn,
   removePerson,
+  resetAllCodes,
   setMode,
+  setOwnPassword,
   teamReport,
   updatePerson,
+  verifyPassword,
 } from "../src/team.mjs";
 import { suggestedMaxPerOrder } from "../public/assets/shared.js";
 import { ValidationError } from "../src/validation.mjs";
@@ -62,15 +68,15 @@ describe("team list", () => {
     assert.throws(() => addPeople(initialState(), "  \n ", { by: "A", at: AT }), ValidationError);
   });
 
-  it("forgives how a code is typed, and only matches the right person", () => {
+  it("forgives how a code is typed, and only matches the right person", async () => {
     const db = initialState();
     const { added } = addPeople(db, "jane@tropicaldistillery.com\nsam@tropicaldistillery.com", { by: "A", at: AT });
     const [jane, sam] = added;
     const typed = jane.code.toUpperCase().replace(/-/g, " ") + "  ";
     assert.equal(normalizeCode(typed), jane.code);
-    assert.equal(personForSignIn(db.team, "jane@tropicaldistillery.com", typed, safeEqual)?.id, jane.id);
-    assert.equal(personForSignIn(db.team, "jane@tropicaldistillery.com", sam.code, safeEqual), null);
-    assert.equal(personForSignIn(db.team, "nobody@tropicaldistillery.com", jane.code, safeEqual), null);
+    assert.equal((await personForSignIn(db.team, "jane@tropicaldistillery.com", typed, safeEqual))?.id, jane.id);
+    assert.equal(await personForSignIn(db.team, "jane@tropicaldistillery.com", sam.code, safeEqual), null);
+    assert.equal(await personForSignIn(db.team, "nobody@tropicaldistillery.com", jane.code, safeEqual), null);
   });
 
   it("issues a new code on reset and keeps emails unique", () => {
@@ -128,5 +134,75 @@ describe("suggested max per order", () => {
   it("allows fewer of the expensive things", () => {
     assert.deepEqual([14500, 6500, 4200, 1150, 750].map(suggestedMaxPerOrder), [1, 2, 4, 6, 12]);
     assert.equal(suggestedMaxPerOrder(NaN), null);
+  });
+});
+
+describe("own passwords", () => {
+  function withJane() {
+    const db = initialState();
+    const { added } = addPeople(db, "Jane Rep, jane@tropicaldistillery.com", { by: "A", at: AT });
+    return { db, jane: db.team.people.find((p) => p.id === added[0].id) };
+  }
+
+  it("keeps only a salted hash, and checks it exactly", async () => {
+    const one = await hashPassword("mango sunset 42");
+    const two = await hashPassword("mango sunset 42");
+    assert.notEqual(one, two, "each hash has its own salt");
+    assert.ok(!one.includes("mango"));
+    assert.equal(await verifyPassword("mango sunset 42", one), true);
+    assert.equal(await verifyPassword("Mango sunset 42", one), false);
+    assert.equal(await verifyPassword("mango sunset 42", "not-a-hash"), false);
+  });
+
+  it("refuses passwords that are short, padded, guessable or the code itself", () => {
+    const { jane } = withJane();
+    assert.match(passwordProblem("short", jane), /at least 8/);
+    assert.match(passwordProblem(" mango sunset ", jane), /spaces/);
+    assert.match(passwordProblem("jane@tropicaldistillery.com", jane), /email/);
+    assert.match(passwordProblem(jane.code.toUpperCase(), jane), /code you were sent/);
+    assert.match(passwordProblem("password1", jane), /too easy/);
+    assert.match(passwordProblem("aaaaaaaaaa", jane), /too easy/);
+    assert.match(passwordProblem("x".repeat(129), jane), /at most/);
+    assert.equal(passwordProblem("mango sunset 42", jane), null);
+  });
+
+  it("replaces the code, signs in with the password only, and shows the admin no secret", async () => {
+    const { db, jane } = withJane();
+    const code = jane.code;
+    const hash = await hashPassword("mango sunset 42");
+    setOwnPassword(db, jane.id, { hash, was: code }, { at: AT });
+
+    assert.equal(jane.code, null);
+    assert.equal(credentialOf(jane), hash);
+    assert.equal((await personForSignIn(db.team, jane.email, "mango sunset 42", safeEqual))?.id, jane.id);
+    assert.equal(await personForSignIn(db.team, jane.email, code, safeEqual), null, "the old code stops working");
+    assert.equal(await personForSignIn(db.team, jane.email, "MANGO SUNSET 42", safeEqual), null);
+
+    const [row] = teamReport(db).people;
+    assert.equal(row.ownPasswordSetAt, AT);
+    assert.ok(!JSON.stringify(teamReport(db)).includes(hash));
+  });
+
+  it("does nothing if the admin changed the code in the meantime", async () => {
+    const { db, jane } = withJane();
+    const was = jane.code;
+    updatePerson(db, jane.id, { resetCode: true }, { at: AT });
+    const hash = await hashPassword("mango sunset 42");
+    assert.throws(() => setOwnPassword(db, jane.id, { hash, was }, { at: AT }), (e) => e.status === 409);
+    assert.ok(jane.code);
+  });
+
+  it("is replaced by a new code from the admin, one at a time or for everyone", async () => {
+    const { db, jane } = withJane();
+    setOwnPassword(db, jane.id, { hash: await hashPassword("mango sunset 42"), was: jane.code }, { at: AT });
+    updatePerson(db, jane.id, { resetCode: true }, { at: AT });
+    assert.ok(jane.code);
+    assert.equal(jane.passwordHash, undefined);
+    assert.equal((await personForSignIn(db.team, jane.email, jane.code, safeEqual))?.id, jane.id);
+
+    setOwnPassword(db, jane.id, { hash: await hashPassword("key lime pie 7"), was: jane.code }, { at: AT });
+    resetAllCodes(db, { at: AT });
+    assert.ok(jane.code);
+    assert.equal(jane.passwordSetAt, undefined);
   });
 });

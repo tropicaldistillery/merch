@@ -44,15 +44,31 @@ import {
 } from "./catalog.mjs";
 import { IMAGE_PATH_RE, MAX_IMAGE_BYTES, acceptProductImage } from "./images.mjs";
 import {
+  MAX_BULK_ORDERS,
+  bulkUpdateOrders,
   cancelOwnOrder,
   csvCell,
   normalizeAccountEdit,
   ordersToCsv,
   placeOrder,
+  trackerToCsv,
   updateOrder,
 } from "./orders.mjs";
-import { addPeople, personForSignIn, removePerson, resetAllCodes, setMode, teamReport, teamState, updatePerson } from "./team.mjs";
-import { OPEN_STATUSES, STATUSES, byCategory } from "../public/assets/shared.js";
+import {
+  addPeople,
+  credentialOf,
+  hashPassword,
+  passwordProblem,
+  personForSignIn,
+  removePerson,
+  resetAllCodes,
+  setMode,
+  setOwnPassword,
+  teamReport,
+  teamState,
+  updatePerson,
+} from "./team.mjs";
+import { OPEN_STATUSES, STATUSES, byCategory, trackByPerson } from "../public/assets/shared.js";
 import { ValidationError, cleanLine, isValidEmail, normalizeEmail } from "./validation.mjs";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -316,12 +332,13 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   }
 
   function personFingerprint(person) {
-    return credentialFingerprint(secret, `person:${person.id}:${person.code}`);
+    return credentialFingerprint(secret, `person:${person.id}:${credentialOf(person)}`);
   }
 
   // Personal-code sessions carry the person and a fingerprint of their
-  // current code, so a reset or removal ends them; shared-code sessions carry
-  // the team code's fingerprint. Switching modes ends the other kind.
+  // current code or own password, so a reset, a new password or removal ends
+  // them; shared-code sessions carry the team code's fingerprint. Switching
+  // modes ends the other kind.
   async function teamUser(req) {
     const payload = verifySession(secret, parseCookies(req.headers.cookie)[TEAM_COOKIE]);
     if (!payload || payload.role !== "team") return null;
@@ -360,20 +377,21 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
 
     let session;
     if (mode === "personal") {
-      if (!String(body.code ?? "").trim()) errors.code = "Enter your personal code.";
+      if (!String(body.code ?? "").trim()) errors.code = "Enter your personal code or password.";
       if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
       if (emailThrottle.blocked(email)) {
-        throw new ValidationError("Too many wrong codes for this email. Wait 15 minutes and try again.", {}, 429);
+        throw new ValidationError("Too many wrong tries for this email. Wait 15 minutes and try again.", {}, 429);
       }
-      const person = personForSignIn(team, email, body.code, safeEqual);
+      const person = await personForSignIn(team, email, body.code, safeEqual);
       if (!person) {
         signInFailed(address);
         emailThrottle.fail(email);
         await delay(config.failureDelayMs ?? 400);
-        const message = "That email and code don't match. Check the code you were sent, or ask the merch admin for a new one.";
+        const message =
+          "That email and code or password don't match. Check the code you were sent, or ask the merch admin for a new one.";
         throw new ValidationError(message, { code: message }, 401);
       }
-      session = { pid: person.id, name: person.name || person.email, email: person.email, fp: personFingerprint(person) };
+      session = personSession(person);
     } else {
       const name = cleanLine(body.name, 80);
       if (!name) errors.name = "Enter your name.";
@@ -396,11 +414,61 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       db.members[session.email] = { ...db.members[session.email], name: session.name, lastSignInAt: at };
     });
 
+    sendJson(res, 200, { ok: true, user: { name: session.name, email: session.email } }, {
+      "Set-Cookie": teamSessionCookie(req, session),
+    });
+  }
+
+  function personSession(person) {
+    return { pid: person.id, name: person.name || person.email, email: person.email, fp: personFingerprint(person) };
+  }
+
+  function teamSessionCookie(req, session) {
     const maxAgeSeconds = TEAM_SESSION_DAYS * 24 * 60 * 60;
     const token = signSession(secret, { role: "team", ...session, exp: Date.now() + maxAgeSeconds * 1000 });
-    sendJson(res, 200, { ok: true, user: { name: session.name, email: session.email } }, {
-      "Set-Cookie": sessionCookie(TEAM_COOKIE, token, { maxAgeSeconds, secure: secureCookies(req) }),
-    });
+    return sessionCookie(TEAM_COOKIE, token, { maxAgeSeconds, secure: secureCookies(req) });
+  }
+
+  // Someone signed in with a personal code choosing their own password. Their
+  // other devices are signed out; this one gets a fresh session.
+  async function changeOwnPassword({ req, res, user }) {
+    if (!user.personId) {
+      throw new ValidationError(
+        "Everyone signs in with the shared team code for now, so there's no password of your own to change. The merch admin can switch on personal codes.",
+        {},
+        409
+      );
+    }
+    const address = clientAddress(req);
+    if (signInBlocked(address) || emailThrottle.blocked(user.email)) {
+      throw new ValidationError("Too many wrong tries. Wait 15 minutes and try again.", {}, 429);
+    }
+    const body = await readJson(req);
+    const { team } = await teamAccess({ fresh: true });
+    const person = team.people.find((p) => p.id === user.personId);
+    if (!person) throw new ValidationError("You're no longer on the team list. Ask the merch admin.", {}, 403);
+
+    const errors = {};
+    if (!String(body.current ?? "")) errors.current = "Enter your current code or password.";
+    const problem = passwordProblem(body.password, person);
+    if (problem) errors.password = problem;
+    if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+
+    if (!(await personForSignIn(team, person.email, body.current, safeEqual))) {
+      signInFailed(address);
+      emailThrottle.fail(person.email);
+      await delay(config.failureDelayMs ?? 400);
+      // Not 401: that would read as the session ending and sign them out.
+      const message = "That isn't your current code or password.";
+      throw new ValidationError(message, { current: message }, 400);
+    }
+
+    const hash = await hashPassword(body.password);
+    const updated = await store.mutate((db) =>
+      setOwnPassword(db, person.id, { hash, was: credentialOf(person) }, { at: clock().toISOString() })
+    );
+    accessChanged();
+    sendJson(res, 200, { ok: true }, { "Set-Cookie": teamSessionCookie(req, personSession(updated)) });
   }
 
   async function adminSignIn({ req, res }) {
@@ -463,6 +531,8 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       sendJson(res, 200, { ok: true, items: byCategory(db.catalog.filter((item) => item.active)).map(publicItem) });
     }],
 
+    ["POST", "/api/me/password", "team", changeOwnPassword],
+
     ["GET", "/api/me", "team", async ({ res, user }) => {
       const db = await store.read();
       sendJson(res, 200, { ok: true, user, address: db.members[user.email]?.address ?? null });
@@ -510,17 +580,52 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       sendJson(res, 200, { ok: true, orders: db.orders.slice().reverse() });
     }],
 
+    // By status, or the orders picked in the console (?ids=a,b,c).
     ["GET", "/api/admin/orders.csv", "admin", async ({ res, url }) => {
       const db = await store.read();
-      const wanted = (url.searchParams.get("status") || "all").split(",");
-      const statuses = wanted.includes("all")
-        ? null
-        : wanted.flatMap((s) => (s === "open" ? OPEN_STATUSES : STATUSES.some((x) => x.id === s) ? [s] : []));
-      const orders = db.orders.filter((o) => !statuses || statuses.includes(o.status));
+      const ids = url.searchParams.get("ids");
+      let orders;
+      if (ids) {
+        const picked = new Set(ids.split(",").slice(0, MAX_BULK_ORDERS));
+        orders = db.orders.filter((o) => picked.has(o.id));
+      } else {
+        const wanted = (url.searchParams.get("status") || "all").split(",");
+        const statuses = wanted.includes("all")
+          ? null
+          : wanted.flatMap((s) => (s === "open" ? OPEN_STATUSES : STATUSES.some((x) => x.id === s) ? [s] : []));
+        orders = db.orders.filter((o) => !statuses || statuses.includes(o.status));
+      }
       const stamp = clock().toISOString().slice(0, 10);
       send(res, 200, ordersToCsv(orders), {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="tropical-merch-orders-${stamp}.csv"`,
+        "Cache-Control": "no-store",
+      });
+    }],
+
+    // One status change or internal note for many orders at once.
+    ["POST", "/api/admin/orders/bulk", "admin", async ({ req, res, admin }) => {
+      const body = await readJson(req);
+      const { updated, skipped } = await store.mutate((db) =>
+        bulkUpdateOrders(db, body, { actor: admin.name, now: clock() })
+      );
+      if (body.action !== "note") for (const order of updated) notify(`order.${order.status}`, order);
+      sendJson(res, 200, { ok: true, orders: updated, skipped });
+    }],
+
+    // What each person has ordered, one row per person and item, for the
+    // period the tracker shows (?from= and ?to=, ISO times; to is exclusive).
+    ["GET", "/api/admin/tracker.csv", "admin", async ({ res, url }) => {
+      const db = await store.read();
+      const time = (name) => {
+        const t = Date.parse(url.searchParams.get(name) || "");
+        return Number.isNaN(t) ? "" : new Date(t).toISOString();
+      };
+      const rows = trackByPerson(db.orders, { from: time("from"), to: time("to"), people: teamState(db).people });
+      const stamp = clock().toISOString().slice(0, 10);
+      send(res, 200, trackerToCsv(rows), {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="tropical-merch-by-person-${stamp}.csv"`,
         "Cache-Control": "no-store",
       });
     }],
@@ -613,9 +718,11 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
 
     ["GET", "/api/admin/team.csv", "admin", async ({ res }) => {
       const { people } = teamState(await store.read());
-      const rows = [["name", "email", "personal_code", "sign_in_link"].join(",")];
+      const rows = [["name", "email", "personal_code", "sign_in_link", "own_password_since"].join(",")];
       const site = (config.publicUrl || "").replace(/\/$/, "");
-      for (const p of people) rows.push([p.name, p.email, p.code, site || ""].map(csvCell).join(","));
+      for (const p of people) {
+        rows.push([p.name, p.email, p.code ?? "", site || "", p.passwordSetAt ?? ""].map(csvCell).join(","));
+      }
       send(res, 200, rows.join("\r\n") + "\r\n", {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": 'attachment; filename="tropical-merch-team-codes.csv"',
@@ -626,7 +733,7 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     ["GET", /^\/api\/admin\/team\/([\w-]+)\/code$/, "admin", async ({ res, params }) => {
       const person = teamState(await store.read()).people.find((p) => p.id === params[0]);
       if (!person) throw new ValidationError("That person isn't on the team list.", {}, 404);
-      sendJson(res, 200, { ok: true, code: person.code });
+      sendJson(res, 200, { ok: true, code: person.code ?? null, ownPasswordSetAt: person.passwordSetAt ?? null });
     }],
 
     ["PATCH", /^\/api\/admin\/team\/([\w-]+)$/, "admin", async ({ req, res, params }) => {

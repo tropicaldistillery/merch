@@ -64,6 +64,7 @@
 
       <div class="tabs" role="tablist" aria-label="Admin sections">
         <button type="button" class="tab" role="tab" id="tab-orders" aria-controls="panel-orders" data-tab="orders">Orders</button>
+        <button type="button" class="tab" role="tab" id="tab-tracker" aria-controls="panel-tracker" data-tab="tracker">Tracker</button>
         <button type="button" class="tab" role="tab" id="tab-catalog" aria-controls="panel-catalog" data-tab="catalog">Catalog &amp; stock</button>
         <button type="button" class="tab" role="tab" id="tab-accounts" aria-controls="panel-accounts" data-tab="accounts">Accounts</button>
         <button type="button" class="tab" role="tab" id="tab-team" aria-controls="panel-team" data-tab="team">Team</button>
@@ -80,7 +81,31 @@
         </div>
         <div class="chips" id="status-chips" role="group" aria-label="Status"></div>
         <p class="result-count" id="order-count" aria-live="polite"></p>
+        <div class="bulk-bar" id="bulk-bar" role="region" aria-label="Selected orders" hidden></div>
         <div class="card table-wrap"><table class="table" id="orders-table"></table></div>
+        <p class="fine panel-note">Tick orders to approve, ship, deliver, decline, cancel, note, print or export them together. Shift-click ticks a run of them.</p>
+      </section>
+
+      <section role="tabpanel" id="panel-tracker" aria-labelledby="tab-tracker" hidden>
+        <div class="toolbar">
+          <label class="search">
+            <span class="sr-only">Search people and items</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="tracker-search" type="search" placeholder="Name, email or item" autocomplete="off">
+          </label>
+          <label class="sr-only" for="tracker-period">Period</label>
+          <select id="tracker-period">
+            <option value="all">All time</option>
+            <option value="this-month">This month</option>
+            <option value="last-month">Last month</option>
+            <option value="this-quarter">This quarter</option>
+            <option value="this-year">This year</option>
+          </select>
+          <a class="btn btn-secondary" id="tracker-csv" href="/api/admin/tracker.csv">Export CSV</a>
+        </div>
+        <p class="result-count" id="tracker-count" aria-live="polite"></p>
+        <div class="card table-wrap"><table class="table" id="tracker-table"></table></div>
+        <p class="fine panel-note">What each person has ordered: every order from submitted to delivered counts, cancelled and declined ones don't. Order value is what the items cost Tropical Distillery. Everyone on the team list is shown, even if they haven't ordered yet. Select a person to see each item and order.</p>
       </section>
 
       <section role="tabpanel" id="panel-catalog" aria-labelledby="tab-catalog" hidden>

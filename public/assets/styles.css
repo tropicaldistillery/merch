@@ -2993,3 +2993,141 @@ fieldset.admin-only > .hint {
 .supplier-line {
   color: var(--pink-text);
 }
+
+/* ------------------------------------------------------ bulk order edits */
+
+.table .select-col {
+  width: 44px;
+  padding-right: 0;
+}
+
+.select-hit {
+  display: inline-flex;
+  padding: 8px;
+  margin: -8px;
+  cursor: pointer;
+}
+
+.select-col input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--action);
+  cursor: pointer;
+}
+
+.table tbody tr.selected td {
+  background: var(--blush);
+}
+
+/* Stays in view below the sticky site header while the list scrolls. */
+.bulk-bar {
+  position: sticky;
+  top: 82px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-bottom: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 2px solid var(--pink);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lift);
+}
+
+.bulk-bar[hidden] {
+  display: none;
+}
+
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bulk-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.bulk-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.bulk-list li:last-child {
+  border-bottom: 0;
+}
+
+.bulk-tracking {
+  margin-bottom: 16px;
+}
+
+.bulk-tracking td {
+  padding: 8px 10px;
+}
+
+.bulk-tracking .field {
+  margin: 0;
+}
+
+.bulk-tracking input {
+  width: 100%;
+  min-width: 160px;
+}
+
+.tracker-items {
+  max-width: 420px;
+}
+
+/* Several packing slips print one to a page. */
+.slip + .slip {
+  break-before: page;
+}
+
+@media (max-width: 640px) {
+  .bulk-bar {
+    position: static;
+    border-radius: var(--radius-control);
+  }
+}
+
+/* ------------------------------------------------------ own passwords */
+
+.show-secret {
+  margin-top: 8px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+dialog.password-dialog {
+  width: min(460px, calc(100% - 32px));
+}
+
+dialog.password-dialog .field {
+  margin-top: 14px;
+}
+
+@media (max-width: 480px) {
+  dialog.password-dialog {
+    padding: 22px;
+  }
+  dialog.password-dialog .dialog-actions {
+    flex-direction: column-reverse;
+  }
+  dialog.password-dialog .dialog-actions .btn {
+    width: 100%;
+  }
+}

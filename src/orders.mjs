@@ -495,6 +495,97 @@ export function updateOrder(db, orderId, patch, { actor, now = new Date() }) {
   return { order, statusChanged };
 }
 
+export const MAX_BULK_ORDERS = 200;
+export const BULK_ACTIONS = ["approved", "shipped", "delivered", "declined", "cancelled", "note"];
+
+/**
+ * One change made to many orders at once from the admin console: a status
+ * change, with one note for them all and, when shipping, one carrier and each
+ * order's own tracking number; or a line added to each order's internal note.
+ *
+ * A problem with what was typed changes nothing. An order that can't take the
+ * change (someone moved it on in the meantime) is left alone and reported in
+ * `skipped`, and the rest go ahead.
+ */
+export function bulkUpdateOrders(db, input, { actor, now = new Date() }) {
+  const src = input && typeof input === "object" ? input : {};
+  const ids = Array.isArray(src.orderIds)
+    ? [...new Set(src.orderIds.map((id) => cleanLine(id, 80)).filter(Boolean))]
+    : [];
+  if (!ids.length) throw new ValidationError("Select at least one order.", {});
+  if (ids.length > MAX_BULK_ORDERS) {
+    throw new ValidationError(`Change at most ${MAX_BULK_ORDERS} orders at a time.`, {});
+  }
+  const action = cleanLine(src.action, 20);
+  if (!BULK_ACTIONS.includes(action)) throw new ValidationError("Choose what to change.", {});
+
+  const targets = [];
+  const skipped = [];
+  for (const id of ids) {
+    const order = db.orders.find((o) => o.id === id);
+    if (!order) skipped.push({ id, number: "", reason: "It could not be found." });
+    else if (action !== "note" && !TRANSITIONS[order.status]?.includes(action)) {
+      skipped.push({ id, number: order.number, reason: `It's ${labelFor(STATUSES, order.status).toLowerCase()}.` });
+    } else targets.push(order);
+  }
+
+  const errors = {};
+  const at = now.toISOString();
+
+  if (action === "note") {
+    const text = cleanText(src.adminNote, 500);
+    if (!text) errors.adminNote = "Write the note to add.";
+    if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+    const updated = [];
+    for (const order of targets) {
+      const combined = [order.adminNote, text].filter(Boolean).join("\n");
+      if (combined.length > 1000) {
+        skipped.push({ id: order.id, number: order.number, reason: "Its internal note is full." });
+        continue;
+      }
+      order.adminNote = combined;
+      order.updatedAt = at;
+      updated.push(order);
+    }
+    return { updated, skipped };
+  }
+
+  if (!targets.length) {
+    const label = labelFor(STATUSES, action).toLowerCase();
+    throw new ValidationError(`None of the selected orders can be marked ${label}.`, {}, 409);
+  }
+
+  const note = cleanText(src.note, 500);
+  if (action === "declined" && !note) errors.note = "Tell the requesters why they were declined.";
+
+  let carrier = "";
+  const tracking = src.tracking && typeof src.tracking === "object" ? src.tracking : {};
+  if (action === "shipped") {
+    carrier = cleanLine(src.carrier, 20);
+    if (!CARRIERS.some((c) => c.id === carrier)) errors.carrier = "Choose a carrier.";
+    else if (carrier !== "hand" && carrier !== "other") {
+      for (const order of targets) {
+        if (!cleanLine(tracking[order.id], 60)) errors[`tracking.${order.id}`] = "Add the tracking number.";
+      }
+    }
+  }
+  if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+
+  // Everything has been checked, so none of these can fail part-way.
+  const updated = targets.map(
+    (order) =>
+      updateOrder(
+        db,
+        order.id,
+        action === "shipped"
+          ? { status: action, note, carrier, trackingNumber: tracking[order.id] ?? "" }
+          : { status: action, note },
+        { actor, now }
+      ).order
+  );
+  return { updated, skipped };
+}
+
 /* ------------------------------------------------------------------ export */
 
 export const CSV_COLUMNS = [
@@ -547,4 +638,31 @@ export function ordersToCsv(orders) {
     }
   }
   return rows.join("\r\n") + "\r\n";
+}
+
+/**
+ * The tracker as a spreadsheet: one row per person and item they ordered,
+ * with the person's totals repeated on each row so it filters and pivots
+ * cleanly. Someone who ordered nothing in the period gets one row of zeros.
+ */
+export function trackerToCsv(rows) {
+  const header = [
+    "name", "email", "on_team_list", "orders", "units", "order_value", "last_order",
+    "sku", "item", "color", "option", "quantity", "item_value", "orders_with_item",
+  ];
+  const out = [header.join(",")];
+  for (const row of rows) {
+    const person = [
+      row.name, row.email, row.onList ? "yes" : "no", row.orders, row.units,
+      (row.valueCents / 100).toFixed(2), row.lastOrderAt ?? "",
+    ];
+    const items = row.items.length ? row.items : [null];
+    for (const item of items) {
+      const cells = item
+        ? [item.sku, item.name, item.color, item.variantLabel, item.quantity, (item.valueCents / 100).toFixed(2), item.orders]
+        : ["", "", "", "", 0, "0.00", 0];
+      out.push([...person, ...cells].map(csvCell).join(","));
+    }
+  }
+  return out.join("\r\n") + "\r\n";
 }

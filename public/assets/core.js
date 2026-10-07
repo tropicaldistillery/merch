@@ -203,7 +203,87 @@ export function wireHeader(user) {
     }
   });
 
+  // Only people signed in with their own code have a password to change.
+  const changePassword = $("[data-change-password]");
+  if (changePassword && user.personId) {
+    changePassword.hidden = false;
+    changePassword.addEventListener("click", () => changePasswordDialog(user));
+  }
+
   return cart;
+}
+
+function changePasswordDialog(user) {
+  const secret = (id, name, label, autocomplete, hint) =>
+    el(
+      "div",
+      { class: "field" },
+      el("label", { for: id, text: label }),
+      el("input", { id, name, type: "password", autocomplete, autocapitalize: "off", spellcheck: "false", maxlength: "128", required: true }),
+      hint ? el("p", { class: "hint", text: hint }) : null
+    );
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  const form = el(
+    "form",
+    { novalidate: true },
+    el("h2", { id: "password-title", text: "Change your password" }),
+    el("p", {
+      class: "muted",
+      text: "Sign in with a password you choose instead of your code. You'll stay signed in here; anywhere else you're signed in will ask for the new password.",
+    }),
+    alertBox,
+    // For password managers, so they save the new password against the right email.
+    el("input", { type: "email", name: "username", autocomplete: "username", value: user.email, readonly: true, hidden: true }),
+    secret("pw-current", "current", "Current code or password", "current-password"),
+    secret("pw-new", "password", "New password", "new-password", "At least 8 characters. A short phrase is easy to remember and hard to guess."),
+    secret("pw-confirm", "confirm", "New password again", "new-password"),
+    el(
+      "label",
+      { class: "check show-secret" },
+      el("input", {
+        type: "checkbox",
+        onchange: (event) => {
+          for (const input of form.querySelectorAll("input[autocomplete$='password']")) input.type = event.target.checked ? "text" : "password";
+        },
+      }),
+      " Show passwords"
+    ),
+    el(
+      "div",
+      { class: "dialog-actions" },
+      el("button", { type: "button", class: "btn btn-secondary", text: "Cancel", onclick: () => dialog.close() }),
+      el("button", { type: "submit", class: "btn", text: "Save password" })
+    )
+  );
+  const dialog = el("dialog", { class: "confirm password-dialog", "aria-labelledby": "password-title" }, form);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    const value = (name) => form.elements.namedItem(name).value;
+    if (value("password") !== value("confirm")) {
+      showFieldErrors(form, { confirm: "The two new passwords don't match." });
+      return;
+    }
+    const submit = form.querySelector("button[type=submit]");
+    submit.disabled = true;
+    try {
+      await api("/api/me/password", { method: "POST", body: { current: value("current"), password: value("password") } });
+      dialog.close();
+      toast("Password changed. Use it with your email next time you sign in.");
+    } catch (error) {
+      if (error.status === 401) return goToSignIn();
+      setAlert(alertBox, error.message);
+      showFieldErrors(form, error.fieldErrors);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  form.elements.namedItem("current").focus();
 }
 
 /* ---------------------------------------------------------------- toasts */

@@ -11,8 +11,13 @@
 // hashing them would protect nothing extra while making the admin's job
 // harder. They are only ever sent to the admin console, one at a time or in
 // the codes download.
+//
+// Anyone signed in with their code can swap it for a password of their own.
+// That one is chosen by them and may well be used elsewhere, so it is kept
+// only as a slow salted hash: nobody, the admin included, can read it back.
+// If they forget it, the admin issues a new code, which replaces it.
 
-import { randomInt, randomUUID } from "node:crypto";
+import { randomBytes, randomInt, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
 
 import { RELEASED_STATUSES } from "../public/assets/shared.js";
 import { ValidationError, cleanLine, isValidEmail, normalizeEmail } from "./validation.mjs";
@@ -63,6 +68,83 @@ export function teamState(db) {
 function ensureTeam(db) {
   db.team ??= { mode: "shared", people: [] };
   return db.team;
+}
+
+/* ------------------------------------------------------- own passwords */
+
+export const MIN_PASSWORD_LENGTH = 8;
+export const MAX_PASSWORD_LENGTH = 128;
+const SCRYPT = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+
+function derive(password, salt) {
+  return new Promise((resolve, reject) =>
+    scrypt(String(password).normalize("NFKC"), salt, 32, SCRYPT, (error, key) => (error ? reject(error) : resolve(key)))
+  );
+}
+
+export async function hashPassword(password) {
+  const salt = randomBytes(16);
+  const key = await derive(password, salt);
+  return `scrypt$${salt.toString("base64url")}$${key.toString("base64url")}`;
+}
+
+export async function verifyPassword(password, stored) {
+  const [kind, salt, hash] = String(stored ?? "").split("$");
+  if (kind !== "scrypt" || !salt || !hash) return false;
+  const key = await derive(password, Buffer.from(salt, "base64url"));
+  const expected = Buffer.from(hash, "base64url");
+  return expected.length === key.length && timingSafeEqual(expected, key);
+}
+
+// Checked against when there is no password to check, so every sign-in costs
+// the same and the time taken doesn't tell who has one.
+let dummyHash = null;
+
+// Refused on their own or with a couple of characters added ("password1").
+const OBVIOUS = ["password", "12345678", "123456789", "1234567890", "qwertyui", "tropical"];
+
+/** Why a new password won't do, or null if it will. */
+export function passwordProblem(password, person) {
+  if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
+    return `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+  }
+  if (password.length > MAX_PASSWORD_LENGTH) return `Use at most ${MAX_PASSWORD_LENGTH} characters.`;
+  if (password.trim() !== password) return "Take the spaces off the start and end.";
+  const plain = password.toLowerCase();
+  if (plain === person.email || plain === person.email.split("@")[0]) return "Choose something other than your email.";
+  if (person.code && normalizeCode(password) === person.code) return "That's the code you were sent. Choose something new.";
+  const obvious = /^(.)\1+$/.test(password) || OBVIOUS.some((w) => plain.startsWith(w) && plain.length <= w.length + 2);
+  if (obvious) return "That's too easy to guess. Try a short phrase.";
+  return null;
+}
+
+/** What a personal session is tied to: the code, or the password that replaced it. */
+export function credentialOf(person) {
+  return person.passwordHash ?? person.code;
+}
+
+/**
+ * Swap a person's code (or earlier password) for a new password, already
+ * hashed. `was` is the credential checked a moment ago, outside this
+ * mutation: if the admin issued a new code in between, nothing changes.
+ */
+export function setOwnPassword(db, personId, { hash, was }, { at }) {
+  const person = ensureTeam(db).people.find((p) => p.id === personId);
+  if (!person) throw new ValidationError("You're no longer on the team list. Ask the merch admin.", {}, 403);
+  if (credentialOf(person) !== was) {
+    throw new ValidationError("Your code was changed by the merch admin just now. Sign in with the new one first.", {}, 409);
+  }
+  person.passwordHash = hash;
+  person.passwordSetAt = at;
+  person.code = null;
+  return person;
+}
+
+function issueCode(person, taken, at) {
+  person.code = generateCode(taken, person);
+  person.codeSetAt = at;
+  delete person.passwordHash;
+  delete person.passwordSetAt;
 }
 
 /* ------------------------------------------------------------- the list */
@@ -169,10 +251,9 @@ export function updatePerson(db, id, patch, { at }) {
   if ("name" in src) person.name = cleanLine(src.name, 80);
   if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
 
-  if (src.resetCode === true) {
-    person.code = generateCode(new Set(team.people.map((p) => p.code)), person);
-    person.codeSetAt = at;
-  }
+  // A new code also replaces a password they set themselves, which is how
+  // someone who forgot theirs gets back in.
+  if (src.resetCode === true) issueCode(person, new Set(team.people.map((p) => p.code)), at);
   return person;
 }
 
@@ -181,8 +262,7 @@ export function resetAllCodes(db, { at }) {
   const team = ensureTeam(db);
   const taken = new Set();
   for (const person of team.people) {
-    person.code = generateCode(taken, person);
-    person.codeSetAt = at;
+    issueCode(person, taken, at);
     taken.add(person.code);
   }
   return team.people;
@@ -214,11 +294,18 @@ export function setMode(db, mode) {
 
 /* ------------------------------------------------------------- sign-in */
 
-export function personForSignIn(team, email, code, safeEqual) {
+/**
+ * The person with this email whose code or own password this is, or null.
+ * Codes forgive capitals and spacing; a password must match exactly.
+ */
+export async function personForSignIn(team, email, secret, safeEqual) {
   const person = team.people.find((p) => p.email === email);
-  const supplied = normalizeCode(code);
-  // Compare against a dummy when the email is unknown so a miss takes the same time.
-  const ok = safeEqual(supplied, person ? person.code : "not-a-real-code-00");
+  const supplied = String(secret ?? "");
+  if (person?.passwordHash) return (await verifyPassword(supplied, person.passwordHash)) ? person : null;
+  // The same work for an unknown email or a code, so a miss takes the same time.
+  dummyHash ??= hashPassword("not-a-real-password");
+  await verifyPassword(supplied, await dummyHash);
+  const ok = safeEqual(normalizeCode(supplied), person?.code || "not-a-real-code-00");
   return ok && person ? person : null;
 }
 
@@ -243,6 +330,7 @@ export function teamReport(db, { now = new Date() } = {}) {
       email: person.email,
       addedAt: person.addedAt,
       codeSetAt: person.codeSetAt,
+      ownPasswordSetAt: person.passwordSetAt ?? null,
       orders: counted.length,
       units: counted.reduce((sum, o) => sum + o.totalUnits, 0),
       valueCents: counted.reduce((sum, o) => sum + o.totalCents, 0),

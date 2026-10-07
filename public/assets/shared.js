@@ -288,3 +288,86 @@ export function quantityRuleText(item) {
   const text = parts.join(" · ");
   return text[0].toUpperCase() + text.slice(1);
 }
+
+/**
+ * What each person has ordered, for the admin's tracker: their orders, units
+ * and order value, and every item they ordered by option and colour, most
+ * ordered first. Cancelled and declined orders don't count.
+ *
+ * `from` and `to` are ISO times (`to` is exclusive). `people` is the team
+ * list: everyone on it gets a row, ordered or not, and orders placed before
+ * personal codes (matched by email) land on the same row as later ones.
+ */
+export function trackByPerson(orders, { from = "", to = "", people = [] } = {}) {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const byEmail = new Map(people.map((p) => [p.email, p]));
+  const rows = new Map();
+
+  const rowFor = (key, person, requester) => {
+    let row = rows.get(key);
+    if (!row) {
+      row = {
+        key,
+        personId: person?.id ?? null,
+        name: person?.name || requester?.name || person?.email || requester?.email || "",
+        email: person?.email ?? requester?.email ?? "",
+        onList: Boolean(person),
+        orders: 0,
+        openOrders: 0,
+        units: 0,
+        valueCents: 0,
+        firstOrderAt: null,
+        lastOrderAt: null,
+        orderIds: [],
+        items: new Map(),
+      };
+      rows.set(key, row);
+    }
+    return row;
+  };
+
+  for (const person of people) rowFor(`person:${person.id}`, person, null);
+
+  for (const order of orders) {
+    if (RELEASED_STATUSES.includes(order.status)) continue;
+    if (from && order.createdAt < from) continue;
+    if (to && order.createdAt >= to) continue;
+    const person = byId.get(order.requester.personId) ?? byEmail.get(order.requester.email) ?? null;
+    const row = rowFor(person ? `person:${person.id}` : `email:${order.requester.email}`, person, order.requester);
+    // Off the list, the most recent name they typed wins.
+    if (!person && order.requester.name && (!row.lastOrderAt || order.createdAt >= row.lastOrderAt)) {
+      row.name = order.requester.name;
+    }
+    row.orders += 1;
+    if (OPEN_STATUSES.includes(order.status)) row.openOrders += 1;
+    row.units += order.totalUnits;
+    row.valueCents += order.totalCents;
+    if (!row.firstOrderAt || order.createdAt < row.firstOrderAt) row.firstOrderAt = order.createdAt;
+    if (!row.lastOrderAt || order.createdAt > row.lastOrderAt) row.lastOrderAt = order.createdAt;
+    row.orderIds.push(order.id);
+    for (const line of order.lines) {
+      const key = `${line.itemId}::${line.variantId}::${line.color ?? ""}`;
+      const item = row.items.get(key) ?? {
+        itemId: line.itemId,
+        sku: line.sku,
+        name: line.name,
+        variantLabel: line.variantLabel ?? "",
+        color: line.color ?? "",
+        quantity: 0,
+        valueCents: 0,
+        orders: 0,
+      };
+      item.quantity += line.quantity;
+      item.valueCents += line.lineTotalCents;
+      item.orders += 1;
+      row.items.set(key, item);
+    }
+  }
+
+  return [...rows.values()]
+    .map((row) => ({
+      ...row,
+      items: [...row.items.values()].sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name)),
+    }))
+    .sort((a, b) => b.valueCents - a.valueCents || b.units - a.units || a.name.localeCompare(b.name));
+}

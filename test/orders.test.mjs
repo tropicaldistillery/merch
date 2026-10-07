@@ -413,3 +413,45 @@ describe("CSV export", () => {
     assert.match(rows[1], /'@everyone$/);
   });
 });
+
+describe("the per-person tracker", () => {
+  it("adds up each person's items, joins their shared-code and personal orders, and lists everyone", async () => {
+    const { trackByPerson } = await import("../public/assets/shared.js");
+    const { trackerToCsv } = await import("../src/orders.mjs");
+    const db = initialState();
+    const people = [
+      { id: "p-jane", name: "Jane Rep", email: JANE.email },
+      { id: "p-lee", name: "Lee", email: "lee@tropicaldistillery.com" },
+    ];
+    const first = place(db, order({ lines: [{ itemId: "jfh-logo-tee", variantId: "m", quantity: 2 }] }));
+    const second = placeOrder(db, order({ lines: [{ itemId: "jfh-logo-tee", variantId: "m", quantity: 1 }] }), {
+      requester: { ...JANE, personId: "p-jane" },
+      now: new Date("2026-11-02T15:00:00Z"),
+      timeZone: "America/New_York",
+      prefix: "TD",
+    });
+    const dropped = place(db, order({ lines: [{ itemId: "jfh-logo-tee", variantId: "m", quantity: 5 }] }));
+    updateOrder(db, dropped.id, { status: "cancelled" }, { actor: "Allie", now: NOW });
+    place(db, order({ lines: [{ itemId: "jfh-cap", quantity: 1 }] }), SAM);
+
+    const rows = trackByPerson(db.orders, { people });
+    assert.deepEqual(rows.map((r) => r.email), [JANE.email, SAM.email, "lee@tropicaldistillery.com"]);
+    const [jane, sam, lee] = rows;
+    assert.equal(jane.orders, 2, "the cancelled order doesn't count");
+    assert.deepEqual(jane.orderIds, [first.id, second.id]);
+    assert.equal(jane.items.length, 1);
+    assert.equal(jane.items[0].quantity, 3);
+    assert.equal(jane.items[0].orders, 2);
+    assert.equal(jane.lastOrderAt, second.createdAt);
+    assert.equal(sam.onList, false);
+    assert.equal(lee.orders, 0, "on the list but hasn't ordered");
+
+    const november = trackByPerson(db.orders, { people, from: "2026-11-01T04:00:00.000Z", to: "2026-12-01T05:00:00.000Z" });
+    assert.equal(november[0].orders, 1);
+    assert.equal(november.find((r) => r.email === SAM.email), undefined);
+
+    const csv = trackerToCsv(rows).trim().split("\r\n");
+    assert.equal(csv.length, 4, "a header, Jane's tee, Sam's cap, Lee's empty row");
+    assert.match(csv[3], /^Lee,lee@tropicaldistillery.com,yes,0,0,0.00,,,,,,0,0.00,0$/);
+  });
+});

@@ -20,6 +20,10 @@ function nextPath() {
   return "/shop";
 }
 
+$("#code-show").addEventListener("change", (event) => {
+  codeInput.type = event.target.checked ? "text" : "password";
+});
+
 // Remember who signed in last on this device, never the code.
 try {
   const last = JSON.parse(localStorage.getItem("tdmerch:last-user") || "null");
@@ -48,11 +52,10 @@ async function init() {
       personal = true;
       $("#name-field").hidden = true;
       $("#email-label").textContent = "Email";
-      $("#code-label").textContent = "Your personal code";
-      codeInput.type = "text";
-      codeInput.autocomplete = "off";
+      $("#code-label").textContent = "Your personal code or password";
       const hint = $("#code-hint");
-      hint.textContent = "It looks like tropical-jane-4821, with your first name. Ask the merch admin if you don't have one.";
+      hint.textContent =
+        "Your code looks like tropical-jane-4821, with your first name. If you've chosen your own password, use that. Ask the merch admin if you don't have either.";
       hint.hidden = false;
       $("#signin-intro").textContent = "Use your email and the personal code from your merch admin. You'll stay signed in on this device for 30 days.";
     }

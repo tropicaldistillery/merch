@@ -429,6 +429,70 @@ describe("merch store over HTTP", () => {
   });
 });
 
+describe("bulk order edits and the per-person tracker", () => {
+  it("changes many orders at once, skipping any that can't take the change", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const app = await start(dir);
+    try {
+      const jane = await signedInTeam(app);
+      const sam = await signedInTeam(app, "sam@tropicaldistillery.com", "Sam Rep");
+      const place = async (who) => (await who("/api/orders", { method: "POST", body: ACCOUNT_ORDER })).data.order;
+      const [o1, o2, o3] = [await place(jane), await place(jane), await place(jane)];
+      const s1 = await place(sam);
+      const admin = await signedInAdmin(app);
+      const bulk = (body) => admin("/api/admin/orders/bulk", { method: "POST", body });
+
+      assert.equal((await jane("/api/admin/orders/bulk", { method: "POST", body: { action: "approved", orderIds: [o1.id] } })).status, 401);
+
+      const approved = await bulk({ action: "approved", orderIds: [o1.id, o2.id], note: "Go ahead" });
+      assert.equal(approved.status, 200, JSON.stringify(approved.data));
+      assert.deepEqual(approved.data.orders.map((o) => o.status), ["approved", "approved"]);
+      assert.equal(approved.data.orders[0].history.at(-1).note, "Go ahead");
+      assert.equal(app.notifications.filter((n) => n.event === "order.approved").length, 2);
+
+      // A missing tracking number stops the whole batch and names the order.
+      const missing = await bulk({ action: "shipped", orderIds: [o1.id, o2.id], carrier: "ups", tracking: { [o1.id]: "1Z1" } });
+      assert.equal(missing.status, 400);
+      assert.ok(missing.data.fieldErrors[`tracking.${o2.id}`]);
+      assert.equal((await admin(`/api/admin/orders/${o1.id}`)).data.order.status, "approved", "nothing shipped");
+
+      const shipped = await bulk({ action: "shipped", orderIds: [o1.id, o2.id], carrier: "ups", tracking: { [o1.id]: "1Z1", [o2.id]: "1Z 2" } });
+      assert.deepEqual(shipped.data.orders.map((o) => o.shipment.trackingNumber), ["1Z1", "1Z2"]);
+
+      const mixed = await bulk({ action: "approved", orderIds: [o1.id, s1.id] });
+      assert.deepEqual(mixed.data.orders.map((o) => o.id), [s1.id]);
+      assert.deepEqual(mixed.data.skipped, [{ id: o1.id, number: o1.number, reason: "It's shipped." }]);
+      assert.equal((await bulk({ action: "delivered", orderIds: [o3.id] })).status, 409, "nothing could take it");
+
+      assert.ok((await bulk({ action: "declined", orderIds: [o3.id] })).data.fieldErrors.note);
+      assert.equal((await bulk({ action: "declined", orderIds: [o3.id], note: "Duplicate" })).data.orders[0].status, "declined");
+
+      const noted = await bulk({ action: "note", orderIds: [o1.id, s1.id], adminNote: "Invoice Q4" });
+      assert.deepEqual(noted.data.orders.map((o) => o.adminNote), ["Invoice Q4", "Invoice Q4"]);
+      await bulk({ action: "note", orderIds: [o1.id], adminNote: "Paid" });
+      assert.equal((await admin(`/api/admin/orders/${o1.id}`)).data.order.adminNote, "Invoice Q4\nPaid");
+
+      const picked = await admin(`/api/admin/orders.csv?ids=${o1.id},${s1.id}`);
+      assert.equal(picked.data.trim().split("\r\n").length, 3);
+
+      // Jane: two orders count (the declined one doesn't), Sam: one.
+      const tracker = await admin("/api/admin/tracker.csv");
+      assert.match(tracker.headers.get("content-disposition"), /tropical-merch-by-person-/);
+      const [header, ...rows] = tracker.data.trim().split("\r\n");
+      assert.match(header, /^name,email,on_team_list,orders,units,order_value,last_order,sku,item,color,option,quantity/);
+      assert.equal(rows.length, 2);
+      assert.match(rows[0], /^Jane Rep,jane@tropicaldistillery.com,no,2,4,88.00,/);
+      assert.match(rows[1], /^Sam Rep,sam@tropicaldistillery.com,no,1,2,44.00,/);
+
+      const later = await admin(`/api/admin/tracker.csv?from=${encodeURIComponent("2999-01-01T00:00:00Z")}`);
+      assert.equal(later.data.trim().split("\r\n").length, 1, "nobody ordered in the future");
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("personal codes", () => {
   it("signs people in with their own code and tracks their orders", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
@@ -518,6 +582,58 @@ describe("personal codes", () => {
       assert.match(newSam.code, /^tropical-sam-\d{4}$/);
       assert.equal((await attempt("sam@tropicaldistillery.com", sam.code)).status, 401);
       assert.equal((await attempt("sam@tropicaldistillery.com", newSam.code)).status, 200);
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("own passwords", () => {
+  it("lets someone swap their code for a password, signing out their other devices", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const app = await start(dir, { throttle: createThrottle({ max: 100 }) });
+    try {
+      const admin = await signedInAdmin(app);
+      const shared = await signedInTeam(app);
+      const sharedTry = await shared("/api/me/password", { method: "POST", body: { current: TEAM_CODE, password: "mango sunset 42" } });
+      assert.equal(sharedTry.status, 409, "nothing to change on the shared code");
+
+      const [jane] = (await admin("/api/admin/team", { method: "POST", body: { entries: "Jane Rep, jane@tropicaldistillery.com" } })).data.added;
+      await admin("/api/admin/team/mode", { method: "PUT", body: { mode: "personal" } });
+      const signIn = (client, code) => client("/api/session", { method: "POST", body: { email: "jane@tropicaldistillery.com", code } });
+      const laptop = app.client();
+      const phone = app.client();
+      assert.equal((await signIn(laptop, jane.code)).status, 200);
+      assert.equal((await signIn(phone, jane.code)).status, 200);
+      const change = (body) => laptop("/api/me/password", { method: "POST", body });
+
+      const wrong = await change({ current: "tropical-jane-0000", password: "mango sunset 42" });
+      assert.equal(wrong.status, 400, "a wrong current code isn't a lost session");
+      assert.ok(wrong.data.fieldErrors.current);
+      assert.ok((await change({ current: jane.code, password: "short" })).data.fieldErrors.password);
+      assert.equal((await laptop("/api/catalog")).status, 200);
+
+      const changed = await change({ current: jane.code, password: "mango sunset 42" });
+      assert.equal(changed.status, 200, JSON.stringify(changed.data));
+      assert.equal((await laptop("/api/catalog")).status, 200, "this device stays signed in");
+      assert.equal((await phone("/api/catalog")).status, 401, "other devices are signed out");
+
+      const fresh = app.client();
+      assert.equal((await signIn(fresh, jane.code)).status, 401, "the code stops working");
+      assert.equal((await signIn(fresh, "mango sunset 42")).status, 200);
+
+      const row = (await admin("/api/admin/team")).data.people.find((p) => p.id === jane.id);
+      assert.ok(row.ownPasswordSetAt);
+      assert.equal((await admin(`/api/admin/team/${jane.id}/code`)).data.code, null);
+      const csv = (await admin("/api/admin/team.csv")).data;
+      assert.ok(!csv.includes("mango") && !csv.includes("scrypt"));
+
+      // Forgotten: a new code from the admin replaces the password.
+      const reset = await admin(`/api/admin/team/${jane.id}`, { method: "PATCH", body: { resetCode: true } });
+      assert.equal((await fresh("/api/catalog")).status, 401);
+      assert.equal((await signIn(app.client(), "mango sunset 42")).status, 401);
+      assert.equal((await signIn(app.client(), reset.data.person.code)).status, 200);
     } finally {
       await app.close();
       await fs.rm(dir, { recursive: true, force: true });

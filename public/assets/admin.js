@@ -40,6 +40,7 @@ import {
   quantityRuleText,
   suggestedMaxPerOrder,
   suggestedMinPerOrder,
+  trackByPerson,
   trackingUrl,
 } from "./shared.js";
 
@@ -78,6 +79,9 @@ const ui = {
   showHidden: false,
   accountQuery: "",
   teamQuery: "",
+  selected: new Set(),
+  trackerPeriod: "all",
+  trackerQuery: "",
 };
 
 let orders = [];
@@ -172,6 +176,7 @@ async function loadAll() {
 function renderAll() {
   renderKpis();
   renderOrders();
+  renderTracker();
   renderCatalog();
   renderAccounts();
   renderTeam();
@@ -216,7 +221,7 @@ setInterval(async () => {
 /* ------------------------------------------------------------------ tabs */
 
 function setTab(tab, { focus = true } = {}) {
-  if (!["orders", "catalog", "accounts", "team"].includes(tab)) tab = "orders";
+  if (!["orders", "tracker", "catalog", "accounts", "team"].includes(tab)) tab = "orders";
   ui.tab = tab;
   for (const button of $$("[role=tab]")) {
     const selected = button.dataset.tab === tab;
@@ -354,14 +359,20 @@ function renderOrders() {
   $("#export-csv").href = `/api/admin/orders.csv?status=${encodeURIComponent(filter.csv)}`;
 
   const visible = sortOrders(orders.filter(orderMatches));
+  shownOrders = visible;
+  // Only orders on screen stay selected, so a bulk change never reaches one
+  // hidden by the filter or search.
+  const shown = new Set(visible.map((o) => o.id));
+  for (const id of ui.selected) if (!shown.has(id)) ui.selected.delete(id);
   $("#order-count").textContent =
     `${plural(visible.length, "order")}${ui.status === "needs-action" ? " · rush first, then by needed-by date" : ""}`;
 
   const table = $("#orders-table");
   if (!visible.length) {
+    renderBulkBar();
     clear(
       table,
-      el("tbody", {}, el("tr", {}, el("td", { class: "empty", colspan: "7", text: orders.length ? "No orders match." : "No orders yet. They'll appear here as the team places them." })))
+      el("tbody", {}, el("tr", {}, el("td", { class: "empty", colspan: "8", text: orders.length ? "No orders match." : "No orders yet. They'll appear here as the team places them." })))
     );
     return;
   }
@@ -371,17 +382,45 @@ function renderOrders() {
     el(
       "thead",
       {},
-      el("tr", {}, ["Order", "Placed", "Requested by", "Ships to", "Units", "Needed by", "Status"].map((h) =>
-        el("th", { scope: "col", class: h === "Units" ? "num" : "", text: h })
-      ))
+      el(
+        "tr",
+        {},
+        el("th", { scope: "col", class: "select-col" }, el("input", {
+          type: "checkbox",
+          id: "select-all-orders",
+          "aria-label": "Select every order shown",
+          onchange: (event) => {
+            for (const order of shownOrders) {
+              if (event.target.checked) ui.selected.add(order.id);
+              else ui.selected.delete(order.id);
+            }
+            syncSelection();
+          },
+        })),
+        ["Order", "Placed", "Requested by", "Ships to", "Units", "Needed by", "Status"].map((h) =>
+          el("th", { scope: "col", class: h === "Units" ? "num" : "", text: h })
+        )
+      )
     ),
     el(
       "tbody",
       {},
-      visible.map((order) =>
+      visible.map((order, index) =>
         el(
           "tr",
-          { class: "clickable", onclick: (event) => { if (!event.target.closest("button")) openOrder(order.id); } },
+          { class: "clickable", onclick: (event) => { if (!event.target.closest("button, input, label")) openOrder(order.id); } },
+          el(
+            "td",
+            { class: "select-col" },
+            el("label", { class: "select-hit" }, el("input", {
+              type: "checkbox",
+              class: "row-check",
+              "data-index": String(index),
+              "aria-label": `Select ${order.number}`,
+              checked: ui.selected.has(order.id),
+              onclick: (event) => pickOrder(index, event.target.checked, event.shiftKey),
+            }))
+          ),
           el(
             "td",
             {},
@@ -398,6 +437,259 @@ function renderOrders() {
       )
     )
   );
+  syncSelection();
+}
+
+/* ------------------------------------------------------ bulk order edits */
+
+const BULK_STATUSES = ["approved", "shipped", "delivered", "declined", "cancelled"];
+const MAX_BULK = 200;
+const BULK_TITLES = {
+  approved: (n) => `Approve ${n}`,
+  shipped: (n) => `Mark ${n} shipped`,
+  delivered: (n) => `Mark ${n} delivered`,
+  declined: (n) => `Decline ${n}`,
+  cancelled: (n) => `Cancel ${n}`,
+  note: (n) => `Add a note to ${n}`,
+};
+const BULK_DONE = {
+  approved: "Approved",
+  shipped: "Marked shipped:",
+  delivered: "Marked delivered:",
+  declined: "Declined",
+  cancelled: "Cancelled",
+  note: "Added the note to",
+};
+
+let shownOrders = [];
+let lastPicked = null;
+
+function selectedOrders() {
+  return shownOrders.filter((o) => ui.selected.has(o.id));
+}
+
+// Shift-click ticks or unticks everything between this row and the last one.
+function pickOrder(index, checked, shift) {
+  const from = shift && lastPicked !== null ? Math.min(lastPicked, index) : index;
+  const to = shift && lastPicked !== null ? Math.max(lastPicked, index) : index;
+  for (const order of shownOrders.slice(from, to + 1)) {
+    if (checked) ui.selected.add(order.id);
+    else ui.selected.delete(order.id);
+  }
+  lastPicked = index;
+  syncSelection();
+}
+
+function syncSelection() {
+  for (const box of $$("#orders-table .row-check")) {
+    box.checked = ui.selected.has(shownOrders[Number(box.dataset.index)]?.id);
+    box.closest("tr").classList.toggle("selected", box.checked);
+  }
+  const all = $("#select-all-orders");
+  if (all) {
+    const count = selectedOrders().length;
+    all.checked = count > 0 && count === shownOrders.length;
+    all.indeterminate = count > 0 && count < shownOrders.length;
+  }
+  renderBulkBar();
+}
+
+function renderBulkBar() {
+  const bar = $("#bulk-bar");
+  const picked = selectedOrders();
+  bar.hidden = picked.length === 0;
+  if (!picked.length) return clear(bar);
+
+  const ids = picked.map((o) => o.id).join(",");
+  const tooMany = picked.length > MAX_BULK;
+  const button = (action, label, count, { danger = false } = {}) =>
+    el("button", {
+      type: "button",
+      class: `btn btn-sm ${danger ? "btn-danger" : "btn-secondary"}`,
+      disabled: tooMany,
+      title: count < picked.length ? `${count} of the ${picked.length} selected can be changed this way` : null,
+      text: count < picked.length ? `${label} (${count})` : label,
+      onclick: () => openBulk(action),
+    });
+
+  clear(
+    bar,
+    el("strong", { class: "bulk-count", text: `${plural(picked.length, "order")} selected` }),
+    tooMany ? el("span", { class: "low-text", text: `Select at most ${MAX_BULK} at a time.` }) : null,
+    el(
+      "div",
+      { class: "bulk-actions" },
+      BULK_STATUSES.map((status) => {
+        const count = picked.filter((o) => TRANSITIONS[o.status]?.includes(status)).length;
+        return count ? button(status, ACTIONS[status].label, count, { danger: ACTIONS[status].danger }) : null;
+      }),
+      button("note", "Add internal note", picked.length),
+      el("a", { class: "btn btn-sm btn-secondary", href: `/packing-slip?ids=${ids}`, target: "_blank", rel: "noopener", text: "Print packing slips" }),
+      el("a", { class: "btn btn-sm btn-secondary", href: `/api/admin/orders.csv?ids=${ids}`, text: "Export CSV" }),
+      el("button", {
+        type: "button",
+        class: "link-button",
+        text: "Clear selection",
+        onclick: () => {
+          ui.selected.clear();
+          syncSelection();
+        },
+      })
+    )
+  );
+}
+
+function openBulk(action) {
+  const picked = selectedOrders();
+  const targets = action === "note" ? picked : picked.filter((o) => TRANSITIONS[o.status]?.includes(action));
+  const left = picked.filter((o) => !targets.includes(o));
+  const shipping = action === "shipped";
+  if (!targets.length) return;
+
+  detailTitle.textContent = BULK_TITLES[action](plural(targets.length, "order"));
+  const form = el("form", { class: "action-form bulk-form", novalidate: true });
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+
+  const who = (o) => (o.shipTo.type === "account" ? o.shipTo.accountName : o.requester.name);
+  const list = shipping
+    ? el(
+        "div",
+        { class: "table-wrap" },
+        el(
+          "table",
+          { class: "table bulk-tracking" },
+          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Order" }), el("th", { scope: "col", text: "Tracking number" }))),
+          el(
+            "tbody",
+            {},
+            targets.map((o) =>
+              el(
+                "tr",
+                {},
+                el("td", {}, el("div", { class: "cell-main", text: o.number }), el("div", { class: "cell-sub", text: `${who(o)} · ${o.shipTo.city}, ${o.shipTo.state}` })),
+                el(
+                  "td",
+                  {},
+                  el(
+                    "div",
+                    { class: "field" },
+                    el("label", { class: "sr-only", for: `bulk-track-${o.id}`, text: `Tracking number for ${o.number}` }),
+                    el("input", { id: `bulk-track-${o.id}`, name: `tracking.${o.id}`, type: "text", maxlength: "60", autocomplete: "off" })
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    : el(
+        "ul",
+        { class: "bulk-list" },
+        targets.map((o) =>
+          el("li", {}, el("strong", { text: o.number }), ` · ${o.requester.name} · ${who(o)}, ${o.shipTo.city} `, statusBadge(o.status))
+        )
+      );
+
+  const noteField =
+    action === "note"
+      ? el(
+          "div",
+          { class: "field" },
+          el("label", { for: "bulk-admin-note", text: "Note to add" }),
+          el("textarea", { id: "bulk-admin-note", name: "adminNote", rows: "3", maxlength: "500" }),
+          el("p", { class: "hint", text: "Added on a new line to each order's internal note. Only admins see it." })
+        )
+      : el(
+          "div",
+          { class: "field" },
+          el(
+            "label",
+            { for: "bulk-note" },
+            ACTIONS[action].noteRequired ? "Reason — every requester sees this" : "Note to the requesters",
+            ACTIONS[action].noteRequired ? null : el("span", { class: "optional", text: " (optional)" })
+          ),
+          el("textarea", { id: "bulk-note", name: "note", rows: "2", maxlength: "500" }),
+          el("p", { class: "hint", text: "The same note goes into each order's history." })
+        );
+
+  form.append(
+    alertBox,
+    shipping
+      ? el(
+          "div",
+          { class: "form-grid" },
+          el(
+            "div",
+            { class: "field span-3" },
+            el("label", { for: "bulk-carrier", text: "Carrier" }),
+            el("select", { id: "bulk-carrier", name: "carrier" }, options(CARRIERS, { placeholder: "Choose…" })),
+            el("p", { class: "hint", text: "Hand-delivered and other carriers don't need tracking numbers." })
+          )
+        )
+      : "",
+    list,
+    left.length
+      ? el("p", {
+          class: "fine",
+          text: `${plural(left.length, "selected order")} can't be changed this way and will be left as ${left.length === 1 ? "it is" : "they are"}: ${left
+            .map((o) => `${o.number} (${labelFor(STATUSES, o.status).toLowerCase()})`)
+            .join(", ")}.`,
+        })
+      : "",
+    noteField,
+    el(
+      "div",
+      { class: "inline-actions" },
+      el("button", {
+        type: "submit",
+        class: action === "declined" || action === "cancelled" ? "btn btn-danger solid" : "btn",
+        text: BULK_TITLES[action](plural(targets.length, "order")),
+      }),
+      el("button", { type: "button", class: "btn btn-secondary", "data-close": "", text: "Never mind" })
+    )
+  );
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    const body = { action, orderIds: targets.map((o) => o.id) };
+    if (action === "note") body.adminNote = form.elements.namedItem("adminNote").value;
+    else body.note = form.elements.namedItem("note").value;
+    if (shipping) {
+      body.carrier = form.elements.namedItem("carrier").value;
+      body.tracking = Object.fromEntries(targets.map((o) => [o.id, form.elements.namedItem(`tracking.${o.id}`).value]));
+    }
+    const submit = $("button[type=submit]", form);
+    submit.disabled = true;
+    try {
+      const result = await adminApi("/api/admin/orders/bulk", { method: "POST", body });
+      const changed = new Map(result.orders.map((o) => [o.id, o]));
+      orders = orders.map((o) => changed.get(o.id) ?? o);
+      drawer.close();
+      renderKpis();
+      renderOrders();
+      renderTracker();
+      const skipped = result.skipped.length
+        ? ` Left alone: ${result.skipped.map((s) => `${s.number || "an order"} (${s.reason.replace(/\.$/, "").toLowerCase()})`).join(", ")}.`
+        : "";
+      toast(`${BULK_DONE[action]} ${plural(result.orders.length, "order")}.${skipped}`, { timeout: skipped ? 9000 : 5000 });
+      if (action === "cancelled" || action === "declined") {
+        ({ items: catalog } = await adminApi("/api/admin/catalog"));
+        renderCatalog();
+        renderKpis();
+      }
+    } catch (error) {
+      submit.disabled = false;
+      setAlert(alertBox, error.message);
+      showFieldErrors(form, error.fieldErrors);
+    }
+  });
+
+  clear(detailBody, form);
+  clear(detailFoot);
+  drawer.open();
+  $("select, textarea", form)?.focus();
 }
 
 let orderSearchTimer;
@@ -439,6 +731,7 @@ function replaceOrder(updated) {
   orders = orders.map((o) => (o.id === updated.id ? updated : o));
   renderKpis();
   renderOrders();
+  renderTracker();
 }
 
 function actionForm(order, status) {
@@ -781,6 +1074,191 @@ function openOrder(id) {
   renderOrderDetail(order);
   drawer.open();
 }
+
+/* --------------------------------------------------------------- tracker */
+
+// Periods start at local midnight on the first day; `to` is exclusive.
+function trackerRange(period, now = new Date()) {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const at = (date) => date.toISOString();
+  switch (period) {
+    case "this-month":
+      return { from: at(new Date(y, m, 1)), to: "" };
+    case "last-month":
+      return { from: at(new Date(y, m - 1, 1)), to: at(new Date(y, m, 1)) };
+    case "this-quarter":
+      return { from: at(new Date(y, Math.floor(m / 3) * 3, 1)), to: "" };
+    case "this-year":
+      return { from: at(new Date(y, 0, 1)), to: "" };
+    default:
+      return { from: "", to: "" };
+  }
+}
+
+function trackerRows() {
+  return trackByPerson(orders, { ...trackerRange(ui.trackerPeriod), people: team.people });
+}
+
+function itemText(item) {
+  const detail = [item.color, item.variantLabel].filter(Boolean).join(", ");
+  return `${item.quantity} × ${item.name}${detail ? ` (${detail})` : ""}`;
+}
+
+function renderTracker() {
+  const range = trackerRange(ui.trackerPeriod);
+  const query = new URLSearchParams(Object.entries(range).filter(([, v]) => v)).toString();
+  $("#tracker-csv").href = `/api/admin/tracker.csv${query ? `?${query}` : ""}`;
+
+  const words = ui.trackerQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const rows = trackerRows().filter((row) => {
+    if (!words.length) return true;
+    const haystack = [row.name, row.email, ...row.items.flatMap((i) => [i.name, i.sku, i.color])].join(" ").toLowerCase();
+    return words.every((w) => haystack.includes(w));
+  });
+  const ordered = rows.filter((r) => r.orders);
+  $("#tracker-count").textContent =
+    `${plural(ordered.length, "person", "people")} ordered · ${plural(ordered.reduce((n, r) => n + r.orders, 0), "order")} · ` +
+    `${plural(ordered.reduce((n, r) => n + r.units, 0), "unit")} · ${formatMoney(ordered.reduce((n, r) => n + r.valueCents, 0))}`;
+
+  const table = $("#tracker-table");
+  if (!rows.length) {
+    clear(table, el("tbody", {}, el("tr", {}, el("td", { class: "empty", colspan: "6", text: orders.length ? "Nobody matches." : "No orders yet. Each person's orders will add up here." }))));
+    return;
+  }
+
+  clear(
+    table,
+    el("thead", {}, el("tr", {}, ["Person", "Orders", "Units", "Order value", "What they ordered", "Last order"].map((h) =>
+      el("th", { scope: "col", class: ["Orders", "Units", "Order value"].includes(h) ? "num" : "", text: h })
+    ))),
+    el(
+      "tbody",
+      {},
+      rows.map((row) => {
+        const top = row.items.slice(0, 3).map(itemText).join(" · ");
+        const more = row.items.length > 3 ? ` · and ${plural(row.items.length - 3, "more item")}` : "";
+        return el(
+          "tr",
+          { class: "clickable", onclick: (event) => { if (!event.target.closest("button")) openTrackerPerson(row.key); } },
+          el(
+            "td",
+            {},
+            el("button", { type: "button", class: "row-button", text: row.name || row.email, onclick: () => openTrackerPerson(row.key) }),
+            el("div", { class: "cell-sub", text: row.email }),
+            row.onList || team.mode !== "personal" ? null : el("span", { class: "tag", text: "Not on the team list" })
+          ),
+          el("td", { class: "num" }, el("div", { text: String(row.orders) }), row.openOrders ? el("div", { class: "cell-sub", text: `${row.openOrders} open` }) : null),
+          el("td", { class: "num", text: String(row.units) }),
+          el("td", { class: "num", text: formatMoney(row.valueCents) }),
+          el("td", {}, row.items.length ? el("div", { class: "cell-sub tracker-items", text: top + more }) : el("span", { class: "muted", text: "Nothing yet" })),
+          el("td", { text: row.lastOrderAt ? formatDate(row.lastOrderAt) : "—" })
+        );
+      })
+    )
+  );
+}
+
+function openTrackerPerson(key) {
+  const row = trackerRows().find((r) => r.key === key);
+  if (!row) return;
+  const period = $("#tracker-period").selectedOptions[0]?.textContent ?? "All time";
+  const placed = row.orderIds.map((id) => orders.find((o) => o.id === id)).filter(Boolean).reverse();
+
+  detailTitle.textContent = row.name || row.email;
+  clear(
+    detailBody,
+    el(
+      "div",
+      { class: "detail-top" },
+      el("span", { class: "tag", text: period }),
+      el("a", { href: `mailto:${row.email}`, text: row.email })
+    ),
+    section(
+      "Totals",
+      kv([
+        ["Orders", row.openOrders ? `${row.orders} (${row.openOrders} still open)` : String(row.orders)],
+        ["Units", String(row.units)],
+        ["Order value", formatMoney(row.valueCents)],
+        row.firstOrderAt ? ["First order", formatDate(row.firstOrderAt)] : null,
+        row.lastOrderAt ? ["Last order", formatDate(row.lastOrderAt)] : null,
+      ])
+    ),
+    section(
+      "Items",
+      row.items.length
+        ? el(
+            "div",
+            { class: "table-wrap" },
+            el(
+              "table",
+              { class: "table items-table" },
+              el("thead", {}, el("tr", {}, ["Item", "Qty", "Value", "Orders"].map((h) => el("th", { class: h === "Item" ? "" : "num", text: h })))),
+              el(
+                "tbody",
+                {},
+                row.items.map((item) =>
+                  el(
+                    "tr",
+                    {},
+                    el("td", {}, el("div", { class: "cell-main", text: item.name }), el("div", { class: "cell-sub", text: [item.sku, item.color, item.variantLabel].filter(Boolean).join(" · ") })),
+                    el("td", { class: "num", text: String(item.quantity) }),
+                    el("td", { class: "num", text: formatMoney(item.valueCents) }),
+                    el("td", { class: "num", text: String(item.orders) })
+                  )
+                )
+              )
+            )
+          )
+        : el("p", { class: "muted", text: "No orders in this period." })
+    ),
+    placed.length
+      ? section(
+          "Orders",
+          el(
+            "div",
+            { class: "table-wrap" },
+            el(
+              "table",
+              { class: "table items-table" },
+              el("thead", {}, el("tr", {}, ["Order", "Placed", "Ships to", "Units", "Status"].map((h) => el("th", { class: h === "Units" ? "num" : "", text: h })))),
+              el(
+                "tbody",
+                {},
+                placed.map((order) =>
+                  el(
+                    "tr",
+                    {},
+                    el("td", {}, el("button", { type: "button", class: "row-button", text: order.number, onclick: () => openOrder(order.id) })),
+                    el("td", { text: formatDate(order.createdAt) }),
+                    el("td", { text: order.shipTo.type === "account" ? order.shipTo.accountName : "Themselves" }),
+                    el("td", { class: "num", text: String(order.totalUnits) }),
+                    el("td", {}, statusBadge(order.status))
+                  )
+                )
+              )
+            )
+          )
+        )
+      : null
+  );
+  clear(detailFoot, el("div", { class: "inline-actions" }, el("button", { type: "button", class: "btn btn-secondary", "data-close": "", text: "Close" })));
+  drawer.open();
+}
+
+$("#tracker-period").addEventListener("change", (event) => {
+  ui.trackerPeriod = event.target.value;
+  renderTracker();
+});
+
+let trackerSearchTimer;
+$("#tracker-search").addEventListener("input", (event) => {
+  clearTimeout(trackerSearchTimer);
+  trackerSearchTimer = setTimeout(() => {
+    ui.trackerQuery = event.target.value.trim();
+    renderTracker();
+  }, 120);
+});
 
 /* --------------------------------------------------------------- catalog */
 
@@ -1676,6 +2154,7 @@ function showNewCodes(people, title) {
 async function reloadTeam() {
   team = await adminApi("/api/admin/team");
   renderTeam();
+  renderTracker();
 }
 
 function lastActive(p) {
@@ -1714,7 +2193,11 @@ function renderTeam() {
         "tbody",
         {},
         visible.map((p) => {
-          const codeCell = el(
+          // Someone who chose their own password has no code to show; a new
+          // code is how they get back in if they forget it.
+          const codeCell = p.ownPasswordSetAt
+            ? el("td", {}, el("span", { class: "tag", text: "Own password" }), el("div", { class: "cell-sub", text: `Set ${formatDate(p.ownPasswordSetAt)}` }))
+            : el(
             "td",
             {},
             el("button", {
@@ -1869,7 +2352,10 @@ $("#team-reset-all").addEventListener("click", async () => {
   if (!team.people.length) return toast("Add people to the team list first.", { tone: "error" });
   const ok = await confirmDialog({
     title: `New codes for all ${plural(team.people.length, "person", "people")}?`,
-    body: "Everyone gets a new tropical-name-number code. Their current codes stop working and they're signed out, so send the new codes straight away.",
+    body: [
+      "Everyone gets a new tropical-name-number code. Their current codes stop working and they're signed out, so send the new codes straight away.",
+      team.people.some((p) => p.ownPasswordSetAt) ? "That includes anyone who chose their own password: it's replaced by the new code too." : "",
+    ].filter(Boolean).join(" "),
     confirmLabel: "Make new codes",
     cancelLabel: "Keep current codes",
     danger: true,
@@ -1887,7 +2373,9 @@ $("#team-reset-all").addEventListener("click", async () => {
 async function resetCode(p) {
   const ok = await confirmDialog({
     title: `New code for ${p.name || p.email}?`,
-    body: "Their current code stops working and they're signed out. You'll need to send them the new one.",
+    body: p.ownPasswordSetAt
+      ? "They chose their own password. A new code replaces it, signs them out, and they sign in with the code (they can then choose a new password). You'll need to send it to them."
+      : "Their current code stops working and they're signed out. You'll need to send them the new one.",
     confirmLabel: "Make a new code",
     cancelLabel: "Keep the current code",
   });

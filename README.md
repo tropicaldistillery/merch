@@ -39,6 +39,10 @@ shares nothing with SipScale.
 - Under **My orders**, follow each order through Submitted → Approved →
   Shipped → Delivered, open the carrier's tracking page, cancel an order that
   hasn't been approved yet, or reorder in one click.
+- Once personal codes are on, swap their code for a **password of their own**
+  (**Change password** at the top of the store). It is kept only as a salted
+  hash, so not even the admin can see it. Their other devices are signed out;
+  if they forget it, the admin issues a new code.
 
 **For the admin** (`/admin`)
 
@@ -47,7 +51,19 @@ shares nothing with SipScale.
   (carrier and tracking number) and mark delivered. Every change is kept in
   the order's history with who made it.
 - Print a packing slip, copy the delivery address, keep internal notes.
+- **Bulk edit**: tick orders (shift-click ticks a run of them) to approve,
+  mark shipped (one carrier, with each order's own tracking number), mark
+  delivered, decline, cancel or add an internal note to all of them at once,
+  or print their packing slips (one per page) or export just those orders.
+  Anything wrong with what you typed changes nothing; an order that can't take
+  the change (one already shipped can't be approved) is left alone and named.
 - Export orders to CSV, one row per item, for fulfilment or budgeting.
+- The **Tracker** tab shows what each person has ordered: their orders (and how
+  many are still open), units, order value, last order and every item by color
+  and size, for all time, this month, last month, this quarter or this year.
+  Everyone on the team list is included, even if they haven't ordered yet.
+  Select a person to see each item and order; **Export CSV** gives one row per
+  person and item. Cancelled and declined orders don't count.
 - Edit the catalog: add items, change cost, stock, sizes, per-order limits and
   photos, hide an item from the store, or delete it (past orders keep their
   details). As the cost is typed, a **suggested max per order** appears (1 for
@@ -98,10 +114,23 @@ is charged and there is no payment step.
    code.
 
 From then on every order is tied to a person on the list. Removing someone or
-giving them a new code signs them out everywhere. The email-domain rule
+giving them a new code signs them out everywhere. Anyone can then replace
+their code with a password of their own; the Team tab shows "Own password"
+instead of a code for them, and **New code** (or **New codes for everyone**)
+replaces that password with a fresh code, which is how someone who forgot
+theirs gets back in. The email-domain rule
 (`TEAM_EMAIL_DOMAINS`) only applies to the shared code; anyone you put on the
 list can sign in, personal email included. Switching back to the shared code
 is one click.
+
+## Where orders go
+
+Every order is saved in the store's database and appears in the admin
+console's **Orders** tab (`/admin`), newest first, with the ones needing action
+on top. Nothing is emailed by the store itself. To hear about orders as they
+come in, set `ORDER_WEBHOOK_URL` (below): each new order and status change is
+then posted there, to a Slack channel as-is, or through Zapier or Make to
+email.
 
 ## The starter catalog
 
@@ -222,6 +251,11 @@ that, the next step is real tables.
   Codes are kept retrievable so the admin can look one
   up again; anyone who can read the database can already read every order, so
   hashing them would add little.
+- A password someone chooses for themselves may be one they use elsewhere, so
+  it is different: it's stored only as a salted scrypt hash, never shown to
+  the admin or included in any export, and checked with the same per-email
+  and per-address limits as codes. Setting one needs the current code or
+  password and signs out every other device.
 - The **shared** team code, by contrast, lets anyone who has it order under any
   name; it keeps the store private but doesn't prove identity. Restrict email
   domains, and change the code when someone leaves.

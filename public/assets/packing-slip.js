@@ -9,10 +9,11 @@ function block(label, ...lines) {
   return el("div", {}, el("p", { class: "kv-label", text: label }), el("div", { class: "address" }, lines.filter(Boolean).map((l) => el("div", { text: l }))));
 }
 
-const id = new URLSearchParams(location.search).get("id") || "";
+// One order (?id=) or several picked in the console (?ids=a,b,c), one per page.
+const params = new URLSearchParams(location.search);
+const ids = (params.get("ids") || params.get("id") || "").split(",").filter(Boolean);
 
-try {
-  const { order } = await api(`/api/admin/orders/${encodeURIComponent(id)}`);
+function slipContent(order) {
   const s = order.shipTo;
   const brand = el(
     "div",
@@ -21,10 +22,7 @@ try {
     el("span", { class: "brand-name" }, "Tropical Distillery", el("span", { class: "brand-sub", text: "Team merch" }))
   );
 
-  document.title = `Packing slip ${order.number} · Tropical Distillery Team Merch`;
-  slip.removeAttribute("aria-busy");
-  clear(
-    slip,
+  return [
     el(
       "header",
       { class: "slip-head" },
@@ -73,8 +71,31 @@ try {
     ),
     s.deliveryNotes ? block("Delivery notes", s.deliveryNotes) : null,
     order.notes ? block("Requester notes", order.notes) : null,
-    el("div", { class: "slip-sign" }, el("div", { text: "Packed by" }), el("div", { text: "Date" }))
-  );
+    el("div", { class: "slip-sign" }, el("div", { text: "Packed by" }), el("div", { text: "Date" })),
+  ];
+}
+
+try {
+  let list;
+  if (ids.length > 1) {
+    const { orders } = await api("/api/admin/orders");
+    const byId = new Map(orders.map((o) => [o.id, o]));
+    list = ids.map((id) => byId.get(id)).filter(Boolean);
+    if (!list.length) throw new Error("Those orders could not be found.");
+  } else {
+    const { order } = await api(`/api/admin/orders/${encodeURIComponent(ids[0] ?? "")}`);
+    list = [order];
+  }
+
+  document.title = `${list.length === 1 ? `Packing slip ${list[0].number}` : `${list.length} packing slips`} · Tropical Distillery Team Merch`;
+  slip.removeAttribute("aria-busy");
+  clear(slip, slipContent(list[0]));
+  let previous = slip;
+  for (const order of list.slice(1)) {
+    const next = el("article", { class: "slip" }, slipContent(order));
+    previous.after(next);
+    previous = next;
+  }
 } catch (error) {
   slip.removeAttribute("aria-busy");
   clear(
