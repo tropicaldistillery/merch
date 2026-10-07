@@ -29,6 +29,7 @@ import {
   needsSeedTextFixes,
   normalizeItem,
   publicItem,
+  bulkEditCatalog,
   updateStock,
 } from "../src/catalog.mjs";
 import { CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, generateSku, imageFor, itemImages, quantityRuleText } from "../public/assets/shared.js";
@@ -776,5 +777,65 @@ describe("bulk stock edits", () => {
     assert.equal(mat.stock, was, "the good entry wasn't applied either");
     assert.throws(() => updateStock(db, { changes: [] }), ValidationError);
     assert.ok(errors({ changes: [{ itemId: "jfh-bar-mat", variantId: "default", add: 0 }] })["stock.jfh-bar-mat.default"]);
+  });
+});
+
+describe("bulk catalog edits", () => {
+  const find = (db, id) => db.catalog.find((i) => i.id === id);
+  const fieldErrors = (fn) => {
+    try {
+      fn();
+    } catch (error) {
+      assert.ok(error instanceof ValidationError, String(error));
+      return error.fieldErrors;
+    }
+    assert.fail("expected a ValidationError");
+  };
+
+  it("changes details, supplier and stock on many items in one go", () => {
+    const db = initialState();
+    const mat = find(db, "jfh-bar-mat");
+    const result = bulkEditCatalog(db, {
+      items: [
+        { id: "jfh-bar-mat", patch: { name: "Rubber Bar Mat, 18 in", costCents: 2500, maxPerOrder: 6, active: false, supplier: { company: "Bar Supply Co", link: "barsupply.com/mats" } } },
+        { id: "jfh-cap", patch: { category: "Giveaways", unit: "Each, adjustable" } },
+      ],
+      stock: [{ itemId: "jfh-bar-mat", variantId: "default", from: mat.variants[0].stock, to: 80 }],
+    });
+    assert.equal(result.changed, 2);
+    const saved = find(db, "jfh-bar-mat");
+    assert.equal(saved.name, "Rubber Bar Mat, 18 in");
+    assert.equal(saved.costCents, 2500);
+    assert.equal(saved.maxPerOrder, 6);
+    assert.equal(saved.active, false);
+    assert.equal(saved.supplier.company, "Bar Supply Co");
+    assert.equal(saved.supplier.link, "https://barsupply.com/mats");
+    assert.equal(saved.supplier.notes, mat.supplier.notes, "fields not sent are kept");
+    assert.equal(saved.variants[0].stock, 80);
+    assert.equal(saved.sku, mat.sku);
+    assert.deepEqual(saved.images, mat.images);
+    assert.equal(find(db, "jfh-cap").category, "Giveaways");
+  });
+
+  it("checks every item with the one-item rules and saves nothing if any fails", () => {
+    const db = initialState();
+    const before = structuredClone(db.catalog);
+    const errors = fieldErrors(() =>
+      bulkEditCatalog(db, {
+        items: [
+          { id: "jfh-bar-mat", patch: { name: "Fine" } },
+          { id: "jfh-cap", patch: { name: "", minPerOrder: 5, maxPerOrder: 4, supplier: { link: "not a link" } } },
+          { id: "gone", patch: { name: "x" } },
+        ],
+        stock: [{ itemId: "jfh-logo-tee", variantId: "m", from: 1, to: -1 }],
+      })
+    );
+    assert.ok(errors["jfh-cap.name"]);
+    assert.ok(errors["jfh-cap.minPerOrder"]);
+    assert.ok(errors["jfh-cap.supplierLink"]);
+    assert.ok(errors["gone.name"]);
+    assert.ok(errors["stock.jfh-logo-tee.m"]);
+    assert.deepEqual(db.catalog, before, "nothing changed");
+    assert.throws(() => bulkEditCatalog(db, {}), ValidationError);
   });
 });

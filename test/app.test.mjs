@@ -615,6 +615,31 @@ describe("bulk stock edits over HTTP", () => {
   });
 });
 
+describe("bulk catalog edits over HTTP", () => {
+  it("saves details and stock together, for admins only", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const app = await start(dir);
+    try {
+      const jane = await signedInTeam(app);
+      const admin = await signedInAdmin(app);
+      const body = { items: [{ id: "jfh-cap", patch: { costCents: 1999, category: "Giveaways" } }], stock: [{ itemId: "jfh-cap", variantId: "default", add: 5 }] };
+      assert.equal((await jane("/api/admin/catalog/bulk", { method: "POST", body })).status, 401);
+      const before = (await admin("/api/admin/catalog")).data.items.find((i) => i.id === "jfh-cap");
+      const saved = await admin("/api/admin/catalog/bulk", { method: "POST", body });
+      assert.equal(saved.status, 200, JSON.stringify(saved.data));
+      const cap = saved.data.items.find((i) => i.id === "jfh-cap");
+      assert.equal(cap.costCents, 1999);
+      assert.equal(cap.category, "Giveaways");
+      assert.equal(cap.variants[0].stock, before.variants[0].stock + 5);
+      const shop = (await jane("/api/catalog")).data.items.find((i) => i.id === "jfh-cap");
+      assert.equal(shop.costCents, 1999, "the store shows it straight away");
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("own passwords", () => {
   it("lets someone swap their code for a password, signing out their other devices", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));

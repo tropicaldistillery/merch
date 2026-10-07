@@ -209,7 +209,7 @@ $("#refresh").addEventListener("click", async () => {
 // Keep the queue fresh while the console sits open, without disturbing an
 // edit in progress.
 setInterval(async () => {
-  if (document.hidden || appSection.hidden || drawer.isOpen || stockMode) return;
+  if (document.hidden || appSection.hidden || drawer.isOpen || bulkMode) return;
   try {
     await loadAll();
     renderAll();
@@ -1304,12 +1304,13 @@ function visibleCatalog() {
 function renderCatalog() {
   const visible = visibleCatalog();
   $("#catalog-count").textContent = `${plural(visible.length, "item")}${catalog.some((i) => !i.active) && !ui.showHidden ? " · hidden items not shown" : ""}`;
-  $("#catalog-list").hidden = Boolean(stockMode);
-  $("#stock-editor").hidden = !stockMode;
-  $("#edit-stock").hidden = Boolean(stockMode);
-  if (stockMode) return renderStockEditor(visible);
-  clear($("#stock-bar"));
-  $("#stock-bar").hidden = true;
+  $("#catalog-list").hidden = Boolean(bulkMode);
+  $("#bulk-editor").hidden = !bulkMode;
+  $("#bulk-edit").hidden = Boolean(bulkMode);
+  if (bulkMode) return renderBulkEditor(visible);
+  bulkCountNode = null;
+  clear($("#catalog-bulk-bar"));
+  $("#catalog-bulk-bar").hidden = true;
 
   clear(
     $("#catalog-table"),
@@ -1351,14 +1352,83 @@ $("#show-hidden").addEventListener("change", (event) => {
 });
 $("#add-item").addEventListener("click", () => openItem(null));
 
-/* ---------------------------------------------------------- stock editor */
+/* ----------------------------------------------------------- bulk editor */
 
-// Every option of every item in one list, to set stock levels or add a
-// delivery and save them together. What's typed survives searching and
-// filtering, and all of it is saved, shown or not.
-let stockMode = null; // null, "set" or "add"
-const stockEdits = new Map();
+// Many items at once, in one of three views:
+//   "all"  every item's details, stock and where to order it, as a grid
+//   "set"  every option's stock level, one row per option
+//   "add"  a delivery: how many of each option arrived
+// What's typed survives searching, filtering and switching views (counts and
+// deliveries mean different things, so switching between those two starts
+// the numbers over), and all of it is saved together, shown or not.
+let bulkMode = null;
+const fieldEdits = new Map(); // item id → { field: value as typed }
+const stockEdits = new Map(); // item id + option id → value as typed
+const bulkSelected = new Set();
 const stockKey = (item, variant) => `${item.id}\u0000${variant.id}`;
+
+const EDIT_FIELDS = [
+  "name", "category", "brand", "unit", "costCents", "minPerOrder", "maxPerOrder", "orderIncrement", "active",
+  "description", "supplier.company", "supplier.itemNumber", "supplier.link",
+];
+const NUMBER_FIELDS = ["minPerOrder", "maxPerOrder", "orderIncrement"];
+
+function centsText(cents) {
+  return Number.isInteger(cents) ? (cents / 100).toFixed(2) : "";
+}
+
+function parseDollars(text) {
+  const raw = String(text ?? "").replace(/[$,\s]/g, "");
+  const n = Number(raw);
+  return raw !== "" && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : NaN;
+}
+
+/** A field's saved value, as the editor shows it. */
+function currentValue(item, field) {
+  if (field === "costCents") return centsText(item.costCents);
+  if (field === "minPerOrder" || field === "orderIncrement") return String(item[field] ?? 1);
+  if (field === "maxPerOrder") return String(item.maxPerOrder);
+  if (field === "active") return item.active;
+  if (field.startsWith("supplier.")) return item.supplier?.[field.slice(9)] ?? "";
+  return item[field] ?? "";
+}
+
+function editedValue(item, field) {
+  const edits = fieldEdits.get(item.id);
+  return edits && field in edits ? edits[field] : currentValue(item, field);
+}
+
+function isChanged(item, field) {
+  const edits = fieldEdits.get(item.id);
+  if (!edits || !(field in edits)) return false;
+  const typed = edits[field];
+  if (field === "active") return typed !== item.active;
+  if (field === "costCents") return parseDollars(typed) !== item.costCents;
+  return String(typed).trim() !== String(currentValue(item, field)).trim();
+}
+
+function setField(item, field, value) {
+  fieldEdits.set(item.id, { ...fieldEdits.get(item.id), [field]: value });
+}
+
+function itemPatches() {
+  const patches = [];
+  for (const item of catalog) {
+    const patch = {};
+    for (const field of EDIT_FIELDS) {
+      if (!isChanged(item, field)) continue;
+      const typed = fieldEdits.get(item.id)[field];
+      let value = typeof typed === "string" ? typed.trim() : typed;
+      // Anything that isn't a number goes as null, and the server says what's wrong.
+      if (field === "costCents") value = Number.isNaN(parseDollars(typed)) ? null : parseDollars(typed);
+      if (NUMBER_FIELDS.includes(field) && value !== "") value = Number.isFinite(Number(value)) ? Number(value) : null;
+      if (field.startsWith("supplier.")) (patch.supplier ??= {})[field.slice(9)] = value;
+      else patch[field] = value;
+    }
+    if (Object.keys(patch).length) patches.push({ id: item.id, patch });
+  }
+  return patches;
+}
 
 function stockChanges() {
   const changes = [];
@@ -1367,73 +1437,265 @@ function stockChanges() {
       const raw = (stockEdits.get(stockKey(item, variant)) ?? "").trim();
       if (!raw) continue;
       const n = Number(raw);
-      if (stockMode === "add") changes.push({ itemId: item.id, variantId: variant.id, add: n });
+      if (bulkMode === "add") changes.push({ itemId: item.id, variantId: variant.id, add: n });
       else if (n !== variant.stock) changes.push({ itemId: item.id, variantId: variant.id, from: variant.stock, to: n });
     }
   }
   return changes;
 }
 
-async function setStockMode(mode) {
-  if (mode !== stockMode && stockEdits.size && stockChanges().length) {
+function changedItemCount() {
+  return new Set([...itemPatches().map((p) => p.id), ...stockChanges().map((c) => c.itemId)]).size;
+}
+
+async function setBulkMode(mode) {
+  const countsChange = (bulkMode === "add") !== (mode === "add");
+  const losing = mode === null ? changedItemCount() : countsChange ? new Set(stockChanges().map((c) => c.itemId)).size : 0;
+  if (losing) {
     const ok = await confirmDialog({
-      title: "Discard your stock changes?",
-      body: `${plural(stockChanges().length, "change")} haven't been saved.`,
+      title: mode === null ? "Discard your changes?" : "Discard the stock you typed?",
+      body:
+        mode === null
+          ? `Changes to ${plural(losing, "item")} haven't been saved.`
+          : `Stock typed for ${plural(losing, "item")} hasn't been saved. ${mode === "add" ? "A delivery adds to what's there" : "Stock levels replace what's there"}, so those numbers start over.`,
       confirmLabel: "Discard",
       cancelLabel: "Keep editing",
       danger: true,
     });
     if (!ok) return;
   }
-  stockEdits.clear();
-  stockMode = mode;
+  if (mode === null) {
+    fieldEdits.clear();
+    stockEdits.clear();
+    bulkSelected.clear();
+  } else if (countsChange) {
+    stockEdits.clear();
+  }
+  bulkMode = mode;
   renderCatalog();
-  if (mode) $("#stock-editor input:not([disabled])")?.focus();
+  if (mode) $("#bulk-editor input:not([disabled]):not([type=checkbox])")?.focus();
 }
 
-function renderStockBar() {
-  const count = stockChanges().length;
-  const bar = $("#stock-bar");
+let bulkCountNode = null;
+let bulkSaveButton = null;
+
+function updateBulkCount() {
+  if (!bulkCountNode) return;
+  const count = changedItemCount();
+  bulkCountNode.textContent = count ? `${plural(count, "item")} changed` : "No changes yet";
+  bulkSaveButton.disabled = !count;
+}
+
+const BULK_HINTS = {
+  all: "Edit any cell. Tick items to change one thing on all of them at once.",
+  set: "Type the new count for anything that's changed.",
+  add: "Type how many arrived; they're added to what's there.",
+};
+
+function renderCatalogBulkBar() {
+  const bar = $("#catalog-bulk-bar");
   bar.hidden = false;
   const modeButton = (mode, label) =>
-    el("button", {
-      type: "button",
-      class: "chip",
-      "aria-pressed": String(stockMode === mode),
-      text: label,
-      onclick: () => setStockMode(mode),
-    });
+    el("button", { type: "button", class: "chip", "aria-pressed": String(bulkMode === mode), text: label, onclick: () => setBulkMode(mode) });
+  bulkCountNode = el("strong", { class: "bulk-count", "aria-live": "polite" });
+  bulkSaveButton = el("button", { type: "submit", form: "bulk-editor", class: "btn btn-sm", text: "Save changes" });
   clear(
     bar,
-    el("div", { class: "chips stock-modes", role: "group", "aria-label": "What to enter" }, modeButton("set", "Set stock levels"), modeButton("add", "Add a delivery")),
-    el("span", {
-      class: "muted stock-hint",
-      text: stockMode === "add" ? "Type how many arrived; they're added to what's there." : "Type the new count for anything that's changed.",
-    }),
+    el("div", { class: "chips bulk-modes", role: "group", "aria-label": "What to edit" },
+      modeButton("all", "All details"), modeButton("set", "Stock levels"), modeButton("add", "Add a delivery")),
+    el("span", { class: "muted bulk-hint", text: BULK_HINTS[bulkMode] }),
+    el("div", { class: "bulk-actions" },
+      bulkCountNode,
+      bulkSaveButton,
+      el("button", { type: "button", class: "btn btn-sm btn-secondary", text: "Done", onclick: () => setBulkMode(null) })),
+    el("div", { class: "bulk-apply", id: "bulk-apply" })
+  );
+  updateBulkCount();
+  renderApplyPanel();
+}
+
+// "Change one thing on every ticked item": it fills in their cells, to be
+// checked and saved like anything typed.
+const APPLY_FIELDS = [
+  { field: "category", label: "Category", choices: () => CATEGORIES.map((c) => ({ id: c, label: c })) },
+  { field: "brand", label: "Brand", choices: () => BRANDS },
+  { field: "active", label: "In store", choices: () => [{ id: "shown", label: "Shown" }, { id: "hidden", label: "Hidden" }] },
+  { field: "costCents", label: "Cost ($)", type: "text", inputmode: "decimal" },
+  { field: "minPerOrder", label: "Min per order", type: "number" },
+  { field: "maxPerOrder", label: "Max per order", type: "number" },
+  { field: "orderIncrement", label: "Sold in steps of", type: "number" },
+  { field: "unit", label: "Unit", type: "text" },
+  { field: "supplier.company", label: "Supplier", type: "text" },
+  { field: "supplier.link", label: "Order link", type: "text" },
+];
+let applyField = "category";
+
+function renderApplyPanel() {
+  const panel = $("#bulk-apply");
+  if (!panel) return;
+  const picked = catalog.filter((i) => bulkSelected.has(i.id));
+  panel.hidden = bulkMode !== "all" || !picked.length;
+  if (panel.hidden) return clear(panel);
+  const spec = APPLY_FIELDS.find((f) => f.field === applyField);
+  const value = spec.choices
+    ? el("select", { id: "bulk-apply-value", "aria-label": `New ${spec.label.toLowerCase()}` }, options(spec.choices()))
+    : el("input", { id: "bulk-apply-value", type: spec.type, inputmode: spec.inputmode, min: spec.type === "number" ? "1" : null, "aria-label": `New ${spec.label.toLowerCase()}` });
+  clear(
+    panel,
+    el("strong", { text: `${plural(picked.length, "item")} ticked:` }),
+    el("label", { class: "sr-only", for: "bulk-apply-field", text: "Change" }),
     el(
-      "div",
-      { class: "bulk-actions" },
-      el("strong", { class: "bulk-count", "aria-live": "polite", text: count ? `${plural(count, "change")}` : "No changes yet" }),
-      el("button", { type: "submit", form: "stock-editor", class: "btn btn-sm", disabled: !count, text: "Save stock" }),
-      el("button", { type: "button", class: "btn btn-sm btn-secondary", text: "Done", onclick: () => setStockMode(null) })
+      "select",
+      { id: "bulk-apply-field", onchange: (event) => { applyField = event.target.value; renderApplyPanel(); } },
+      APPLY_FIELDS.map((f) => el("option", { value: f.field, selected: f.field === applyField, text: `Set ${f.label.toLowerCase()}` }))
+    ),
+    value,
+    el("button", {
+      type: "button",
+      class: "btn btn-sm",
+      text: `Apply to ${plural(picked.length, "item")}`,
+      onclick: () => {
+        const raw = value.value;
+        if (!spec.choices && !raw.trim() && !spec.field.startsWith("supplier.") && spec.field !== "unit") {
+          value.focus();
+          return toast(`Enter the ${spec.label.toLowerCase()} first.`, { tone: "error" });
+        }
+        for (const item of picked) setField(item, spec.field, spec.field === "active" ? raw === "shown" : raw);
+        renderCatalog();
+        toast(`${spec.label} set on ${plural(picked.length, "item")}. Check them, then save.`);
+      },
+    }),
+    el("button", { type: "button", class: "link-button", text: "Untick all", onclick: () => { bulkSelected.clear(); renderCatalog(); } })
+  );
+}
+
+// One editable cell. `name` matches the server's field errors.
+function bulkCell(item, field, control) {
+  const wrap = el("div", { class: `field bulk-cell${isChanged(item, field) ? " dirty" : ""}` }, control);
+  const changed = () => {
+    wrap.classList.toggle("dirty", isChanged(item, field));
+    updateBulkCount();
+  };
+  control.addEventListener(control.tagName === "SELECT" || control.type === "checkbox" ? "change" : "input", () => {
+    setField(item, field, control.type === "checkbox" ? control.checked : control.value);
+    changed();
+  });
+  return wrap;
+}
+
+function bulkText(item, field, attrs = {}) {
+  const errorName = { "supplier.link": "supplierLink" }[field] ?? field;
+  return bulkCell(item, field, el(attrs.rows ? "textarea" : "input", {
+    type: attrs.rows ? null : attrs.type ?? "text",
+    name: `${item.id}.${errorName}`,
+    value: String(editedValue(item, field)),
+    "aria-label": `${attrs.label} for ${item.name}`,
+    ...attrs,
+    label: null,
+  }));
+}
+
+function bulkStockInputs(item, { compact }) {
+  return item.variants.map((variant) => {
+    const tracked = Number.isInteger(variant.stock);
+    const key = stockKey(item, variant);
+    const input = el("input", {
+      type: "number",
+      name: `stock.${item.id}.${variant.id}`,
+      min: "0",
+      max: "100000",
+      step: "1",
+      inputmode: "numeric",
+      class: "stock-input",
+      value: stockEdits.get(key) ?? (tracked ? String(variant.stock) : ""),
+      placeholder: tracked ? "" : "—",
+      "aria-label": `Stock of ${item.name}${variant.label ? `, ${variant.label}` : ""}`,
+      onfocus: (event) => event.target.select(),
+    });
+    const wrap = el("label", { class: "field bulk-stock" }, compact && variant.label ? el("span", { class: "bulk-stock-label", text: variant.label }) : null, input);
+    input.addEventListener("input", () => {
+      stockEdits.set(key, input.value);
+      const raw = input.value.trim();
+      wrap.classList.toggle("dirty", raw !== "" && Number(raw) !== variant.stock);
+      updateBulkCount();
+    });
+    const raw = (stockEdits.get(key) ?? "").trim();
+    if (raw !== "" && Number(raw) !== variant.stock) wrap.classList.add("dirty");
+    return wrap;
+  });
+}
+
+function renderBulkGrid(visible) {
+  const form = $("#bulk-editor");
+  const allTicked = visible.length > 0 && visible.every((i) => bulkSelected.has(i.id));
+  const head = ["Item", "Category", "Brand", "Unit", "Cost ($)", "Min", "Max", "Steps", "Stock", "In store", "Supplier", "Their item #", "Order link", "Description"];
+  clear(
+    form,
+    el(
+      "table",
+      { class: "table bulk-table" },
+      el("thead", {}, el("tr", {},
+        el("th", { scope: "col", class: "select-col sticky-col" }, el("input", {
+          type: "checkbox",
+          checked: allTicked,
+          "aria-label": "Tick every item shown",
+          onchange: (event) => {
+            for (const item of visible) event.target.checked ? bulkSelected.add(item.id) : bulkSelected.delete(item.id);
+            renderCatalog();
+          },
+        })),
+        head.map((h, i) => el("th", { scope: "col", class: i === 0 ? "sticky-col item-col" : "", text: h })))),
+      el("tbody", {}, visible.length
+        ? visible.map((item) =>
+            el("tr", { class: bulkSelected.has(item.id) ? "selected" : "" },
+              el("td", { class: "select-col sticky-col" }, el("input", {
+                type: "checkbox",
+                checked: bulkSelected.has(item.id),
+                "aria-label": `Tick ${item.name}`,
+                onchange: (event) => {
+                  event.target.checked ? bulkSelected.add(item.id) : bulkSelected.delete(item.id);
+                  event.target.closest("tr").classList.toggle("selected", event.target.checked);
+                  renderApplyPanel();
+                },
+              })),
+              el("td", { class: "sticky-col item-col" },
+                el("div", { class: "item-cell" }, artwork(item, "thumb"),
+                  el("div", { class: "bulk-name" },
+                    bulkText(item, "name", { label: "Name", maxlength: "120" }),
+                    el("div", { class: "cell-sub", text: [item.sku, item.active ? "" : "Hidden"].filter(Boolean).join(" · ") })))),
+              el("td", {}, bulkCell(item, "category", el("select", { name: `${item.id}.category`, class: "w-cat", "aria-label": `Category for ${item.name}` }, options(CATEGORIES, { selected: editedValue(item, "category") })))),
+              el("td", {}, bulkCell(item, "brand", el("select", { name: `${item.id}.brand`, class: "w-brand", "aria-label": `Brand for ${item.name}` }, options(BRANDS, { selected: editedValue(item, "brand") })))),
+              el("td", {}, bulkText(item, "unit", { label: "Unit", maxlength: "40", class: "w-unit" })),
+              el("td", {}, bulkText(item, "costCents", { label: "Cost in dollars", inputmode: "decimal", class: "w-num" })),
+              el("td", {}, bulkText(item, "minPerOrder", { label: "Minimum per order", type: "number", min: "1", class: "w-num" })),
+              el("td", {}, bulkText(item, "maxPerOrder", { label: "Maximum per order", type: "number", min: "1", class: "w-num" })),
+              el("td", {}, bulkText(item, "orderIncrement", { label: "Sold in steps of", type: "number", min: "1", class: "w-num" })),
+              el("td", {}, el("div", { class: "bulk-stocks" }, bulkStockInputs(item, { compact: true }))),
+              el("td", {}, bulkCell(item, "active", el("input", { type: "checkbox", name: `${item.id}.active`, checked: editedValue(item, "active"), "aria-label": `Show ${item.name} in the store` }))),
+              el("td", {}, bulkText(item, "supplier.company", { label: "Supplier", maxlength: "120", class: "w-supplier" })),
+              el("td", {}, bulkText(item, "supplier.itemNumber", { label: "Their item number", maxlength: "160", class: "w-supplier" })),
+              el("td", {}, bulkText(item, "supplier.link", { label: "Order link", maxlength: "500", class: "w-link", placeholder: "https://…" })),
+              el("td", {}, bulkText(item, "description", { label: "Description", rows: "2", maxlength: "600", class: "w-desc" }))
+            )
+          )
+        : el("tr", {}, el("td", { class: "empty", colspan: String(head.length + 1), text: "No items match." })))
     )
   );
 }
 
-function renderStockEditor(visible) {
-  renderStockBar();
-  const form = $("#stock-editor");
+// One row per option, for counting stock or taking in a delivery.
+function renderStockRows(visible) {
+  const form = $("#bulk-editor");
   const rows = visible.flatMap((item) =>
     item.variants.map((variant, i) => {
       const tracked = Number.isInteger(variant.stock);
       const key = stockKey(item, variant);
-      const name = `stock.${item.id}.${variant.id}`;
       const note = el("div", { class: "cell-sub stock-note" });
       const describe = (value) => {
         const raw = String(value ?? "").trim();
         const n = Number(raw);
         if (!raw || !Number.isInteger(n)) return "";
-        if (stockMode === "add") return tracked && n > 0 ? `→ ${variant.stock + n}` : "";
+        if (bulkMode === "add") return tracked && n > 0 ? `→ ${variant.stock + n}` : "";
         if (!tracked) return "starts tracking";
         const diff = n - variant.stock;
         return diff ? `${diff > 0 ? "+" : "−"}${Math.abs(diff)}` : "";
@@ -1441,27 +1703,27 @@ function renderStockEditor(visible) {
       note.textContent = describe(stockEdits.get(key));
       const input = el("input", {
         type: "number",
-        name,
-        min: stockMode === "add" ? "1" : "0",
+        name: `stock.${item.id}.${variant.id}`,
+        min: bulkMode === "add" ? "1" : "0",
         max: "100000",
         step: "1",
         inputmode: "numeric",
         class: "stock-input",
-        value: stockEdits.get(key) ?? (stockMode === "set" && tracked ? String(variant.stock) : ""),
-        placeholder: tracked ? (stockMode === "add" ? "0" : "") : "—",
-        disabled: stockMode === "add" && !tracked,
-        "aria-label": `${stockMode === "add" ? "Units arriving" : "New stock"} for ${item.name}${variant.label ? `, ${variant.label}` : ""}`,
+        value: stockEdits.get(key) ?? (bulkMode === "set" && tracked ? String(variant.stock) : ""),
+        placeholder: tracked ? (bulkMode === "add" ? "0" : "") : "—",
+        disabled: bulkMode === "add" && !tracked,
+        "aria-label": `${bulkMode === "add" ? "Units arriving" : "New stock"} for ${item.name}${variant.label ? `, ${variant.label}` : ""}`,
         // Typing replaces the number rather than adding to it.
         onfocus: (event) => event.target.select(),
         oninput: (event) => {
           stockEdits.set(key, event.target.value);
           note.textContent = describe(event.target.value);
-          renderStockBar();
+          updateBulkCount();
         },
         onkeydown: (event) => {
           if (event.key !== "Enter") return;
           event.preventDefault();
-          const inputs = $$("#stock-editor input:not([disabled])");
+          const inputs = $$("#bulk-editor input:not([disabled])");
           inputs[inputs.indexOf(event.target) + 1]?.focus();
         },
       });
@@ -1469,16 +1731,9 @@ function renderStockEditor(visible) {
         "tr",
         { class: i === 0 ? "group-start" : "" },
         i === 0
-          ? el(
-              "td",
-              { rowspan: String(item.variants.length) },
-              el(
-                "div",
-                { class: "item-cell" },
-                artwork(item, "thumb"),
-                el("div", {}, el("div", { class: "cell-main", text: item.name }), el("div", { class: "cell-sub", text: [item.sku, item.active ? "" : "Hidden"].filter(Boolean).join(" · ") }))
-              )
-            )
+          ? el("td", { rowspan: String(item.variants.length) },
+              el("div", { class: "item-cell" }, artwork(item, "thumb"),
+                el("div", {}, el("div", { class: "cell-main", text: item.name }), el("div", { class: "cell-sub", text: [item.sku, item.active ? "" : "Hidden"].filter(Boolean).join(" · ") }))))
           : null,
         el("td", { text: variant.label || "—" }),
         el("td", { class: `num ${tracked && variant.stock <= 5 ? "low-text" : ""}`.trim(), text: tracked ? String(variant.stock) : "Not tracked" }),
@@ -1491,7 +1746,7 @@ function renderStockEditor(visible) {
     el(
       "table",
       { class: "table stock-table" },
-      el("thead", {}, el("tr", {}, ["Item", "Option", "Available now", stockMode === "add" ? "Arriving" : "New stock"].map((h) =>
+      el("thead", {}, el("tr", {}, ["Item", "Option", "Available now", bulkMode === "add" ? "Arriving" : "New stock"].map((h) =>
         el("th", { scope: "col", class: h === "Available now" ? "num" : "", text: h })
       ))),
       el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", { class: "empty", colspan: "4", text: "No items match." })))
@@ -1499,44 +1754,54 @@ function renderStockEditor(visible) {
   );
 }
 
-$("#stock-editor").addEventListener("submit", async (event) => {
+function renderBulkEditor(visible) {
+  renderCatalogBulkBar();
+  if (bulkMode === "all") renderBulkGrid(visible);
+  else renderStockRows(visible);
+}
+
+$("#bulk-editor").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   clearFieldErrors(form);
-  const changes = stockChanges();
-  if (!changes.length) return;
-  const save = $("#stock-bar button[type=submit]");
-  save.disabled = true;
+  const items = itemPatches();
+  const stock = stockChanges();
+  if (!items.length && !stock.length) return;
+  bulkSaveButton.disabled = true;
   try {
-    const result = await adminApi("/api/admin/catalog/stock", { method: "POST", body: { changes } });
+    const result = await adminApi("/api/admin/catalog/bulk", { method: "POST", body: { items, stock } });
     const fresh = new Map(result.items.map((item) => [item.id, item]));
     catalog = catalog.map((item) => fresh.get(item.id) ?? item);
+    fieldEdits.clear();
     stockEdits.clear();
-    stockMode = null;
+    bulkSelected.clear();
+    bulkMode = null;
     renderCatalog();
     renderKpis();
     const adjusted = result.adjusted.length
-      ? ` ${plural(result.adjusted.length, "level")} also took account of orders placed while you were editing.`
+      ? ` ${plural(result.adjusted.length, "stock level")} also took account of orders placed while you were editing.`
       : "";
-    toast(`Stock saved for ${plural(result.changed, "option")}.${adjusted}`, { timeout: adjusted ? 9000 : 5000 });
+    toast(`Saved changes to ${plural(result.changed, "item")}.${adjusted}`, { timeout: adjusted ? 9000 : 5000 });
   } catch (error) {
-    save.disabled = false;
-    toast(error.message, { tone: "error" });
-    // Problems may be on rows the filters hide: show everything first.
-    if (Object.keys(error.fieldErrors ?? {}).length) {
+    bulkSaveButton.disabled = false;
+    toast(error.message, { tone: "error", timeout: 8000 });
+    const errors = error.fieldErrors ?? {};
+    if (Object.keys(errors).length) {
+      // Problems may be on rows the filters hide, or in the details grid.
       ui.catalogQuery = "";
       ui.catalogCategory = "";
       ui.showHidden = true;
       $("#catalog-search").value = "";
       $("#catalog-category").value = "";
       $("#show-hidden").checked = true;
+      if (bulkMode === "set" && Object.keys(errors).some((key) => !key.startsWith("stock."))) bulkMode = "all";
       renderCatalog();
-      showFieldErrors($("#stock-editor"), error.fieldErrors);
+      showFieldErrors(form, errors);
     }
   }
 });
 
-$("#edit-stock").addEventListener("click", () => setStockMode("set"));
+$("#bulk-edit").addEventListener("click", () => setBulkMode("all"));
 
 const SIZES = ["S", "M", "L", "XL", "2XL", "3XL"];
 

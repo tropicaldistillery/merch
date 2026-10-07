@@ -900,10 +900,16 @@ export const MAX_STOCK_CHANGES = 2000;
 export function updateStock(db, input) {
   const changes = Array.isArray(input?.changes) ? input.changes : [];
   if (!changes.length) throw new ValidationError("Change at least one stock level.", {});
+  const { plan, errors } = planStock(db, changes);
+  if (Object.keys(errors).length) throw new ValidationError("Some stock levels need attention.", errors);
+  return { ...applyStockPlan(db, plan), changed: plan.length };
+}
+
+/** Check stock changes without making them: `{ plan, errors }`. */
+function planStock(db, changes) {
   if (changes.length > MAX_STOCK_CHANGES) {
     throw new ValidationError(`Change at most ${MAX_STOCK_CHANGES} stock levels at a time.`, {});
   }
-
   const errors = {};
   const plan = [];
   const seen = new Set();
@@ -934,18 +940,78 @@ export function updateStock(db, input) {
       else next = to;
     }
     if (next > 100000) errors[key] = "That's more than 100,000.";
-    if (!errors[key]) plan.push({ item, variant, next, wanted: raw && "add" in raw ? next : parseStock(raw.to) });
+    if (!errors[key]) plan.push({ itemId, variantId, next, wanted: raw && "add" in raw ? next : parseStock(raw.to) });
   }
-  if (Object.keys(errors).length) throw new ValidationError("Some stock levels need attention.", errors);
+  return { plan, errors };
+}
 
+function applyStockPlan(db, plan) {
   const items = new Map();
   const adjusted = [];
-  for (const { item, variant, next, wanted } of plan) {
+  for (const { itemId, variantId, next, wanted } of plan) {
+    const item = db.catalog.find((i) => i.id === itemId);
+    const variant = item.variants.find((v) => v.id === variantId);
     variant.stock = next;
     items.set(item.id, item);
     if (next !== wanted) adjusted.push({ itemId: item.id, name: item.name, option: variant.label, stock: next });
   }
-  return { items: [...items.values()], changed: plan.length, adjusted };
+  return { items: [...items.values()], adjusted };
+}
+
+// What the bulk editor can change on many items at once. Photos, options,
+// colours and SKUs stay with the one-item editor.
+export const BULK_FIELDS = ["name", "category", "brand", "unit", "costCents", "minPerOrder", "maxPerOrder", "orderIncrement", "active", "description"];
+export const BULK_SUPPLIER_FIELDS = ["company", "itemNumber", "link"];
+export const MAX_BULK_ITEMS = 1000;
+
+/**
+ * The console's bulk editor: `items` are `{ id, patch }` with any of
+ * BULK_FIELDS and `supplier` (BULK_SUPPLIER_FIELDS), each checked with the
+ * same rules as the one-item editor; `stock` are stock changes as in
+ * updateStock. Problems come back per field as "<item id>.<field>" (or
+ * "stock.<item id>.<option id>"), and any problem changes nothing.
+ */
+export function bulkEditCatalog(db, input) {
+  const rawItems = Array.isArray(input?.items) ? input.items : [];
+  const stock = Array.isArray(input?.stock) ? input.stock : [];
+  if (!rawItems.length && !stock.length) throw new ValidationError("Change at least one thing.", {});
+  if (rawItems.length > MAX_BULK_ITEMS) throw new ValidationError(`Change at most ${MAX_BULK_ITEMS} items at a time.`, {});
+
+  const errors = {};
+  const edited = new Map();
+  for (const raw of rawItems) {
+    const id = cleanText(raw?.id, 80);
+    const existing = db.catalog.find((i) => i.id === id);
+    if (!existing) {
+      errors[`${id}.name`] = "This item no longer exists. Reload the catalog.";
+      continue;
+    }
+    if (edited.has(id)) continue;
+    const patch = raw.patch && typeof raw.patch === "object" ? raw.patch : {};
+    const merged = structuredClone(existing);
+    for (const field of BULK_FIELDS) if (field in patch) merged[field] = patch[field];
+    if (patch.supplier && typeof patch.supplier === "object") {
+      merged.supplier = { ...existing.supplier };
+      for (const field of BULK_SUPPLIER_FIELDS) if (field in patch.supplier) merged.supplier[field] = patch.supplier[field];
+    }
+    try {
+      edited.set(id, normalizeItem(merged, { catalog: db.catalog, existing }));
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+      for (const [field, message] of Object.entries(error.fieldErrors)) errors[`${id}.${field}`] = message;
+    }
+  }
+  const { plan, errors: stockErrors } = planStock(db, stock);
+  Object.assign(errors, stockErrors);
+  if (Object.keys(errors).length) {
+    const items = new Set(Object.keys(errors).map((key) => key.replace(/^stock\./, "").split(".")[0])).size;
+    throw new ValidationError(`${items === 1 ? "1 item needs" : `${items} items need`} attention. Nothing was saved.`, errors);
+  }
+
+  for (const [id, item] of edited) db.catalog[db.catalog.findIndex((i) => i.id === id)] = item;
+  const { adjusted } = applyStockPlan(db, plan);
+  const ids = new Set([...edited.keys(), ...plan.map((p) => p.itemId)]);
+  return { items: db.catalog.filter((i) => ids.has(i.id)), changed: ids.size, adjusted };
 }
 
 // Images are an uploaded photo, one of our own files, or (from before

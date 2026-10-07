@@ -72,12 +72,23 @@ shares nothing with SipScale.
   always 1); new items take both automatically. An **order increment** sells
   an item in steps (6 means 6, 12, 18…); the minimum and maximum must be
   multiples of it, and the shop's quantity buttons move in those steps.
-- **Edit stock** (Catalog & stock) lists every option of every item in one
-  table, filtered by the same search and category as the catalog. **Set stock
-  levels** to type new counts, or **Add a delivery** to type how many arrived,
-  and save them all at once. Orders placed while you're typing still count:
-  a level moves by the change you made rather than being overwritten. Typing
-  a number for an untracked item starts tracking it.
+- **Bulk edit** (Catalog & stock) changes many items at once, filtered by the
+  same search and category as the catalog:
+  - **All details** is a spreadsheet of every item: name, category, brand,
+    unit, cost, minimum, maximum, steps, stock for each option, whether it's
+    shown in the store, supplier, their item number, order link and
+    description. Changed cells are highlighted. Tick items to set one thing
+    (category, brand, in store, cost, limits, unit, supplier or order link) on
+    all of them, then check and save.
+  - **Stock levels** lists every option to type new counts; **Add a
+    delivery** takes how many arrived and adds them.
+
+  One **Save changes** saves everything typed in any view, including rows the
+  filters hide. Each item is checked with the same rules as the one-item
+  editor, and if anything is wrong nothing is saved and the problem is shown
+  on its cell. Orders placed while you're typing still count: a stock level
+  moves by the change you made rather than being overwritten. Photos, options
+  and colors stay in the one-item editor.
 - A new item's **SKU is made from its category and name** as you type
   ("J.F. Haden's Throw Pillow" in VIP becomes `VIP-THROW-PILLOW`), and you can
   still type your own. Existing SKUs never change.

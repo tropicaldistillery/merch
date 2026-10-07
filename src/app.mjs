@@ -41,6 +41,7 @@ import {
   needsSeedTextFixes,
   normalizeItem,
   publicItem,
+  bulkEditCatalog,
   updateStock,
 } from "./catalog.mjs";
 import { IMAGE_PATH_RE, MAX_IMAGE_BYTES, acceptProductImage } from "./images.mjs";
@@ -136,7 +137,7 @@ function sendJson(res, status, payload, headers = {}) {
   });
 }
 
-function readJson(req) {
+function readJson(req, limit = MAX_BODY_BYTES) {
   if (!String(req.headers["content-type"] || "").includes("application/json")) {
     return Promise.reject(new ValidationError("Send the request as JSON.", {}, 415));
   }
@@ -145,7 +146,7 @@ function readJson(req) {
     const chunks = [];
     req.on("data", (chunk) => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         reject(new ValidationError("That request is too large.", {}, 413));
         req.destroy();
         return;
@@ -659,6 +660,14 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
         return next;
       });
       sendJson(res, 201, { ok: true, item });
+    }],
+
+    // Many items' details and stock at once, from the bulk editor.
+    ["POST", "/api/admin/catalog/bulk", "admin", async ({ req, res }) => {
+      // Room for every item's description at once.
+      const body = await readJson(req, 1024 * 1024);
+      const result = await store.mutate((db) => bulkEditCatalog(db, body));
+      sendJson(res, 200, { ok: true, ...result });
     }],
 
     // Many stock levels at once, from the stock editor.
