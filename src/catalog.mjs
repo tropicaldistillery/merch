@@ -4,7 +4,7 @@
 // console (Catalog tab) with real numbers. The seed is only used when a store
 // is created for the first time; after that the catalog lives in the store.
 
-import { BRANDS, CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, TONES, generateSku, itemImages, suggestedMinPerOrder } from "../public/assets/shared.js";
+import { BRANDS, CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, TONES, byCategory, generateSku, itemImages, skuPrefix, suggestedMinPerOrder } from "../public/assets/shared.js";
 import { IMAGE_PATH_RE } from "./images.mjs";
 import { ValidationError, cleanText } from "./validation.mjs";
 
@@ -46,7 +46,7 @@ const PRODUCTS = [
 const SPIRITS = PRODUCTS.flatMap((p) => [
   { ...p, id: `${p.key}-bottle`, kind: "bottle" },
   { ...p, id: `${p.key}-case`, kind: "case" },
-]).map((spirit, i) => ({ ...spirit, sku: `TD-EVT-${String(5 + i).padStart(3, "0")}` }));
+]);
 
 // The 50 ml samples these replaced, the day they went in. They are removed
 // from a store that has them, unless an admin has renamed them.
@@ -162,79 +162,79 @@ function single(stock) {
 export const SEED_CATALOG = [
   // Apparel
   {
-    id: "jfh-logo-tee", sku: "TD-APP-001", name: "J.F. Haden's Logo Tee",
+    id: "jfh-logo-tee", name: "J.F. Haden's Logo Tee",
     brand: "jf-hadens", category: "Apparel", tone: "mango", art: "tee", unit: "Each",
     description: "Soft ring-spun cotton tee with the J.F. Haden's mango mark on the chest. Good for tastings and ride-alongs.",
     costCents: 1150, maxPerOrder: 6, variants: sized([8, 14, 14, 10, 6, 3]),
   },
   {
-    id: "td-team-polo", sku: "TD-APP-002", name: "Tropical Distillery Team Polo",
+    id: "td-team-polo", name: "Tropical Distillery Team Polo",
     brand: "tropical-distillery", category: "Apparel", tone: "palm", art: "polo", unit: "Each",
     description: "Moisture-wicking polo with the embroidered Tropical Distillery logo. The standard uniform for account visits and trade shows.",
     costCents: 2600, maxPerOrder: 3, variants: sized([4, 8, 8, 6, 4, 2]),
   },
   {
-    id: "jfh-polo", sku: "TD-APP-006", name: "J.F. Haden's Polo",
+    id: "jfh-polo", name: "J.F. Haden's Polo",
     brand: "jf-hadens", category: "Apparel", tone: "mango", art: "polo", unit: "Each",
     description: "Moisture-wicking polo with the J.F. Haden's logo embroidered on the chest. Sharp enough for account visits, tastings and trade shows.",
     costCents: 2600, maxPerOrder: 3, variants: sized([4, 8, 8, 6, 4, 2]),
   },
   {
-    id: "jfh-espresso-tee", sku: "TD-APP-007", name: "In My Espresso Martini Era Tee",
+    id: "jfh-espresso-tee", name: "In My Espresso Martini Era Tee",
     brand: "jf-hadens", category: "Apparel", tone: "espresso", art: "tee", unit: "Each",
     description: "Soft white tee with the In My Espresso Martini Era badge on the chest or the big print, and the J.F. Haden's logo. Made for Espresso Liqueur nights.",
     costCents: 1400, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
   },
   {
-    id: "jfh-espresso-tank", sku: "TD-APP-008", name: "In My Espresso Martini Era Tank",
+    id: "jfh-espresso-tank", name: "In My Espresso Martini Era Tank",
     brand: "jf-hadens", category: "Apparel", tone: "espresso", art: "tee", unit: "Each",
     description: "White racerback tank with the In My Espresso Martini Era print and the J.F. Haden's logo. Great for summer events.",
     costCents: 1300, maxPerOrder: 6, variants: sized([6, 10, 10, 6, 3, 1]),
   },
   {
-    id: "jfh-good-spirits-tee", sku: "TD-APP-009", name: "Good Spirits Only Tee",
+    id: "jfh-good-spirits-tee", name: "Good Spirits Only Tee",
     brand: "jf-hadens", category: "Apparel", tone: "mango", art: "tee", unit: "Each",
     description: "Retro striped GOOD SPIRITS ONLY in orange, sky blue and pink, with the J.F. Haden's logo, printed on the back.",
     costCents: 1400, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
   },
   {
-    id: "jfh-martini-tee", sku: "TD-APP-010", name: "J.F. Haden's Martini Glass Tee",
+    id: "jfh-martini-tee", name: "J.F. Haden's Martini Glass Tee",
     brand: "jf-hadens", category: "Apparel", tone: "mango", art: "tee", unit: "Each",
     description: "A hand-drawn martini glass made of all six J.F. Haden's flavors (mango, espresso, key lime, citrus, lychee and orange) with the J.F. Haden's logo, printed on the front.",
     costCents: 1400, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
   },
   {
-    id: "jfh-gradient-tee", sku: "TD-APP-011", name: "J.F. Haden's Gradient Logo Tee",
+    id: "jfh-gradient-tee", name: "J.F. Haden's Gradient Logo Tee",
     brand: "jf-hadens", category: "Apparel", tone: "lychee", art: "tee", unit: "Each",
     description: "Soft Next Level tee in white with the J.F. Haden's logo across the chest in a blue-to-pink gradient.",
     costCents: 1300, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
   },
   {
-    id: "jfh-gradient-crop", sku: "TD-APP-012", name: "J.F. Haden's Gradient Logo Long Sleeve Crop Top",
+    id: "jfh-gradient-crop", name: "J.F. Haden's Gradient Logo Long Sleeve Crop Top",
     brand: "jf-hadens", category: "Apparel", tone: "lychee", art: "tee", unit: "Each",
     description: "Fitted long sleeve crop top with the J.F. Haden's gradient logo on the chest. White, or black with the logo outlined in white.",
     costCents: 1500, maxPerOrder: 6, variants: sized([6, 10, 10, 6, 3, 1]),
   },
   {
-    id: "jfh-dad-hat", sku: "TD-APP-013", name: "J.F. Haden's Washed Dad Hat",
+    id: "jfh-dad-hat", name: "J.F. Haden's Washed Dad Hat",
     brand: "jf-hadens", category: "Apparel", tone: "mango", art: "cap", unit: "Each",
     description: "Soft washed-cotton dad hat with J.F. HADEN'S in varsity letters across the front. Adjustable strap.",
     costCents: 1400, maxPerOrder: 4, variants: single(36),
   },
   {
-    id: "jfh-cap", sku: "TD-APP-003", name: "J.F. Haden's Embroidered Cap",
+    id: "jfh-cap", name: "J.F. Haden's Embroidered Cap",
     brand: "jf-hadens", category: "Apparel", tone: "mango", art: "cap", unit: "Each",
     description: "Unstructured cotton cap with an adjustable strap.",
     costCents: 1400, maxPerOrder: 4, variants: single(30),
   },
   {
-    id: "twinp-trucker", sku: "TD-APP-004", name: "Twin P Whiskey Trucker Hat",
+    id: "twinp-trucker", name: "Twin P Whiskey Trucker Hat",
     brand: "twin-p", category: "Apparel", tone: "oak", art: "cap", unit: "Each",
     description: "Mesh-back trucker with a leather Twin P patch.",
     costCents: 1300, maxPerOrder: 4, variants: single(20),
   },
   {
-    id: "jfh-apron", sku: "TD-APP-005", name: "J.F. Haden's Bartender Apron",
+    id: "jfh-apron", name: "J.F. Haden's Bartender Apron",
     brand: "jf-hadens", category: "Apparel", tone: "espresso", art: "apron", unit: "Each",
     description: "Waxed canvas bib apron with leather straps — a thank-you for the bartenders who pour us.",
     costCents: 2200, maxPerOrder: 6, variants: single(18),
@@ -242,25 +242,25 @@ export const SEED_CATALOG = [
 
   // Giveaways, bar tools and VIP pieces
   {
-    id: "jfh-rocks-12", sku: "TD-DRK-001", name: "J.F. Haden's Etched Rocks Glasses",
+    id: "jfh-rocks-12", name: "J.F. Haden's Etched Rocks Glasses",
     brand: "jf-hadens", category: "Bar Tools", tone: "mango", art: "rocks", unit: "Case of 12",
     description: "10 oz double old fashioned glasses with an etched logo, for feature-cocktail programs.",
     costCents: 4200, maxPerOrder: 4, variants: single(25),
   },
   {
-    id: "jfh-shot-24", sku: "TD-DRK-002", name: "J.F. Haden's Shot Glasses",
+    id: "jfh-shot-24", name: "J.F. Haden's Shot Glasses",
     brand: "jf-hadens", category: "Giveaways", tone: "lime", art: "shot", unit: "Pack of 24",
     description: "1.5 oz shot glasses with the J.F. Haden's logo in Key Lime Pie green.",
     costCents: 2900, maxPerOrder: 4, variants: single(30),
   },
   {
-    id: "twinp-glencairn-6", sku: "TD-DRK-003", name: "Twin P Whiskey Tasting Glasses",
+    id: "twinp-glencairn-6", name: "Twin P Whiskey Tasting Glasses",
     brand: "twin-p", category: "VIP", tone: "oak", art: "glencairn", unit: "Pack of 6",
     description: "Glencairn-style nosing glasses for whiskey dinners and tastings.",
     costCents: 4500, maxPerOrder: 2, variants: single(12),
   },
   {
-    id: "td-tumbler", sku: "TD-DRK-004", name: "Tropical Distillery Insulated Tumbler",
+    id: "td-tumbler", name: "Tropical Distillery Insulated Tumbler",
     brand: "tropical-distillery", category: "Giveaways", tone: "palm", art: "tumbler", unit: "20 oz",
     description: "Stainless steel tumbler with a slide lid and straw.",
     costCents: 1600, maxPerOrder: 4, variants: single(40),
@@ -268,37 +268,37 @@ export const SEED_CATALOG = [
 
   // Print and display
   {
-    id: "jfh-mango-shelf-talkers", sku: "TD-POS-001", name: "Mango Liqueur Shelf Talkers",
+    id: "jfh-mango-shelf-talkers", name: "Mango Liqueur Shelf Talkers",
     brand: "jf-hadens", category: "Print", tone: "mango", art: "shelf-talker", unit: "Pack of 25",
     description: "Clip-on shelf talkers with tasting notes and a QR code to the cocktail menu. For off-premise accounts.",
     costCents: 1500, maxPerOrder: 10, variants: single(60),
   },
   {
-    id: "jfh-espresso-neck-hangers", sku: "TD-POS-002", name: "Espresso Liqueur Neck Hangers",
+    id: "jfh-espresso-neck-hangers", name: "Espresso Liqueur Neck Hangers",
     brand: "jf-hadens", category: "Print", tone: "espresso", art: "neck-hanger", unit: "Pack of 50",
     description: "Espresso Martini recipe neck hangers. Fit standard 750 ml necks.",
     costCents: 2000, maxPerOrder: 10, variants: single(45),
   },
   {
-    id: "jfh-key-lime-table-tents", sku: "TD-POS-003", name: "Key Lime Pie Liqueur Table Tents",
+    id: "jfh-key-lime-table-tents", name: "Key Lime Pie Liqueur Table Tents",
     brand: "jf-hadens", category: "Print", tone: "lime", art: "table-tent", unit: "Pack of 12",
     description: "Key Lime Pie Martini table tents for on-premise accounts, with space for the venue to write its price.",
     costCents: 1800, maxPerOrder: 6, variants: single(40),
   },
   {
-    id: "jfh-bar-mat", sku: "TD-POS-004", name: "J.F. Haden's Rubber Bar Mat",
+    id: "jfh-bar-mat", name: "J.F. Haden's Rubber Bar Mat",
     brand: "jf-hadens", category: "Bar Tools", tone: "mango", art: "bar-mat", unit: "Each",
     description: "20 × 3.5 in service-well bar mat.",
     costCents: 2200, maxPerOrder: 4, variants: single(35),
   },
   {
-    id: "jfh-led-sign", sku: "TD-POS-005", name: "J.F. Haden's LED Back-bar Sign",
+    id: "jfh-led-sign", name: "J.F. Haden's LED Back-bar Sign",
     brand: "jf-hadens", category: "VIP", tone: "mango", art: "neon", unit: "Each",
     description: "Low-voltage LED sign, 24 × 14 in, with wall mount and a 6 ft cord. For priority on-premise accounts.",
     costCents: 14500, maxPerOrder: 1, variants: single(6),
   },
   {
-    id: "twinp-tin-sign", sku: "TD-POS-006", name: "Twin P Whiskey Tin Sign",
+    id: "twinp-tin-sign", name: "Twin P Whiskey Tin Sign",
     brand: "twin-p", category: "VIP", tone: "oak", art: "tin-sign", unit: "Each",
     description: "Embossed 18 × 12 in tin sign, pre-drilled for hanging.",
     costCents: 3800, maxPerOrder: 2, variants: single(10),
@@ -306,13 +306,13 @@ export const SEED_CATALOG = [
 
   // Bar Tools
   {
-    id: "td-shaker-set", sku: "TD-BAR-001", name: "Branded Shaker Tin Set",
+    id: "td-shaker-set", name: "Branded Shaker Tin Set",
     brand: "tropical-distillery", category: "Bar Tools", tone: "palm", art: "shaker", unit: "Set of 2",
     description: "Weighted 28 oz and 18 oz Boston tins, laser-etched.",
     costCents: 1900, maxPerOrder: 6, variants: single(24),
   },
   {
-    id: "jfh-jigger", sku: "TD-BAR-002", name: "J.F. Haden's Japanese Jigger",
+    id: "jfh-jigger", name: "J.F. Haden's Japanese Jigger",
     brand: "jf-hadens", category: "Bar Tools", tone: "mango", art: "jigger", unit: "Each",
     description: "1 oz / 2 oz stainless jigger with interior measure lines.",
     costCents: 750, maxPerOrder: 12, variants: single(50),
@@ -320,41 +320,41 @@ export const SEED_CATALOG = [
 
   // Sampling & Events
   {
-    id: "td-tasting-kit", sku: "TD-EVT-001", name: "Tasting Event Kit",
+    id: "td-tasting-kit", name: "Tasting Event Kit",
     brand: "tropical-distillery", category: "Sampling & Events", tone: "palm", art: "kit", unit: "Kit",
     description: "Everything for an in-store tasting: branded table runner, 200 sample cups, 50 recipe cards, a sign-in sheet and a bottle riser.",
     costCents: 6500, maxPerOrder: 2, variants: single(10),
   },
   {
-    id: "td-sample-cups", sku: "TD-EVT-002", name: "Sample Cups, 1 oz",
+    id: "td-sample-cups", name: "Sample Cups, 1 oz",
     brand: "tropical-distillery", category: "Sampling & Events", tone: "palm", art: "cups", unit: "Sleeve of 250",
     description: "Clear 1 oz plastic sampling cups. Bought to order, so never out of stock.",
     costCents: 1100, maxPerOrder: 8, variants: single(null),
   },
   // 750 ml bottles and cases (see SPIRITS)
-  ...SPIRITS.map(({ id, sku, product, brand, tone, made, kind }) =>
+  ...SPIRITS.map(({ id, product, brand, tone, made, kind }) =>
     kind === "case"
       ? {
-          id, sku, name: `${product}, Case of ${CASE_SIZE}`,
+          id, name: `${product}, Case of ${CASE_SIZE}`,
           brand, category: "Samples", tone, art: "bottle", unit: `Case of ${CASE_SIZE} × 750 ml`,
           description: `A case of ${CASE_SIZE} bottles (750 ml each) of ${product}, for events, activations and accounts. ${made}`,
           costCents: BOTTLE_COST_CENTS * CASE_SIZE, minPerOrder: 1, maxPerOrder: 2, variants: single(10),
         }
       : {
-          id, sku, name: `${product}, 750 ml`,
+          id, name: `${product}, 750 ml`,
           brand, category: "Samples", tone, art: "bottle", unit: "750 ml bottle",
           description: `A 750 ml bottle of ${product} for account visits, tastings and events. ${made}`,
           costCents: BOTTLE_COST_CENTS, minPerOrder: 1, maxPerOrder: 6, variants: single(24),
         }
   ),
   {
-    id: "td-table-throw", sku: "TD-EVT-003", name: "6 ft Table Throw",
+    id: "td-table-throw", name: "6 ft Table Throw",
     brand: "tropical-distillery", category: "Sampling & Events", tone: "palm", art: "table-throw", unit: "Each",
     description: "Fitted, full-colour table throw for festivals and trade shows. Machine washable.",
     costCents: 8900, maxPerOrder: 1, variants: single(5),
   },
   {
-    id: "td-pullup-banner", sku: "TD-EVT-004", name: "Retractable Pull-up Banner",
+    id: "td-pullup-banner", name: "Retractable Pull-up Banner",
     brand: "tropical-distillery", category: "Sampling & Events", tone: "mango", art: "banner", unit: "Each",
     description: "33 × 80 in portfolio banner with a carry case.",
     costCents: 12000, maxPerOrder: 1, variants: single(4),
@@ -362,85 +362,85 @@ export const SEED_CATALOG = [
 
   // Print
   {
-    id: "td-sell-sheets", sku: "TD-PRT-001", name: "Portfolio Sell Sheets",
+    id: "td-sell-sheets", name: "Portfolio Sell Sheets",
     brand: "tropical-distillery", category: "Print", tone: "palm", art: "sheets", unit: "Pack of 50",
     description: "Two-sided sell sheets for all six J.F. Haden's flavors (Citrus, Espresso, Key Lime Pie, Lychee, Mango and Orange) and Twin P Whiskey: tasting notes, SKUs, case packs and UPCs. Printed to order.",
     costCents: 2200, maxPerOrder: 6, variants: single(null),
   },
   {
-    id: "td-booklet", sku: "TD-PRT-004", name: "Tropical Distillery Portfolio Booklet",
+    id: "td-booklet", name: "Tropical Distillery Portfolio Booklet",
     brand: "tropical-distillery", category: "Print", tone: "palm", art: "sheets", unit: "Each",
     description: "Saddle-stitched booklet with the Tropical Distillery portfolio, J.F. Haden's liqueurs and Twin P Whiskey, to leave with accounts. Ordered in tens. Printed to order.",
     costCents: 250, minPerOrder: 10, maxPerOrder: 100, orderIncrement: 10, variants: single(null),
   },
   {
-    id: "jfh-recipe-cards", sku: "TD-PRT-002", name: "Signature Cocktail Recipe Cards",
+    id: "jfh-recipe-cards", name: "Signature Cocktail Recipe Cards",
     brand: "jf-hadens", category: "Print", tone: "lime", art: "cards", unit: "Pack of 100",
     description: "Pocket recipe cards for J.F. Haden's signature cocktails: Iced Coffee, Tropical Sunset, Pink Lotus and Key Lime Pie Martini. Printed to order.",
     costCents: 1800, maxPerOrder: 6, variants: single(null),
   },
   {
-    id: "jfh-stickers", sku: "TD-PRT-003", name: "J.F. Haden's Logo Stickers",
+    id: "jfh-stickers", name: "J.F. Haden's Logo Stickers",
     brand: "jf-hadens", category: "Giveaways", tone: "mango", art: "sticker", unit: "Pack of 100",
     description: "3 in die-cut vinyl stickers.",
     costCents: 2500, maxPerOrder: 4, variants: single(20),
   },
   {
-    id: "jfh-espresso-stickers", sku: "TD-GIV-004", name: "Espresso Martini Era Stickers",
+    id: "jfh-espresso-stickers", name: "Espresso Martini Era Stickers",
     brand: "jf-hadens", category: "Giveaways", tone: "espresso", art: "sticker", unit: "Pack of 50",
     description: "Glossy vinyl stickers: the 3 in round In My Espresso Martini Era badge and the 4 in die-cut print, mixed.",
     costCents: 2200, maxPerOrder: 4, variants: single(20),
   },
   {
-    id: "jfh-lychee-pin", sku: "TD-GIV-001", name: "Lychee Liqueur Bottle Enamel Pin",
+    id: "jfh-lychee-pin", name: "Lychee Liqueur Bottle Enamel Pin",
     brand: "jf-hadens", category: "Giveaways", tone: "lychee", art: "bottle", unit: "Each",
     description: "Hard-enamel pin of the J.F. Haden's Lychee bottle with a gold-tone finish and rubber clutch. Ordered in tens.",
     costCents: 350, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
   },
   {
-    id: "jfh-koozies", sku: "TD-GIV-002", name: "Good Spirits Only Can Koozies",
+    id: "jfh-koozies", name: "Good Spirits Only Can Koozies",
     brand: "jf-hadens", category: "Giveaways", tone: "mango", art: "tumbler", unit: "Pack of 25",
     description: "Collapsible neoprene can koozies, black and white mixed, printed with Good Spirits Only and the J.F. Haden's logo.",
     costCents: 3000, maxPerOrder: 4, variants: single(12),
   },
   {
-    id: "jfh-espresso-coasters", sku: "TD-GIV-003", name: "Espresso Martini Era Coasters",
+    id: "jfh-espresso-coasters", name: "Espresso Martini Era Coasters",
     brand: "jf-hadens", category: "Giveaways", tone: "espresso", art: "cards", unit: "Pack of 100",
     description: "4 in round pulpboard coasters, In My Espresso Martini Era on one design and the J.F. Haden's logo on the other. A bar favourite.",
     costCents: 2800, maxPerOrder: 4, variants: single(15),
   },
   {
-    id: "jfh-throw-pillow", sku: "TD-VIP-001", name: "J.F. Haden's Throw Pillow",
+    id: "jfh-throw-pillow", name: "J.F. Haden's Throw Pillow",
     brand: "jf-hadens", category: "VIP", tone: "mango", art: "table-throw", unit: "Each",
     description: "18 in square cream and orange throw pillow with the J.F. Haden's logo, Miami in a Bottle on the back. A thank-you for top accounts.",
     costCents: 3200, maxPerOrder: 2, variants: single(10),
   },
   {
-    id: "jfh-key-lime-colada-talkers", sku: "TD-POS-007", name: "Key Lime Pie Colada Shelf Talkers",
+    id: "jfh-key-lime-colada-talkers", name: "Key Lime Pie Colada Shelf Talkers",
     brand: "jf-hadens", category: "Print", tone: "lime", art: "shelf-talker", unit: "Pack of 25",
     description: "Clip-on shelf talkers with the Key Lime Pie Colada recipe and a QR code to more cocktails.",
     costCents: 1500, maxPerOrder: 10, variants: single(30),
   },
   {
-    id: "jfh-spill-mat", sku: "TD-POS-008", name: "J.F. Haden's Square Spill Mat",
+    id: "jfh-spill-mat", name: "J.F. Haden's Square Spill Mat",
     brand: "jf-hadens", category: "Bar Tools", tone: "mango", art: "bar-mat", unit: "Each",
     description: "12 x 12 in rubber spill mat for the service well, with the J.F. Haden's logo.",
     costCents: 1800, maxPerOrder: 4, variants: single(20),
   },
   {
-    id: "jfh-tote-bag", sku: "TD-GIV-005", name: "J.F. Haden's Zipper Tote Bag",
+    id: "jfh-tote-bag", name: "J.F. Haden's Zipper Tote Bag",
     brand: "jf-hadens", category: "Giveaways", tone: "oak", art: "kit", unit: "Each",
     description: "Soft sublimated canvas tote, 17.5 × 12.5 in with a 5 in gusset and a white top zipper. Cream with a tan base and the J.F. Haden's logo on both sides.",
     costCents: 1400, maxPerOrder: 6, variants: single(30),
   },
   {
-    id: "jfh-beach-towel", sku: "TD-GIV-006", name: "J.F. Haden's Beach Towel",
+    id: "jfh-beach-towel", name: "J.F. Haden's Beach Towel",
     brand: "jf-hadens", category: "Giveaways", tone: "oak", art: "table-throw", unit: "Each",
     description: "28 × 56 in sublimated beach towel, cream with tan stripes and the J.F. Haden's logo.",
     costCents: 1800, maxPerOrder: 4, variants: single(50),
   },
   {
-    id: "jfh-pool-koozie", sku: "TD-GIV-007", name: "J.F. Haden's Pool Koozie",
+    id: "jfh-pool-koozie", name: "J.F. Haden's Pool Koozie",
     brand: "jf-hadens", category: "Giveaways", tone: "sky", art: "tumbler", unit: "Each",
     description: "Inflatable stars-and-stripes drink float, 7.87 in across, that holds a can or cup in the pool. J.F. Haden's logo on the ring. Ordered in tens.",
     costCents: 250, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
@@ -457,61 +457,61 @@ export const SEED_CATALOG = [
     description, costCents: 450, maxPerOrder: 20, variants: single(50),
   })),
   {
-    id: "jfh-lip-balm", sku: "TD-GIV-018", name: "J.F. Haden's Lip Balm",
+    id: "jfh-lip-balm", name: "J.F. Haden's Lip Balm",
     brand: "jf-hadens", category: "Giveaways", tone: "mango", art: "kit", unit: "Each",
     description: "Vanilla lip balm in a round orange ball, with the J.F. Haden's logo on top. Ordered in tens.",
     costCents: 150, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
   },
   {
-    id: "jfh-martini-keychain-color", sku: "TD-GIV-019", name: "J.F. Haden's Espresso Martini Keychain",
+    id: "jfh-martini-keychain-color", name: "J.F. Haden's Espresso Martini Keychain",
     brand: "jf-hadens", category: "Giveaways", tone: "espresso", art: "kit", unit: "Each",
     description: "Acrylic keychain cut to the shape of a hand-drawn espresso martini, in full colour with the J.F. Haden's logo. Ordered in tens.",
     costCents: 180, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
   },
   {
-    id: "jfh-martini-keychain-line", sku: "TD-GIV-020", name: "J.F. Haden's Espresso Martini Keychain, Black & White",
+    id: "jfh-martini-keychain-line", name: "J.F. Haden's Espresso Martini Keychain, Black & White",
     brand: "jf-hadens", category: "Giveaways", tone: "espresso", art: "kit", unit: "Each",
     description: "Acrylic keychain cut to the shape of an espresso martini, in black-and-white line art with the J.F. Haden's logo in orange. Ordered in tens.",
     costCents: 180, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
   },
   {
-    id: "jfh-drake-tumbler", sku: "TD-GIV-009", name: "J.F. Haden's Drake Tumbler",
+    id: "jfh-drake-tumbler", name: "J.F. Haden's Drake Tumbler",
     brand: "jf-hadens", category: "Giveaways", tone: "palm", art: "tumbler", unit: "16 oz",
     description: "16 oz vacuum-insulated tumbler in Midnight Blue with a slide lid. J.F. Haden's logo laser-engraved.",
     costCents: 1800, maxPerOrder: 4, variants: single(30),
   },
   {
-    id: "jfh-square-coasters", sku: "TD-GIV-010", name: "J.F. Haden's Square Coasters",
+    id: "jfh-square-coasters", name: "J.F. Haden's Square Coasters",
     brand: "jf-hadens", category: "Giveaways", tone: "mango", art: "cards", unit: "Pack of 25",
     description: "3.5 in square pulpboard coasters, 35 pt, with the full-colour J.F. Haden's logo.",
     costCents: 900, maxPerOrder: 10, variants: single(10),
   },
   {
-    id: "jfh-phone-stand", sku: "TD-GIV-011", name: "J.F. Haden's Bamboo Phone Stand",
+    id: "jfh-phone-stand", name: "J.F. Haden's Bamboo Phone Stand",
     brand: "jf-hadens", category: "Giveaways", tone: "oak", art: "table-tent", unit: "Each",
     description: "Bamboo desk stand for a phone, with the J.F. Haden's logo laser-engraved on the front panel.",
     costCents: 1200, maxPerOrder: 4, variants: single(25),
   },
   {
-    id: "jfh-wine-bag", sku: "TD-GIV-012", name: "J.F. Haden's Bottle Gift Bag",
+    id: "jfh-wine-bag", name: "J.F. Haden's Bottle Gift Bag",
     brand: "jf-hadens", category: "Giveaways", tone: "espresso", art: "kit", unit: "Each",
     description: "Black single-bottle gift bag with loop handles and the J.F. Haden's logo in metallic gold foil. Ordered in tens.",
     costCents: 150, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(300),
   },
   {
-    id: "jfh-cobbler-shaker", sku: "TD-BAR-003", name: "J.F. Haden's Cobbler Shaker",
+    id: "jfh-cobbler-shaker", name: "J.F. Haden's Cobbler Shaker",
     brand: "jf-hadens", category: "Bar Tools", tone: "espresso", art: "shaker", unit: "Each",
     description: "Matte black cobbler shaker with a built-in strainer and cap. J.F. Haden's on one side, Miami in a Bottle on the other, printed white.",
     costCents: 1600, maxPerOrder: 6, variants: single(24),
   },
   {
-    id: "jfh-napkin-caddy", sku: "TD-BAR-004", name: "J.F. Haden's Bar Napkin Caddy",
+    id: "jfh-napkin-caddy", name: "J.F. Haden's Bar Napkin Caddy",
     brand: "jf-hadens", category: "Bar Tools", tone: "espresso", art: "kit", unit: "Each",
     description: "Black bar caddy for cocktail napkins, with a V-notch at the back and the full-colour J.F. Haden's logo on the front.",
     costCents: 1400, maxPerOrder: 4, variants: single(20),
   },
   {
-    id: "jfh-bluetooth-speaker", sku: "TD-VIP-002", name: "J.F. Haden's Bluetooth Speaker",
+    id: "jfh-bluetooth-speaker", name: "J.F. Haden's Bluetooth Speaker",
     brand: "jf-hadens", category: "VIP", tone: "espresso", art: "kit", unit: "Each",
     description: "Compact magnetic Bluetooth speaker in black, with the J.F. Haden's logo in white above the power button. A thank-you for top accounts.",
     costCents: 1500, maxPerOrder: 2, variants: single(20),
@@ -526,6 +526,7 @@ export const SEED_CATALOG = [
   supplier: { ...emptySupplier(), company: DEFAULT_SUPPLIER, ...SEED_SUPPLIERS[item.id] },
   active: true,
 }));
+renumberSkus(SEED_CATALOG);
 
 /* ------------------------------------------------------- seed corrections */
 
@@ -686,7 +687,7 @@ export function applyAddedItems(db) {
   const pending = new Set(ADDED_ITEMS.filter(({ flag }) => !db.meta[flag]).map(({ flag }) => flag));
   const added = [];
   Object.defineProperty(added, "removed", { value: [], enumerable: false });
-  // First, so the bottles and cases can take over the samples' SKUs.
+  // Before adding, so the bottles and cases take the samples' place.
   if (pending.has("spiritsDrop")) {
     for (const retired of RETIRED_SAMPLES) {
       const old = db.catalog.find((i) => i.id === retired.id);
@@ -703,7 +704,7 @@ export function applyAddedItems(db) {
     if (db.catalog.some((i) => i.id === seed.id || String(i.name).trim().toLowerCase() === name)) continue;
     const item = structuredClone(seed);
     const taken = db.catalog.map((i) => i.sku);
-    if (taken.includes(item.sku)) item.sku = generateSku(item.name, item.category, taken);
+    if (taken.includes(item.sku)) item.sku = generateSku(item.brand, item.category, taken);
     const anchor = [after].flat().find((a) => db.catalog.some((i) => i.id === a));
     const at = db.catalog.findIndex((i) => i.id === anchor);
     db.catalog.splice(at >= 0 ? at + 1 : db.catalog.length, 0, item);
@@ -846,6 +847,59 @@ export function applyCategoryMoves(db) {
   }
   db.meta.categories = CATEGORIES_VERSION;
   return moved;
+}
+
+/* -------------------------------------------------------------------- SKUs */
+
+// Version 2: every SKU is the first three letters of the brand and of the
+// category and a number, numbered in the store's order: JFH-APP-001.
+export const SKU_FORMAT_VERSION = 2;
+
+/** Give every item a brand-category-number SKU, in the store's order. */
+export function renumberSkus(items) {
+  const counts = new Map();
+  for (const item of byCategory(items)) {
+    const prefix = skuPrefix(item.brand, item.category);
+    const n = (counts.get(prefix) ?? 0) + 1;
+    counts.set(prefix, n);
+    item.sku = `${prefix}-${String(n).padStart(3, "0")}`;
+  }
+  return items;
+}
+
+export function needsSkuFormat(db) {
+  return (db.meta?.skuFormat ?? 1) < SKU_FORMAT_VERSION;
+}
+
+/** Renumber an existing store's SKUs once. Past orders keep the SKUs they were placed with. */
+export function applySkuFormat(db) {
+  const before = new Map(db.catalog.map((item) => [item.id, item.sku]));
+  renumberSkus(db.catalog);
+  db.meta.skuFormat = SKU_FORMAT_VERSION;
+  return db.catalog.filter((item) => before.get(item.id) !== item.sku).length;
+}
+
+/* ------------------------------------------------------ one-off resets */
+
+// Asked for on 7 October 2026: every stock level back to 0, so the real
+// counts can be entered from scratch. Options that aren't tracked (made or
+// bought to order) stay untracked, or they couldn't be ordered at all.
+export function needsStockCleared(db) {
+  return !db.meta?.stockCleared;
+}
+
+export function applyStockCleared(db) {
+  let cleared = 0;
+  for (const item of db.catalog) {
+    for (const variant of item.variants) {
+      if (Number.isInteger(variant.stock) && variant.stock !== 0) {
+        variant.stock = 0;
+        cleared += 1;
+      }
+    }
+  }
+  db.meta.stockCleared = 1;
+  return cleared;
 }
 
 /** Items saved before colours existed: starter items get theirs, others none. */
@@ -1085,7 +1139,7 @@ export function normalizeItem(input, { catalog, existing = null }) {
   if (!sku && existing) sku = existing.sku;
   if (!sku) {
     const others = catalog.filter((item) => item.id !== existing?.id).map((item) => item.sku);
-    sku = generateSku(cleanText(src.name, 120), cleanText(src.category, 40), others);
+    sku = generateSku(cleanText(src.brand, 40), cleanText(src.category, 40), others);
   }
   if (catalog.some((item) => item.sku === sku && item.id !== existing?.id)) {
     errors.sku = "Another item already uses this SKU.";

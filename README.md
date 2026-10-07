@@ -89,8 +89,9 @@ shares nothing with SipScale.
     store, so this sets the order within each category. Tick items to set one thing
     (category, brand, in store, cost, limits, unit, supplier or order link) on
     all of them, then check and save.
-  - **Stock levels** lists every option to type new counts; **Add a
-    delivery** takes how many arrived and adds them.
+  - **Stock levels** lists every option to type new counts (**Set all shown
+    to 0** clears the ones shown); **Add a delivery** takes how many arrived
+    and adds them.
 
   One **Save changes** saves everything typed in any view, and the new
   order, including rows the filters hide. Each item is checked with the same rules as the one-item
@@ -98,9 +99,18 @@ shares nothing with SipScale.
   on its cell. Orders placed while you're typing still count: a stock level
   moves by the change you made rather than being overwritten. Photos, options
   and colors stay in the one-item editor.
-- A new item's **SKU is made from its category and name** as you type
-  ("J.F. Haden's Throw Pillow" in VIP becomes `VIP-THROW-PILLOW`), and you can
-  still type your own. Existing SKUs never change.
+- **SKUs** are the first three letters of the brand and of the category and a
+  number: JFH-APP-001 is the first J.F. Haden's apparel item, TWI-SAM-002 the
+  second Twin P sample, TRO-GIV-004 the fourth Tropical Distillery giveaway.
+  A new item gets the next number for its brand and category as you choose
+  them (after the highest one used, so a deleted item's number isn't
+  reused), and you can still type your own. Every existing SKU was
+  renumbered this way once, in the store's order; past orders keep the SKUs
+  they were placed with. (Samples and Sampling & Events both start SAM.)
+- **Reorder** the catalog list with each row's ⠿ handle (drag), its ▲▼
+  buttons or the arrow keys on the handle. Items stay grouped by category,
+  so this sets the order within each, and it's saved straight away, with an
+  Undo.
 - **Upload photos**, up to 10 an item, with the button or by dragging several
   onto the editor at once. Each is resized in the browser to 1200 × 900, so
   every product card matches: "Show the whole photo" fits it on white, "Fill

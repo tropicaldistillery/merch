@@ -1316,16 +1316,19 @@ function renderCatalog() {
 
   clear(
     $("#catalog-table"),
-    el("thead", {}, el("tr", {}, ["Item", "Category", "Cost", "Available", "Per order", "In store", ""].map((h) =>
-      el("th", { scope: "col", class: h === "Cost" ? "num" : "", text: h })
-    ))),
+    el("thead", {}, el("tr", {},
+      el("th", { scope: "col", class: "move-col" }, el("span", { class: "sr-only", text: "Order" })),
+      ["Item", "Category", "Cost", "Available", "Per order", "In store", ""].map((h) =>
+        el("th", { scope: "col", class: h === "Cost" ? "num" : "", text: h })
+      ))),
     el(
       "tbody",
       {},
-      visible.map((item) =>
+      visible.map((item, index) => dropTarget(
         el(
           "tr",
-          {},
+          { class: index && visible[index - 1].category !== item.category ? "category-start" : "" },
+          el("td", { class: "move-col" }, moveTools(item)),
           el("td", {}, el("div", { class: "item-cell" }, artwork(item, "thumb"), el("div", {}, el("div", { class: "cell-main", text: item.name }), el("div", { class: "cell-sub", text: [item.sku, item.unit, item.colors?.length ? plural(item.colors.length, "color") : ""].filter(Boolean).join(" · ") }), supplierLine(item)))),
           el("td", {}, el("div", { text: item.category }), el("div", { class: "cell-sub", text: labelFor(BRANDS, item.brand) })),
           el("td", { class: "num", text: formatMoney(item.costCents) }),
@@ -1333,7 +1336,7 @@ function renderCatalog() {
           el("td", { class: "per-order", text: quantityRuleText(item).replace(/ per order$/, "") }),
           el("td", {}, el("span", { class: `tag ${item.active ? "account" : ""}`.trim(), text: item.active ? "Shown" : "Hidden" })),
           el("td", {}, el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Edit", "aria-label": `Edit ${item.name}`, onclick: () => openItem(item) }))
-        )
+        ), item)
       )
     )
   );
@@ -1483,7 +1486,38 @@ function moveItem(id, targetId, before) {
   }
   const order = currentOrder().filter((x) => x !== id);
   order.splice(order.indexOf(targetId) + (before ? 0 : 1), 0, id);
-  setOrder(order, id);
+  // In the bulk editor a new order waits for Save; in the catalog list it is
+  // saved straight away.
+  if (bulkMode) setOrder(order, id);
+  else commitOrder(order, id);
+}
+
+// Moves in the catalog list are saved together a moment after the last one,
+// with an Undo back to the order before the first.
+let orderSaveTimer = null;
+let orderBeforeMoves = null;
+
+function commitOrder(order, focusId = null) {
+  orderBeforeMoves ??= catalog.map((i) => i.id);
+  const rank = new Map(order.map((id, i) => [id, i]));
+  catalog = byCategory([...catalog].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity)));
+  renderCatalog();
+  if (focusId) $(`[data-move="${CSS.escape(focusId)}"]`)?.focus();
+  clearTimeout(orderSaveTimer);
+  orderSaveTimer = setTimeout(saveCatalogOrder, 700);
+}
+
+async function saveCatalogOrder() {
+  const previous = orderBeforeMoves;
+  orderBeforeMoves = null;
+  try {
+    await adminApi("/api/admin/catalog/bulk", { method: "POST", body: { order: catalog.map((i) => i.id) } });
+    toast("Store order saved.", { action: previous ? { label: "Undo", onClick: () => commitOrder(previous) } : null });
+  } catch (error) {
+    toast(`The new order wasn't saved: ${error.message}`, { tone: "error" });
+    ({ items: catalog } = await adminApi("/api/admin/catalog"));
+    renderCatalog();
+  }
 }
 
 /** Up or down one place among the items shown in its category. */
@@ -1620,6 +1654,27 @@ function renderCatalogBulkBar() {
       bulkCountNode,
       bulkSaveButton,
       el("button", { type: "button", class: "btn btn-sm btn-secondary", text: "Done", onclick: () => setBulkMode(null) })),
+    bulkMode === "set"
+      ? el("div", { class: "bulk-sorted" },
+          el("button", {
+            type: "button",
+            class: "btn btn-sm btn-secondary",
+            text: "Set all shown to 0",
+            onclick: () => {
+              let count = 0;
+              for (const item of visibleCatalog()) {
+                for (const variant of item.variants) {
+                  if (!Number.isInteger(variant.stock)) continue;
+                  stockEdits.set(stockKey(item, variant), "0");
+                  count += 1;
+                }
+              }
+              renderCatalog();
+              toast(`${plural(count, "stock level")} set to 0. Check them, then save.`);
+            },
+          }),
+          el("span", { class: "muted", text: "Items that aren't tracked stay that way." }))
+      : null,
     bulkMode === "all" && bulkSort
       ? el("div", { class: "bulk-sorted" },
           el("span", { text: `Sorted by ${bulkSort.key.replace(" ($)", "")}, ${bulkSort.dir === "asc" ? "A→Z / low→high" : "Z→A / high→low"}.` }),
@@ -1778,7 +1833,7 @@ function moveTools(item) {
       ondragend: (event) => {
         dragId = null;
         event.target.closest("tr")?.classList.remove("dragging");
-        $$(".bulk-table .drop-before, .bulk-table .drop-after").forEach((r) => r.classList.remove("drop-before", "drop-after"));
+        $$(".drop-before, .drop-after").forEach((r) => r.classList.remove("drop-before", "drop-after"));
       },
     }),
     el("button", { type: "button", class: "move-btn", text: "▼", disabled: sorted, "aria-label": `Move ${item.name} down`, onclick: () => nudgeItem(item, 1) })
@@ -2412,21 +2467,25 @@ function openItem(item) {
 
   const category = el("select", { id: "item-category", name: "category" }, options(CATEGORIES, { selected: draft.category }));
 
-  // A new item's SKU is made from its name and category as they're typed,
-  // until someone types their own. An existing item keeps its SKU.
+  // A new item's SKU is the brand's and category's first three letters and
+  // the next number (JFH-APP-014), following the brand and category as they
+  // are chosen, until someone types their own. An existing item keeps its SKU.
   const nameInput = el("input", { id: "item-name", name: "name", type: "text", maxlength: "120", value: draft.name, autofocus: true });
-  const skuInput = el("input", { id: "item-sku", name: "sku", type: "text", maxlength: "40", value: draft.sku, placeholder: "Made from the name" });
+  const skuInput = el("input", { id: "item-sku", name: "sku", type: "text", maxlength: "40", value: draft.sku, placeholder: "Brand-category-number" });
   const skuField = field("SKU", skuInput, { span: 2 });
   let skuTouched = editing;
   function refreshSku() {
     if (skuTouched) return;
-    skuInput.value = nameInput.value.trim() ? generateSku(nameInput.value, category.value, catalog.map((i) => i.sku)) : "";
+    const brand = form.elements.namedItem("brand")?.value || draft.brand;
+    skuInput.value = generateSku(brand, category.value, catalog.map((i) => i.sku));
   }
   skuInput.addEventListener("input", () => {
     skuTouched = skuInput.value.trim() !== "";
   });
-  nameInput.addEventListener("input", refreshSku);
-  category.addEventListener("change", refreshSku);
+  form.addEventListener("change", (event) => {
+    if (event.target.name === "brand" || event.target.name === "category") refreshSku();
+  });
+  if (!editing) skuInput.value = generateSku(draft.brand, draft.category, catalog.map((i) => i.sku));
 
   // Suggested min and max per order follow the cost (and category) as they
   // are typed. A new item takes the suggestions until someone sets its own.

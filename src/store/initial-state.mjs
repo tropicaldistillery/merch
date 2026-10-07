@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { CATEGORIES_VERSION, SEED_CATALOG, SEED_PHOTOS_VERSION } from "../catalog.mjs";
+import { CATEGORIES_VERSION, SEED_CATALOG, SEED_PHOTOS_VERSION, SKU_FORMAT_VERSION } from "../catalog.mjs";
 
 export const STATE_VERSION = 1;
 
@@ -17,6 +17,9 @@ export function initialState() {
       sessionSecret: randomBytes(32).toString("base64url"),
       seedPhotos: SEED_PHOTOS_VERSION,
       categories: CATEGORIES_VERSION,
+      skuFormat: SKU_FORMAT_VERSION,
+      // a new store starts with the starter stock, not the 7 Oct 2026 reset
+      stockCleared: 1,
     },
     catalog: structuredClone(SEED_CATALOG),
     orders: [],

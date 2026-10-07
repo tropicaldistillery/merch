@@ -30,6 +30,8 @@ import {
   applySeedSuppliers,
   applySupplierDefaults,
   applySeedTextFixes,
+  applySkuFormat,
+  applyStockCleared,
   needsAddedItems,
   needsCategoryMoves,
   needsColors,
@@ -39,6 +41,8 @@ import {
   needsSeedSuppliers,
   needsSupplierDefaults,
   needsSeedTextFixes,
+  needsSkuFormat,
+  needsStockCleared,
   normalizeItem,
   publicItem,
   bulkEditCatalog,
@@ -276,6 +280,17 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   if (needsCategoryMoves(initial)) {
     const moved = await store.mutate((db) => applyCategoryMoves(db));
     console.log(`[catalog] moved ${moved} item(s) into the new categories`);
+    initial = await store.read();
+  }
+  // After the category moves, as the SKU says the category.
+  if (needsSkuFormat(initial)) {
+    const changed = await store.mutate((db) => applySkuFormat(db));
+    console.log(`[catalog] renumbered ${changed} SKU(s) as brand-category-number, e.g. JFH-APP-001`);
+    initial = await store.read();
+  }
+  if (needsStockCleared(initial)) {
+    const cleared = await store.mutate((db) => applyStockCleared(db));
+    console.log(`[catalog] set ${cleared} stock level(s) to 0 (items not tracked stay untracked)`);
     initial = await store.read();
   }
   if (needsMinimums(initial)) {

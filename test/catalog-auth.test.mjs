@@ -27,12 +27,16 @@ import {
   needsSeedSuppliers,
   needsSupplierDefaults,
   needsSeedTextFixes,
+  needsSkuFormat,
+  applySkuFormat,
+  needsStockCleared,
+  applyStockCleared,
   normalizeItem,
   publicItem,
   bulkEditCatalog,
   updateStock,
 } from "../src/catalog.mjs";
-import { CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, generateSku, imageFor, itemImages, quantityRuleText } from "../public/assets/shared.js";
+import { CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, generateSku, imageFor, itemImages, quantityRuleText, skuPrefix } from "../public/assets/shared.js";
 import { initialState } from "../src/store/initial-state.mjs";
 import { ValidationError } from "../src/validation.mjs";
 
@@ -80,7 +84,7 @@ describe("catalog items", () => {
 
   it("refuses a duplicate SKU, a bad cost and bad stock", () => {
     const errors = errorsOf(() =>
-      normalizeItem({ ...VALID, sku: "TD-APP-001", costCents: -5, variants: [{ label: "", stock: "2.5" }] }, { catalog: SEED_CATALOG })
+      normalizeItem({ ...VALID, sku: SEED_CATALOG[0].sku, costCents: -5, variants: [{ label: "", stock: "2.5" }] }, { catalog: SEED_CATALOG })
     );
     assert.ok(errors.sku);
     assert.ok(errors.costCents);
@@ -259,19 +263,43 @@ describe("order increments", () => {
 });
 
 describe("automatic SKUs", () => {
-  it("builds a readable SKU from the category and the name's key words", () => {
-    assert.equal(generateSku("J.F. Haden's Throw Pillow", "VIP"), "VIP-THROW-PILLOW");
-    assert.equal(generateSku("Twin P Whiskey Barrel Head Sign", "VIP"), "VIP-BARREL-HEAD-SIGN");
-    assert.equal(generateSku("6 ft Table Throw", "Sampling & Events"), "EVT-6FT-TABLE-THROW");
-    assert.equal(generateSku("Mango Koozie", "Giveaways", ["GIV-MANGO-KOOZIE", "GIV-MANGO-KOOZIE-2"]), "GIV-MANGO-KOOZIE-3");
-    assert.equal(generateSku("J.F. Haden's", "Print"), "PRT-JF-HADENS", "falls back to the brand words");
+  it("is the brand's and category's first three letters and the next number", () => {
+    assert.equal(skuPrefix("jf-hadens", "Apparel"), "JFH-APP");
+    assert.equal(skuPrefix("twin-p", "Bar Tools"), "TWI-BAR");
+    assert.equal(skuPrefix("tropical-distillery", "Sampling & Events"), "TRO-SAM");
+    assert.equal(generateSku("jf-hadens", "Giveaways"), "JFH-GIV-001");
+    // after the highest number with the same start, so a deleted item's isn't reused
+    assert.equal(generateSku("jf-hadens", "Giveaways", ["JFH-GIV-001", "jfh-giv-007", "JFH-APP-020", "TD-GIV-009"]), "JFH-GIV-008");
   });
 
   it("fills a blank SKU on a new item and keeps an existing item's", () => {
-    const made = normalizeItem({ ...VALID, sku: "" }, { catalog: [{ id: "x", sku: "GIV-MANGO-KOOZIE" }] });
-    assert.equal(made.sku, "GIV-MANGO-KOOZIE-2");
+    const made = normalizeItem({ ...VALID, sku: "" }, { catalog: [{ id: "x", sku: "JFH-GIV-004" }] });
+    assert.equal(made.sku, "JFH-GIV-005");
     const kept = normalizeItem({ ...VALID, sku: "" }, { catalog: [made], existing: made });
-    assert.equal(kept.sku, "GIV-MANGO-KOOZIE-2");
+    assert.equal(kept.sku, "JFH-GIV-005");
+  });
+
+  it("numbers the starter catalog in the store's order", () => {
+    const sku = (id) => SEED_CATALOG.find((i) => i.id === id).sku;
+    assert.equal(sku("jfh-logo-tee"), "JFH-APP-001");
+    assert.equal(sku("td-team-polo"), "TRO-APP-001");
+    assert.equal(sku("twinp-trucker"), "TWI-APP-001");
+    assert.ok(SEED_CATALOG.every((i) => /^[A-Z]{3}-[A-Z]{3}-\d{3}$/.test(i.sku)), "every SKU in the new format");
+  });
+
+  it("renumbers an existing store's SKUs once, in store order", () => {
+    const catalog = structuredClone(SEED_CATALOG).map((item, i) => ({ ...item, sku: `TD-OLD-${i}` }));
+    catalog.push({ ...structuredClone(SEED_CATALOG[0]), id: "custom-tee", name: "Custom Tee", sku: "MY-OWN" });
+    const db = { meta: { skuFormat: 1 }, catalog };
+    assert.equal(needsSkuFormat(db), true);
+    assert.equal(applySkuFormat(db), catalog.length);
+    const sku = (id) => db.catalog.find((i) => i.id === id).sku;
+    assert.equal(sku("jfh-logo-tee"), "JFH-APP-001");
+    const lastTee = db.catalog.filter((i) => i.brand === "jf-hadens" && i.category === "Apparel").length;
+    assert.equal(sku("custom-tee"), `JFH-APP-${String(lastTee).padStart(3, "0")}`, "an admin's own item is numbered too");
+    assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
+    assert.equal(needsSkuFormat(db), false);
+    assert.equal(needsSkuFormat(initialState()), false);
   });
 });
 
@@ -396,10 +424,11 @@ describe("starter items added to existing stores", () => {
 
   it("makes a new SKU if its old one has been taken", () => {
     const db = without();
-    db.catalog.find((i) => i.id === "jfh-cap").sku = "TD-APP-006";
+    const poloSku = SEED_CATALOG.find((i) => i.id === "jfh-polo").sku;
+    db.catalog.find((i) => i.id === "jfh-cap").sku = poloSku;
     const jfh = applyAddedItems(db).find((i) => i.id === "jfh-polo");
-    assert.notEqual(jfh.sku, "TD-APP-006");
-    assert.match(jfh.sku, /^APP-/);
+    assert.notEqual(jfh.sku, poloSku);
+    assert.match(jfh.sku, /^JFH-APP-\d{3}$/);
     assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
   });
 
@@ -547,13 +576,14 @@ describe("starter items added to existing stores", () => {
     assert.equal(box.unit, "Case of 6 × 750 ml");
     assert.equal(box.costCents, 6 * bottle.costCents);
     assert.equal(box.brand, "twin-p");
-    assert.deepEqual(SPIRIT_IDS.map((id) => db.catalog.find((i) => i.id === id).sku), Array.from({ length: 14 }, (_, i) => `TD-EVT-${String(5 + i).padStart(3, "0")}`));
+    const expected = [...Array.from({ length: 12 }, (_, i) => `JFH-SAM-${String(i + 1).padStart(3, "0")}`), "TWI-SAM-001", "TWI-SAM-002"];
+    assert.deepEqual(SPIRIT_IDS.map((id) => db.catalog.find((i) => i.id === id).sku), expected);
     const booklet = db.catalog.find((i) => i.id === "td-booklet");
     assert.equal(booklet.variants[0].stock, null, "printed to order");
     assert.equal(booklet.supplier.company, "Ten 10 Design LLC");
   });
 
-  it("replaces the 50 ml samples with the bottles and cases, and gives them their SKUs", () => {
+  it("replaces the 50 ml samples with the bottles and cases", () => {
     const sample = (flavor, product, sku) => ({ ...structuredClone(SEED_CATALOG.find((i) => i.id === "jfh-citrus-bottle")), id: flavor, name: `${product} Sample, 50 ml`, sku });
     const catalog = structuredClone(SEED_CATALOG).filter((i) => !SPIRIT_IDS.includes(i.id));
     const at = catalog.findIndex((i) => i.id === "td-sample-cups") + 1;
@@ -567,8 +597,8 @@ describe("starter items added to existing stores", () => {
     const added = applyAddedItems(db);
     assert.deepEqual(added.removed.map((i) => i.id), ["jfh-sample-citrus", "twinp-sample"]);
     assert.ok(db.catalog.some((i) => i.id === "jfh-sample-mango"));
-    assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, "TD-EVT-005", "took over the sample's SKU");
-    assert.notEqual(db.catalog.find((i) => i.id === "jfh-key-lime-pie-bottle").sku, "TD-EVT-009", "the kept sample still has that SKU");
+    assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, "JFH-SAM-001");
+    assert.equal(db.catalog.find((i) => i.id === "jfh-sample-mango").sku, "TD-EVT-009", "the kept sample keeps its SKU");
     assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length, "SKUs stay unique");
   });
 
@@ -867,5 +897,20 @@ describe("bulk catalog edits", () => {
     const twice = fieldErrors(() => bulkEditCatalog(db, { items: [{ id: "jfh-cap", patch: { sku: "TD-NEW-1" } }, { id: "jfh-bar-mat", patch: { sku: "TD-NEW-1" } }] }));
     assert.ok(twice["jfh-cap.sku"] && twice["jfh-bar-mat.sku"]);
     assert.equal(find(db, "jfh-cap").sku, "TD-HAT-001", "nothing saved");
+  });
+});
+
+describe("the one-off stock reset", () => {
+  it("sets every tracked stock level to 0 once, and leaves untracked items alone", () => {
+    const db = initialState();
+    delete db.meta.stockCleared;
+    const tracked = db.catalog.flatMap((i) => i.variants).filter((v) => Number.isInteger(v.stock) && v.stock > 0).length;
+    assert.ok(tracked > 0);
+    assert.equal(needsStockCleared(db), true);
+    assert.equal(applyStockCleared(db), tracked);
+    assert.ok(db.catalog.flatMap((i) => i.variants).every((v) => v.stock === 0 || v.stock === null));
+    assert.equal(db.catalog.find((i) => i.id === "td-sample-cups").variants[0].stock, null, "made to order stays untracked");
+    assert.equal(needsStockCleared(db), false);
+    assert.equal(needsStockCleared(initialState()), false, "a new store keeps its starter stock");
   });
 });

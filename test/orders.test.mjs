@@ -217,7 +217,7 @@ describe("placing an order", () => {
     db.catalog.find((i) => i.id === "jfh-logo-tee").costCents = 9999;
     assert.equal(placed.lines[0].unitCostCents, 1150);
     assert.equal(placed.lines[0].variantLabel, "M");
-    assert.equal(placed.lines[0].sku, "TD-APP-001");
+    assert.equal(placed.lines[0].sku, "JFH-APP-001");
   });
 
   it("needs one of the item's colors when it comes in colors", () => {

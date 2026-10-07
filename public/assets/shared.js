@@ -51,54 +51,30 @@ export function optionText(line) {
   return [line.color, line.variantLabel].filter(Boolean).join(" · ");
 }
 
-// Short codes that start each SKU.
-export const CATEGORY_CODES = {
-  Apparel: "APP",
-  Giveaways: "GIV",
-  Print: "PRT",
-  "Bar Tools": "BAR",
-  Samples: "SMP",
-  "Sampling & Events": "EVT",
-  VIP: "VIP",
-};
+/** The first three letters of a name, in capitals: "J.F. Haden's" → JFH. */
+function firstThreeLetters(text) {
+  const letters = String(text ?? "").normalize("NFKD").replace(/[^A-Za-z]/g, "").toUpperCase();
+  return (letters || "ITM").padEnd(3, "X").slice(0, 3);
+}
 
-// Brand names are a separate field, so they don't need to repeat in a SKU.
-const SKU_SKIP = new Set([
-  "J", "F", "JF", "HADEN", "HADENS", "TWIN", "P", "WHISKEY", "TROPICAL", "DISTILLERY", "TD",
-  "A", "AN", "AND", "THE", "OF", "FOR", "WITH", "IN", "ON", "TO",
-]);
+/** The start of every SKU for a brand and category: JFH-APP. */
+export function skuPrefix(brand, category) {
+  return `${firstThreeLetters(labelFor(BRANDS, brand))}-${firstThreeLetters(category)}`;
+}
 
 /**
- * A readable SKU from an item's category and name, e.g. "J.F. Haden's Throw
- * Pillow" in VIP → VIP-THROW-PILLOW. A number is added if it's taken.
+ * The next SKU for a brand and category: the first three letters of each and
+ * a number, like JFH-APP-014. The number follows the highest one already used
+ * with that brand and category, so a deleted item's number isn't reused.
  */
-export function generateSku(name, category, taken = []) {
-  const words = String(name ?? "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .replace(/['’.]/g, "")
-    .split(/[^A-Z0-9]+/)
-    .filter(Boolean);
-  // "6 ft" reads better as 6FT
-  const joined = [];
-  for (let i = 0; i < words.length; i += 1) {
-    if (/^\d+$/.test(words[i]) && words[i + 1] && !/^\d+$/.test(words[i + 1])) {
-      joined.push(words[i] + words[i + 1]);
-      i += 1;
-    } else joined.push(words[i]);
+export function generateSku(brand, category, taken = []) {
+  const prefix = skuPrefix(brand, category);
+  let highest = 0;
+  for (const sku of taken) {
+    const match = /^([A-Z]{3}-[A-Z]{3})-(\d+)$/.exec(String(sku).toUpperCase());
+    if (match && match[1] === prefix) highest = Math.max(highest, Number(match[2]));
   }
-  const key = joined.filter((w) => !SKU_SKIP.has(w));
-  const parts = [CATEGORY_CODES[category] ?? "ITM"];
-  for (const word of (key.length ? key : joined).slice(0, 3)) {
-    if ([...parts, word].join("-").length > 30) break;
-    parts.push(word);
-  }
-  if (parts.length === 1) parts.push("ITEM");
-  const base = parts.join("-");
-  const used = new Set([...taken].map((s) => String(s).toUpperCase()));
-  if (!used.has(base)) return base;
-  for (let n = 2; ; n += 1) if (!used.has(`${base}-${n}`)) return `${base}-${n}`;
+  return `${prefix}-${String(highest + 1).padStart(3, "0")}`;
 }
 
 /** Items in category order, keeping their order within each category. */
