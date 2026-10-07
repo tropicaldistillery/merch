@@ -29,6 +29,7 @@ export const COLOR_OPTIONS = [
   { name: "Forest Green", hex: "#2F4F2F" },
   { name: "Grey", hex: "#82817D" },
   { name: "Carolina Blue", hex: "#6A91D4" },
+  { name: "Khaki", hex: "#B39B6B" },
 ];
 export const MAX_IMAGES = 10;
 

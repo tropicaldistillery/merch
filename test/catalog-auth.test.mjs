@@ -272,7 +272,7 @@ describe("colors and photo galleries", () => {
   it("offers the team polo in the nine standard colors", () => {
     const polo = SEED_CATALOG.find((i) => i.id === "td-team-polo");
     assert.deepEqual(polo.colors, ["White", "Navy", "Burgundy", "Black", "Royal", "Red", "Forest Green", "Grey", "Carolina Blue"]);
-    assert.deepEqual(polo.colors, COLOR_OPTIONS.map((c) => c.name));
+    assert.deepEqual(polo.colors, COLOR_OPTIONS.map((c) => c.name).filter((c) => c !== "Khaki"));
     assert.deepEqual(SEED_CATALOG.find((i) => i.id === "jfh-cap").colors, []);
   });
 
@@ -339,7 +339,7 @@ describe("colors and photo galleries", () => {
     const catalog = structuredClone(SEED_CATALOG).map(({ colors, ...rest }) => rest);
     const db = { meta: {}, catalog };
     assert.equal(needsColors(db), true);
-    assert.equal(applyColors(db), 4);
+    assert.equal(applyColors(db), SEED_CATALOG.filter((i) => i.colors.length).length);
     assert.equal(db.catalog.find((i) => i.id === "jfh-good-spirits-tee").colors.length, 7);
     assert.equal(db.catalog.find((i) => i.id === "td-team-polo").colors.length, 9);
     assert.equal(db.catalog.find((i) => i.id === "jfh-polo").colors.length, 9);
@@ -494,6 +494,24 @@ describe("starter items added to existing stores", () => {
     assert.deepEqual([balm.minPerOrder, balm.maxPerOrder, balm.orderIncrement], [10, 50, 10]);
     assert.equal(balm.image, "/assets/merch/jfh-lip-balm.jpg");
     assert.equal(balm.supplier.company, "Ten 10 Design LLC");
+  });
+
+  it("adds the gradient shirts, the dad hat and the keychains once, each next to its kind", () => {
+    const NEW = ["jfh-gradient-tee", "jfh-gradient-crop", "jfh-dad-hat", "jfh-martini-keychain-color", "jfh-martini-keychain-line"];
+    const db = { meta: { teamPolo: 1, jfhPolo: 1, merchDrop2: 1, martiniTee: 1, proofDrop: 1, sunglassesSplit: 1, lipBalm: 1 }, catalog: structuredClone(SEED_CATALOG).filter((i) => !NEW.includes(i.id)) };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), NEW);
+    const ids = db.catalog.map((i) => i.id);
+    const after = (id) => ids[ids.indexOf(id) + 1];
+    assert.equal(after("jfh-martini-tee"), "jfh-gradient-tee");
+    assert.equal(after("jfh-gradient-tee"), "jfh-gradient-crop");
+    assert.equal(after("jfh-cap"), "jfh-dad-hat");
+    assert.equal(after("jfh-lip-balm"), "jfh-martini-keychain-color");
+    const hat = db.catalog.find((i) => i.id === "jfh-dad-hat");
+    assert.deepEqual(hat.colors, ["Burgundy", "Navy", "Khaki"]);
+    assert.equal(imageFor(hat, "Khaki"), "/assets/merch/jfh-dad-hat-khaki.jpg");
+    const crop = db.catalog.find((i) => i.id === "jfh-gradient-crop");
+    assert.equal(imageFor(crop, "Black"), "/assets/merch/jfh-gradient-crop-black.jpg");
+    assert.equal(crop.variants.length, 6);
   });
 
   it("fills in where to order starter items once, leaving an admin's details alone", () => {

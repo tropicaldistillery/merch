@@ -24,6 +24,9 @@ const SEED_COLORS = {
   "jfh-polo": ALL_COLORS,
   "jfh-good-spirits-tee": ["White", "Navy", "Burgundy", "Black", "Forest Green", "Grey", "Carolina Blue"],
   "jfh-martini-tee": ["White", "Black", "Navy", "Grey", "Carolina Blue"],
+  "jfh-gradient-tee": ["White"],
+  "jfh-gradient-crop": ["White", "Black"],
+  "jfh-dad-hat": ["Burgundy", "Navy", "Khaki"],
 };
 
 // Product photos for the starter items, in public/assets/merch, main photo
@@ -68,6 +71,11 @@ export const SEED_PHOTOS = {
   "jfh-napkin-caddy": one("jfh-napkin-caddy"),
   "jfh-wine-bag": one("jfh-wine-bag"),
   "jfh-lip-balm": one("jfh-lip-balm"),
+  "jfh-gradient-tee": perColor("jfh-gradient-tee", "White"),
+  "jfh-gradient-crop": perColor("jfh-gradient-crop", "White"),
+  "jfh-dad-hat": perColor("jfh-dad-hat", "Burgundy"),
+  "jfh-martini-keychain-color": one("jfh-martini-keychain-color"),
+  "jfh-martini-keychain-line": one("jfh-martini-keychain-line"),
   "jfh-sunglasses-laser": one("jfh-sunglasses-laser"),
   "jfh-sunglasses-vicky": one("jfh-sunglasses-vicky"),
   "jfh-sunglasses-rainbow": one("jfh-sunglasses-rainbow"),
@@ -88,6 +96,11 @@ const SEED_SUPPLIERS = {
   "jfh-beach-towel": { company: TEN10, itemNumber: "BP1518SB sublimated towel, 28 × 56 in, white", notes: "Sales order 1282403; 50 ordered." },
   "jfh-pool-koozie": { notes: "Inflatable stars-and-stripes drink float, 7.87 in." },
   "jfh-lip-balm": { itemNumber: "IBALM, Orange, Vanilla flavor", notes: "SO6664443, WO1267123. Logo printed in black on top." },
+  "jfh-gradient-tee": { itemNumber: "Next Level 6210 tee (60/40 cotton/poly), white", notes: "PO 21165-B, design 32739. Full front, 10 × 2.6 in: black, PMS 674 C pink, 2725 C purple, 311 C blue." },
+  "jfh-gradient-crop": { itemNumber: "1501 long sleeve crop top (52/48 cotton/poly), white and black", notes: "PO 21165-B: design 32739 on white, 32741 on black (white outline and tagline). PMS 674 C, 2725 C, 311 C." },
+  "jfh-dad-hat": { itemNumber: "Washed (pigment-dyed) dad cap", notes: "Varsity J.F. HADEN'S across the front: navy with a light blue outline on burgundy, brown with an orange outline on navy, light blue with a navy outline on khaki." },
+  "jfh-martini-keychain-color": { itemNumber: "Acrylic keychain, espresso martini glass die cut", notes: "Full-colour hand-drawn version, logo in orange." },
+  "jfh-martini-keychain-line": { itemNumber: "Acrylic keychain, espresso martini glass die cut", notes: "Black-and-white line-art version, logo in orange." },
   "jfh-sunglasses-laser": { itemNumber: "Laser sunglasses, black, dark UV400 lenses", notes: "Proof 44400: logo screen printed white on the left arm (1.16 × 0.3 in) and the left lens corner (0.55 × 1.14 in)." },
   "jfh-sunglasses-vicky": { itemNumber: "Vicky sunglasses, stock green, dark UV400 lenses", notes: "Proof 44400: logo screen printed white on the left arm (0.72 × 0.18 in)." },
   "jfh-sunglasses-rainbow": { itemNumber: "Retro Pride Rainbow sunglasses, dark UV400 lenses", notes: "Proof 44400: logo UV printed white on the left arm (1.45 × 0.37 in)." },
@@ -153,6 +166,24 @@ export const SEED_CATALOG = [
     brand: "jf-hadens", category: "Apparel", tone: "mango", art: "tee", unit: "Each",
     description: "A hand-drawn martini glass made of all six J.F. Haden's flavors (mango, espresso, key lime, citrus, lychee and orange) with the J.F. Haden's logo, printed on the front.",
     costCents: 1400, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
+  },
+  {
+    id: "jfh-gradient-tee", sku: "TD-APP-011", name: "J.F. Haden's Gradient Logo Tee",
+    brand: "jf-hadens", category: "Apparel", tone: "lychee", art: "tee", unit: "Each",
+    description: "Soft Next Level tee in white with the J.F. Haden's logo across the chest in a blue-to-pink gradient.",
+    costCents: 1300, maxPerOrder: 6, variants: sized([6, 12, 12, 8, 4, 2]),
+  },
+  {
+    id: "jfh-gradient-crop", sku: "TD-APP-012", name: "J.F. Haden's Gradient Logo Long Sleeve Crop Top",
+    brand: "jf-hadens", category: "Apparel", tone: "lychee", art: "tee", unit: "Each",
+    description: "Fitted long sleeve crop top with the J.F. Haden's gradient logo on the chest. White, or black with the logo outlined in white.",
+    costCents: 1500, maxPerOrder: 6, variants: sized([6, 10, 10, 6, 3, 1]),
+  },
+  {
+    id: "jfh-dad-hat", sku: "TD-APP-013", name: "J.F. Haden's Washed Dad Hat",
+    brand: "jf-hadens", category: "Apparel", tone: "mango", art: "cap", unit: "Each",
+    description: "Soft washed-cotton dad hat with J.F. HADEN'S in varsity letters across the front. Adjustable strap.",
+    costCents: 1400, maxPerOrder: 4, variants: single(36),
   },
   {
     id: "jfh-cap", sku: "TD-APP-003", name: "J.F. Haden's Embroidered Cap",
@@ -374,6 +405,18 @@ export const SEED_CATALOG = [
     costCents: 150, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
   },
   {
+    id: "jfh-martini-keychain-color", sku: "TD-GIV-019", name: "J.F. Haden's Espresso Martini Keychain",
+    brand: "jf-hadens", category: "Giveaways", tone: "espresso", art: "kit", unit: "Each",
+    description: "Acrylic keychain cut to the shape of a hand-drawn espresso martini, in full colour with the J.F. Haden's logo. Ordered in tens.",
+    costCents: 180, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
+  },
+  {
+    id: "jfh-martini-keychain-line", sku: "TD-GIV-020", name: "J.F. Haden's Espresso Martini Keychain, Black & White",
+    brand: "jf-hadens", category: "Giveaways", tone: "espresso", art: "kit", unit: "Each",
+    description: "Acrylic keychain cut to the shape of an espresso martini, in black-and-white line art with the J.F. Haden's logo in orange. Ordered in tens.",
+    costCents: 180, minPerOrder: 10, maxPerOrder: 50, orderIncrement: 10, variants: single(200),
+  },
+  {
     id: "jfh-drake-tumbler", sku: "TD-GIV-009", name: "J.F. Haden's Drake Tumbler",
     brand: "jf-hadens", category: "Giveaways", tone: "palm", art: "tumbler", unit: "16 oz",
     description: "16 oz vacuum-insulated tumbler in Midnight Blue with a slide lid. J.F. Haden's logo laser-engraved.",
@@ -558,6 +601,11 @@ const ADDED_ITEMS = [
   { flag: "sunglassesSplit", id: "jfh-sunglasses-andy-green", after: "jfh-sunglasses-rainbow" },
   { flag: "sunglassesSplit", id: "jfh-sunglasses-andy-black", after: "jfh-sunglasses-andy-green" },
   { flag: "lipBalm", id: "jfh-lip-balm", after: ["jfh-pool-koozie", "jfh-koozies"] },
+  { flag: "proofDrop3", id: "jfh-gradient-tee", after: ["jfh-martini-tee", "jfh-good-spirits-tee"] },
+  { flag: "proofDrop3", id: "jfh-gradient-crop", after: "jfh-gradient-tee" },
+  { flag: "proofDrop3", id: "jfh-dad-hat", after: "jfh-cap" },
+  { flag: "proofDrop3", id: "jfh-martini-keychain-color", after: ["jfh-lip-balm", "jfh-pool-koozie"] },
+  { flag: "proofDrop3", id: "jfh-martini-keychain-line", after: "jfh-martini-keychain-color" },
 ];
 
 // The first version of the sunglasses: one item with the five styles as
@@ -661,7 +709,7 @@ export function applyPoloColors(db) {
   const changed = [];
   for (const item of db.catalog) {
     if (!/\bpolos?\b/i.test(item.name) || (item.colors ?? []).length) continue;
-    item.colors = COLOR_OPTIONS.map((c) => c.name);
+    item.colors = [...ALL_COLORS];
     changed.push(item.name);
   }
   db.meta.poloColors = 1;
