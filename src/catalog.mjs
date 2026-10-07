@@ -29,9 +29,11 @@ const SEED_COLORS = {
   "jfh-dad-hat": ["Burgundy", "Navy", "Khaki"],
 };
 
-// The 50 ml sample bottles: each J.F. Haden's flavour and Twin P Whiskey is
-// its own item, with a photo of that bottle.
-const SAMPLES = [
+// The spirits themselves, for tastings, events and accounts: every J.F.
+// Haden's flavour and Twin P Whiskey as a 750 ml bottle and as a case.
+const CASE_SIZE = 6;
+const BOTTLE_COST_CENTS = 1500; // a placeholder, like every starter cost
+const PRODUCTS = [
   ["citrus", "Citrus Liqueur", "citrus", "Made with 100% Florida citrus."],
   ["espresso", "Espresso Liqueur", "espresso", "Made with 100% real espresso."],
   ["key-lime-pie", "Key Lime Pie Liqueur", "lime", "Made with 100% real key lime."],
@@ -39,11 +41,19 @@ const SAMPLES = [
   ["mango", "Mango Liqueur", "mango", "Made with 100% real mango."],
   ["orange", "Orange Liqueur", "mango", "Made with 100% Florida oranges."],
 ]
-  .map(([flavor, liqueur, tone, made]) => ({
-    id: `jfh-sample-${flavor}`, product: `J.F. Haden's ${liqueur}`, brand: "jf-hadens", tone, made, costCents: 300,
-  }))
-  .concat({ id: "twinp-sample", product: "Twin P Whiskey", brand: "twin-p", tone: "oak", made: "", costCents: 400 })
-  .map((sample, i) => ({ ...sample, sku: `TD-EVT-${String(5 + i).padStart(3, "0")}` }));
+  .map(([flavor, liqueur, tone, made]) => ({ key: `jfh-${flavor}`, flavor, product: `J.F. Haden's ${liqueur}`, brand: "jf-hadens", tone, made }))
+  .concat({ key: "twinp", flavor: "", product: "Twin P Whiskey", brand: "twin-p", tone: "oak", made: "Smooth and full-bodied, with notes of oak, vanilla and warm spice." });
+const SPIRITS = PRODUCTS.flatMap((p) => [
+  { ...p, id: `${p.key}-bottle`, kind: "bottle" },
+  { ...p, id: `${p.key}-case`, kind: "case" },
+]).map((spirit, i) => ({ ...spirit, sku: `TD-EVT-${String(5 + i).padStart(3, "0")}` }));
+
+// The 50 ml samples these replaced, the day they went in. They are removed
+// from a store that has them, unless an admin has renamed them.
+const RETIRED_SAMPLES = PRODUCTS.map(({ flavor, product }) => ({
+  id: flavor ? `jfh-sample-${flavor}` : "twinp-sample",
+  name: `${product} Sample, 50 ml`,
+}));
 
 // Product photos for the starter items, in public/assets/merch, main photo
 // first: one named after the item, numbered ones for a gallery, or one per
@@ -97,7 +107,7 @@ export const SEED_PHOTOS = {
   "jfh-sunglasses-rainbow": one("jfh-sunglasses-rainbow"),
   "jfh-sunglasses-andy-green": one("jfh-sunglasses-andy-green"),
   "jfh-sunglasses-andy-black": one("jfh-sunglasses-andy-black"),
-  ...Object.fromEntries(SAMPLES.map(({ id }) => [id, one(id)])),
+  ...Object.fromEntries(SPIRITS.map(({ id }) => [id, one(id)])),
 };
 
 // Where an admin orders each item from. Merch comes through Ten 10 Design
@@ -108,11 +118,14 @@ export const SUPPLIER_FIELDS = { company: 120, contact: 120, email: 160, phone: 
 export const DEFAULT_SUPPLIER = "Ten 10 Design LLC";
 const emptySupplier = () => Object.fromEntries(Object.keys(SUPPLIER_FIELDS).map((k) => [k, ""]));
 const TEN10 = DEFAULT_SUPPLIER;
-const SAMPLE_SHIPPING =
-  "Pulled from distillery stock. Spirits can't go by USPS: hand-deliver, or ship with a carrier the distillery has an alcohol shipping agreement with, marked as samples.";
+const SPIRITS_SHIPPING =
+  "Pulled from distillery stock. Spirits can't go by USPS: hand-deliver, or ship with a carrier the distillery has an alcohol shipping agreement with.";
 const SEED_SUPPLIERS = {
   ...Object.fromEntries(
-    SAMPLES.map(({ id, product }) => [id, { company: "Tropical Distillery (own stock)", itemNumber: `${product}, 50 ml`, notes: SAMPLE_SHIPPING }])
+    SPIRITS.map(({ id, product, kind }) => [
+      id,
+      { company: "Tropical Distillery (own stock)", itemNumber: kind === "case" ? `${product}, case of ${CASE_SIZE} × 750 ml` : `${product}, 750 ml`, notes: SPIRITS_SHIPPING },
+    ])
   ),
   "td-booklet": { itemNumber: "Saddle-stitched booklet" },
   "jfh-tote-bag": { itemNumber: "337572 Full Color Sublimated Canvas Everyday Bag with Zipper Closure", notes: "Top zipper in white; base band PMS 4260 C; logo front and back." },
@@ -318,14 +331,22 @@ export const SEED_CATALOG = [
     description: "Clear 1 oz plastic sampling cups. Bought to order, so never out of stock.",
     costCents: 1100, maxPerOrder: 8, variants: single(null),
   },
-  // 50 ml samples, one item per bottle (see SAMPLES)
-  ...SAMPLES.map(({ id, sku, product, brand, tone, made, costCents }) => ({
-    id, sku, name: `${product} Sample, 50 ml`,
-    brand, category: "Sampling & Events", tone, art: "bottle", unit: "50 ml bottle",
-    description: `50 ml trade sample of ${product} for account visits and tastings.${made ? ` ${made}` : ""}`,
-    // Samples go out a bottle or two at a time, so no minimum despite the low cost.
-    costCents, minPerOrder: 1, maxPerOrder: 12, variants: single(48),
-  })),
+  // 750 ml bottles and cases (see SPIRITS)
+  ...SPIRITS.map(({ id, sku, product, brand, tone, made, kind }) =>
+    kind === "case"
+      ? {
+          id, sku, name: `${product}, Case of ${CASE_SIZE}`,
+          brand, category: "Sampling & Events", tone, art: "bottle", unit: `Case of ${CASE_SIZE} × 750 ml`,
+          description: `A case of ${CASE_SIZE} bottles (750 ml each) of ${product}, for events, activations and accounts. ${made}`,
+          costCents: BOTTLE_COST_CENTS * CASE_SIZE, minPerOrder: 1, maxPerOrder: 2, variants: single(10),
+        }
+      : {
+          id, sku, name: `${product}, 750 ml`,
+          brand, category: "Sampling & Events", tone, art: "bottle", unit: "750 ml bottle",
+          description: `A 750 ml bottle of ${product} for account visits, tastings and events. ${made}`,
+          costCents: BOTTLE_COST_CENTS, minPerOrder: 1, maxPerOrder: 6, variants: single(24),
+        }
+  ),
   {
     id: "td-table-throw", sku: "TD-EVT-003", name: "6 ft Table Throw",
     brand: "tropical-distillery", category: "Sampling & Events", tone: "palm", art: "table-throw", unit: "Each",
@@ -643,8 +664,8 @@ const ADDED_ITEMS = [
   { flag: "proofDrop3", id: "jfh-dad-hat", after: "jfh-cap" },
   { flag: "proofDrop3", id: "jfh-martini-keychain-color", after: ["jfh-lip-balm", "jfh-pool-koozie"] },
   { flag: "proofDrop3", id: "jfh-martini-keychain-line", after: "jfh-martini-keychain-color" },
-  ...SAMPLES.map(({ id }, i) => ({ flag: "samplesDrop", id, after: i ? SAMPLES[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
   { flag: "samplesDrop", id: "td-booklet", after: ["td-sell-sheets", "jfh-recipe-cards"] },
+  ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 
 // The first version of the sunglasses: one item with the five styles as
@@ -664,6 +685,17 @@ export function needsAddedItems(db) {
 export function applyAddedItems(db) {
   const pending = new Set(ADDED_ITEMS.filter(({ flag }) => !db.meta[flag]).map(({ flag }) => flag));
   const added = [];
+  Object.defineProperty(added, "removed", { value: [], enumerable: false });
+  // First, so the bottles and cases can take over the samples' SKUs.
+  if (pending.has("spiritsDrop")) {
+    for (const retired of RETIRED_SAMPLES) {
+      const old = db.catalog.find((i) => i.id === retired.id);
+      if (old && old.name === retired.name) {
+        db.catalog.splice(db.catalog.indexOf(old), 1);
+        added.removed.push(old);
+      }
+    }
+  }
   for (const { flag, id, after } of ADDED_ITEMS) {
     if (!pending.has(flag)) continue;
     const seed = SEED_CATALOG.find((i) => i.id === id);
@@ -677,7 +709,6 @@ export function applyAddedItems(db) {
     db.catalog.splice(at >= 0 ? at + 1 : db.catalog.length, 0, item);
     added.push(item);
   }
-  Object.defineProperty(added, "removed", { value: [], enumerable: false });
   if (pending.has("sunglassesSplit")) {
     const old = db.catalog.find((i) => i.id === COMBINED_SUNGLASSES.id);
     const untouched = old && old.name === COMBINED_SUNGLASSES.name &&
@@ -849,6 +880,70 @@ function parseStock(value) {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isInteger(n) && n >= 0 && n <= 100000 ? n : NaN;
+}
+
+export const MAX_STOCK_CHANGES = 2000;
+
+/**
+ * Many stock levels at once, from the console's stock editor. Each change is
+ * for one option of one item, either
+ *   { itemId, variantId, from, to }  set it to `to`, where `from` is what the
+ *                                    admin saw; or
+ *   { itemId, variantId, add }       a delivery of `add` units.
+ * Orders placed while the admin was typing have already taken units, so a
+ * tracked level moves by `to - from` rather than being overwritten; those
+ * are reported in `adjusted`. Setting an untracked option starts tracking
+ * it. Any problem changes nothing.
+ */
+export function updateStock(db, input) {
+  const changes = Array.isArray(input?.changes) ? input.changes : [];
+  if (!changes.length) throw new ValidationError("Change at least one stock level.", {});
+  if (changes.length > MAX_STOCK_CHANGES) {
+    throw new ValidationError(`Change at most ${MAX_STOCK_CHANGES} stock levels at a time.`, {});
+  }
+
+  const errors = {};
+  const plan = [];
+  const seen = new Set();
+  for (const raw of changes) {
+    const itemId = cleanText(raw?.itemId, 80);
+    const variantId = cleanText(raw?.variantId, 80);
+    const key = `stock.${itemId}.${variantId}`;
+    const item = db.catalog.find((i) => i.id === itemId);
+    const variant = item?.variants.find((v) => v.id === variantId);
+    if (!variant) {
+      errors[key] = "This item or option no longer exists. Reload the catalog.";
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    let next;
+    if (raw && "add" in raw) {
+      const add = Number(raw.add);
+      if (!Number.isInteger(add) || add < 1 || add > 100000) errors[key] = "Enter how many arrived, as a whole number.";
+      else if (!Number.isInteger(variant.stock)) errors[key] = "This option isn't tracked. Set its stock instead.";
+      else next = variant.stock + add;
+    } else {
+      const to = parseStock(raw?.to);
+      const from = parseStock(raw?.from);
+      if (to === null || Number.isNaN(to)) errors[key] = "Enter a whole number from 0 to 100,000.";
+      else if (Number.isInteger(variant.stock) && Number.isInteger(from)) next = Math.max(0, variant.stock + to - from);
+      else next = to;
+    }
+    if (next > 100000) errors[key] = "That's more than 100,000.";
+    if (!errors[key]) plan.push({ item, variant, next, wanted: raw && "add" in raw ? next : parseStock(raw.to) });
+  }
+  if (Object.keys(errors).length) throw new ValidationError("Some stock levels need attention.", errors);
+
+  const items = new Map();
+  const adjusted = [];
+  for (const { item, variant, next, wanted } of plan) {
+    variant.stock = next;
+    items.set(item.id, item);
+    if (next !== wanted) adjusted.push({ itemId: item.id, name: item.name, option: variant.label, stock: next });
+  }
+  return { items: [...items.values()], changed: plan.length, adjusted };
 }
 
 // Images are an uploaded photo, one of our own files, or (from before

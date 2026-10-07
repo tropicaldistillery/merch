@@ -41,6 +41,7 @@ import {
   needsSeedTextFixes,
   normalizeItem,
   publicItem,
+  updateStock,
 } from "./catalog.mjs";
 import { IMAGE_PATH_RE, MAX_IMAGE_BYTES, acceptProductImage } from "./images.mjs";
 import {
@@ -658,6 +659,13 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
         return next;
       });
       sendJson(res, 201, { ok: true, item });
+    }],
+
+    // Many stock levels at once, from the stock editor.
+    ["POST", "/api/admin/catalog/stock", "admin", async ({ req, res }) => {
+      const body = await readJson(req);
+      const result = await store.mutate((db) => updateStock(db, body));
+      sendJson(res, 200, { ok: true, ...result });
     }],
 
     ["PUT", /^\/api\/admin\/catalog\/([\w-]+)$/, "admin", async ({ req, res, params }) => {

@@ -118,10 +118,13 @@
           <label class="sr-only" for="catalog-category">Category</label>
           <select id="catalog-category"></select>
           <label class="check"><input id="show-hidden" type="checkbox"> Show hidden items</label>
+          <button type="button" class="btn btn-secondary" id="edit-stock">Edit stock</button>
           <button type="button" class="btn" id="add-item">Add item</button>
         </div>
         <p class="result-count" id="catalog-count" aria-live="polite"></p>
-        <div class="card table-wrap"><table class="table" id="catalog-table"></table></div>
+        <div class="bulk-bar stock-bar" id="stock-bar" role="region" aria-label="Stock editor" hidden></div>
+        <div class="card table-wrap" id="catalog-list"><table class="table" id="catalog-table"></table></div>
+        <form class="card table-wrap" id="stock-editor" novalidate hidden></form>
         <p class="fine panel-note">“Available” is what's left to promise: submitted and approved orders already count against it, and cancelling or declining an order puts its units back.</p>
       </section>
 

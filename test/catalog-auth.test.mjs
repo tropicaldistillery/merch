@@ -29,6 +29,7 @@ import {
   needsSeedTextFixes,
   normalizeItem,
   publicItem,
+  updateStock,
 } from "../src/catalog.mjs";
 import { CATEGORIES, COLOR_OPTIONS, MAX_IMAGES, generateSku, imageFor, itemImages, quantityRuleText } from "../public/assets/shared.js";
 import { initialState } from "../src/store/initial-state.mjs";
@@ -123,9 +124,9 @@ describe("catalog items", () => {
   });
 
   it("orders every starter item through Ten 10 Design unless it says otherwise", () => {
-    // Sample bottles come from the distillery's own stock.
+    // Bottles and cases come from the distillery's own stock.
     for (const item of SEED_CATALOG) {
-      const own = /^(jfh|twinp)-sample/.test(item.id);
+      const own = /-(bottle|case)$/.test(item.id);
       assert.equal(item.supplier.company, own ? "Tropical Distillery (own stock)" : "Ten 10 Design LLC", item.id);
     }
   });
@@ -518,29 +519,52 @@ describe("starter items added to existing stores", () => {
     assert.equal(crop.variants.length, 6);
   });
 
-  it("adds each sample bottle as its own item, and the booklet, once, next to their kind", () => {
-    const SAMPLE_IDS = ["citrus", "espresso", "key-lime-pie", "lychee", "mango", "orange"].map((f) => `jfh-sample-${f}`).concat("twinp-sample");
-    const NEW = [...SAMPLE_IDS, "td-booklet"];
-    const meta = { teamPolo: 1, jfhPolo: 1, merchDrop2: 1, martiniTee: 1, proofDrop: 1, sunglassesSplit: 1, lipBalm: 1, proofDrop3: 1 };
-    const db = { meta, catalog: structuredClone(SEED_CATALOG).filter((i) => !NEW.includes(i.id)) };
+  const SPIRIT_IDS = ["jfh-citrus", "jfh-espresso", "jfh-key-lime-pie", "jfh-lychee", "jfh-mango", "jfh-orange", "twinp"].flatMap((p) => [`${p}-bottle`, `${p}-case`]);
+  const BEFORE_SPIRITS = { teamPolo: 1, jfhPolo: 1, merchDrop2: 1, martiniTee: 1, proofDrop: 1, sunglassesSplit: 1, lipBalm: 1, proofDrop3: 1 };
+
+  it("adds a 750 ml bottle and a case of every spirit, and the booklet, once, next to their kind", () => {
+    const NEW = ["td-booklet", ...SPIRIT_IDS];
+    const db = { meta: { ...BEFORE_SPIRITS }, catalog: structuredClone(SEED_CATALOG).filter((i) => !NEW.includes(i.id)) };
     assert.deepEqual(applyAddedItems(db).map((i) => i.id), NEW);
     assert.equal(needsAddedItems(db), false);
     const ids = db.catalog.map((i) => i.id);
     const at = ids.indexOf("td-sample-cups");
-    assert.deepEqual(ids.slice(at + 1, at + 8), SAMPLE_IDS, "in a run after the sample cups");
+    assert.deepEqual(ids.slice(at + 1, at + 15), SPIRIT_IDS, "in a run after the sample cups");
     assert.equal(ids[ids.indexOf("td-sell-sheets") + 1], "td-booklet");
 
-    const lychee = db.catalog.find((i) => i.id === "jfh-sample-lychee");
-    assert.equal(lychee.name, "J.F. Haden's Lychee Liqueur Sample, 50 ml");
-    assert.equal(lychee.image, "/assets/merch/jfh-sample-lychee.jpg");
-    assert.equal(lychee.variants.length, 1);
-    assert.equal(lychee.minPerOrder, 1, "a bottle or two at a time");
-    assert.match(lychee.supplier.notes, /USPS/);
-    assert.equal(db.catalog.find((i) => i.id === "twinp-sample").brand, "twin-p");
-    assert.deepEqual(SAMPLE_IDS.map((id) => db.catalog.find((i) => i.id === id).sku), ["TD-EVT-005", "TD-EVT-006", "TD-EVT-007", "TD-EVT-008", "TD-EVT-009", "TD-EVT-010", "TD-EVT-011"]);
+    const bottle = db.catalog.find((i) => i.id === "jfh-lychee-bottle");
+    assert.equal(bottle.name, "J.F. Haden's Lychee Liqueur, 750 ml");
+    assert.equal(bottle.image, "/assets/merch/jfh-lychee-bottle.jpg");
+    assert.equal(bottle.minPerOrder, 1);
+    assert.match(bottle.supplier.notes, /USPS/);
+    const box = db.catalog.find((i) => i.id === "twinp-case");
+    assert.equal(box.name, "Twin P Whiskey, Case of 6");
+    assert.equal(box.unit, "Case of 6 × 750 ml");
+    assert.equal(box.costCents, 6 * bottle.costCents);
+    assert.equal(box.brand, "twin-p");
+    assert.deepEqual(SPIRIT_IDS.map((id) => db.catalog.find((i) => i.id === id).sku), Array.from({ length: 14 }, (_, i) => `TD-EVT-${String(5 + i).padStart(3, "0")}`));
     const booklet = db.catalog.find((i) => i.id === "td-booklet");
     assert.equal(booklet.variants[0].stock, null, "printed to order");
     assert.equal(booklet.supplier.company, "Ten 10 Design LLC");
+  });
+
+  it("replaces the 50 ml samples with the bottles and cases, and gives them their SKUs", () => {
+    const sample = (flavor, product, sku) => ({ ...structuredClone(SEED_CATALOG.find((i) => i.id === "jfh-citrus-bottle")), id: flavor, name: `${product} Sample, 50 ml`, sku });
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => !SPIRIT_IDS.includes(i.id));
+    const at = catalog.findIndex((i) => i.id === "td-sample-cups") + 1;
+    catalog.splice(at, 0,
+      sample("jfh-sample-citrus", "J.F. Haden's Citrus Liqueur", "TD-EVT-005"),
+      sample("twinp-sample", "Twin P Whiskey", "TD-EVT-011"),
+      // renamed by an admin, so it stays
+      sample("jfh-sample-mango", "J.F. Haden's Mango Liqueur (tasting only)", "TD-EVT-009"));
+    catalog[at + 2].name = "Mango tasting minis";
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1 }, catalog };
+    const added = applyAddedItems(db);
+    assert.deepEqual(added.removed.map((i) => i.id), ["jfh-sample-citrus", "twinp-sample"]);
+    assert.ok(db.catalog.some((i) => i.id === "jfh-sample-mango"));
+    assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, "TD-EVT-005", "took over the sample's SKU");
+    assert.notEqual(db.catalog.find((i) => i.id === "jfh-key-lime-pie-bottle").sku, "TD-EVT-009", "the kept sample still has that SKU");
+    assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length, "SKUs stay unique");
   });
 
   it("fills in where to order starter items once, leaving an admin's details alone", () => {
@@ -683,5 +707,70 @@ describe("sessions", () => {
     assert.equal(throttle.blocked("1.2.3.4", 30), true);
     assert.equal(throttle.blocked("5.6.7.8", 30), false);
     assert.equal(throttle.blocked("1.2.3.4", 1500), false, "failures age out");
+  });
+});
+
+describe("bulk stock edits", () => {
+  const variantOf = (db, itemId, variantId = "default") => db.catalog.find((i) => i.id === itemId).variants.find((v) => v.id === variantId);
+
+  it("sets levels, adds deliveries and starts tracking, all at once", () => {
+    const db = initialState();
+    const mat = variantOf(db, "jfh-bar-mat");
+    const tee = variantOf(db, "jfh-logo-tee", "m");
+    const cups = variantOf(db, "td-sample-cups");
+    assert.equal(cups.stock, null);
+    const { changed, adjusted, items } = updateStock(db, {
+      changes: [
+        { itemId: "jfh-bar-mat", variantId: "default", from: mat.stock, to: 50 },
+        { itemId: "jfh-logo-tee", variantId: "m", add: 24 },
+        { itemId: "td-sample-cups", variantId: "default", from: null, to: 30 },
+      ],
+    });
+    const before = structuredClone(initialState());
+    assert.equal(changed, 3);
+    assert.deepEqual(adjusted, []);
+    assert.equal(mat.stock, 50);
+    assert.equal(tee.stock, before.catalog.find((i) => i.id === "jfh-logo-tee").variants.find((v) => v.id === "m").stock + 24);
+    assert.equal(cups.stock, 30, "now tracked");
+    assert.deepEqual(items.map((i) => i.id), ["jfh-bar-mat", "jfh-logo-tee", "td-sample-cups"]);
+  });
+
+  it("keeps units that orders took while the admin was typing", () => {
+    const db = initialState();
+    const mat = variantOf(db, "jfh-bar-mat");
+    const seen = mat.stock;
+    mat.stock -= 3; // an order came in after the editor was opened
+    const { adjusted } = updateStock(db, { changes: [{ itemId: "jfh-bar-mat", variantId: "default", from: seen, to: 40 }] });
+    assert.equal(mat.stock, 37);
+    assert.deepEqual(adjusted.map((a) => a.stock), [37]);
+  });
+
+  it("changes nothing if any entry is wrong", () => {
+    const db = initialState();
+    const mat = variantOf(db, "jfh-bar-mat");
+    const was = mat.stock;
+    const errors = (input) => {
+      try {
+        updateStock(db, input);
+      } catch (error) {
+        assert.ok(error instanceof ValidationError);
+        return error.fieldErrors;
+      }
+      assert.fail("expected a ValidationError");
+    };
+    const bad = errors({
+      changes: [
+        { itemId: "jfh-bar-mat", variantId: "default", from: was, to: 99 },
+        { itemId: "jfh-logo-tee", variantId: "m", from: 1, to: -4 },
+        { itemId: "td-sample-cups", variantId: "default", add: 5 },
+        { itemId: "nope", variantId: "default", to: 1 },
+      ],
+    });
+    assert.ok(bad["stock.jfh-logo-tee.m"]);
+    assert.match(bad["stock.td-sample-cups.default"], /isn't tracked/);
+    assert.ok(bad["stock.nope.default"]);
+    assert.equal(mat.stock, was, "the good entry wasn't applied either");
+    assert.throws(() => updateStock(db, { changes: [] }), ValidationError);
+    assert.ok(errors({ changes: [{ itemId: "jfh-bar-mat", variantId: "default", add: 0 }] })["stock.jfh-bar-mat.default"]);
   });
 });

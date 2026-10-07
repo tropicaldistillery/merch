@@ -589,6 +589,32 @@ describe("personal codes", () => {
   });
 });
 
+describe("bulk stock edits over HTTP", () => {
+  it("saves many stock levels in one request, for admins only", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const app = await start(dir);
+    try {
+      const jane = await signedInTeam(app);
+      const admin = await signedInAdmin(app);
+      const body = { changes: [{ itemId: "jfh-bar-mat", variantId: "default", add: 10 }, { itemId: "jfh-logo-tee", variantId: "m", from: 14, to: 20 }] };
+      assert.equal((await jane("/api/admin/catalog/stock", { method: "POST", body })).status, 401);
+      const before = (await admin("/api/admin/catalog")).data.items.find((i) => i.id === "jfh-bar-mat").variants[0].stock;
+      const saved = await admin("/api/admin/catalog/stock", { method: "POST", body });
+      assert.equal(saved.status, 200, JSON.stringify(saved.data));
+      assert.equal(saved.data.changed, 2);
+      const items = (await admin("/api/admin/catalog")).data.items;
+      assert.equal(items.find((i) => i.id === "jfh-bar-mat").variants[0].stock, before + 10);
+      assert.equal(items.find((i) => i.id === "jfh-logo-tee").variants.find((v) => v.id === "m").stock, 20);
+      const bad = await admin("/api/admin/catalog/stock", { method: "POST", body: { changes: [{ itemId: "jfh-bar-mat", variantId: "default", to: "lots" }] } });
+      assert.equal(bad.status, 400);
+      assert.ok(bad.data.fieldErrors["stock.jfh-bar-mat.default"]);
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("own passwords", () => {
   it("lets someone swap their code for a password, signing out their other devices", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));

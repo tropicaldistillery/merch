@@ -209,7 +209,7 @@ $("#refresh").addEventListener("click", async () => {
 // Keep the queue fresh while the console sits open, without disturbing an
 // edit in progress.
 setInterval(async () => {
-  if (document.hidden || appSection.hidden || drawer.isOpen) return;
+  if (document.hidden || appSection.hidden || drawer.isOpen || stockMode) return;
   try {
     await loadAll();
     renderAll();
@@ -1291,15 +1291,25 @@ function supplierLine(item) {
   return el("div", { class: "cell-sub supplier-line" }, text, text && link ? " · " : "", link);
 }
 
-function renderCatalog() {
+function visibleCatalog() {
   const query = ui.catalogQuery.toLowerCase();
-  const visible = catalog.filter(
+  return catalog.filter(
     (item) =>
       (ui.showHidden || item.active) &&
       (!ui.catalogCategory || item.category === ui.catalogCategory) &&
       (!query || `${item.name} ${item.sku}`.toLowerCase().includes(query))
   );
+}
+
+function renderCatalog() {
+  const visible = visibleCatalog();
   $("#catalog-count").textContent = `${plural(visible.length, "item")}${catalog.some((i) => !i.active) && !ui.showHidden ? " · hidden items not shown" : ""}`;
+  $("#catalog-list").hidden = Boolean(stockMode);
+  $("#stock-editor").hidden = !stockMode;
+  $("#edit-stock").hidden = Boolean(stockMode);
+  if (stockMode) return renderStockEditor(visible);
+  clear($("#stock-bar"));
+  $("#stock-bar").hidden = true;
 
   clear(
     $("#catalog-table"),
@@ -1340,6 +1350,193 @@ $("#show-hidden").addEventListener("change", (event) => {
   renderCatalog();
 });
 $("#add-item").addEventListener("click", () => openItem(null));
+
+/* ---------------------------------------------------------- stock editor */
+
+// Every option of every item in one list, to set stock levels or add a
+// delivery and save them together. What's typed survives searching and
+// filtering, and all of it is saved, shown or not.
+let stockMode = null; // null, "set" or "add"
+const stockEdits = new Map();
+const stockKey = (item, variant) => `${item.id}\u0000${variant.id}`;
+
+function stockChanges() {
+  const changes = [];
+  for (const item of catalog) {
+    for (const variant of item.variants) {
+      const raw = (stockEdits.get(stockKey(item, variant)) ?? "").trim();
+      if (!raw) continue;
+      const n = Number(raw);
+      if (stockMode === "add") changes.push({ itemId: item.id, variantId: variant.id, add: n });
+      else if (n !== variant.stock) changes.push({ itemId: item.id, variantId: variant.id, from: variant.stock, to: n });
+    }
+  }
+  return changes;
+}
+
+async function setStockMode(mode) {
+  if (mode !== stockMode && stockEdits.size && stockChanges().length) {
+    const ok = await confirmDialog({
+      title: "Discard your stock changes?",
+      body: `${plural(stockChanges().length, "change")} haven't been saved.`,
+      confirmLabel: "Discard",
+      cancelLabel: "Keep editing",
+      danger: true,
+    });
+    if (!ok) return;
+  }
+  stockEdits.clear();
+  stockMode = mode;
+  renderCatalog();
+  if (mode) $("#stock-editor input:not([disabled])")?.focus();
+}
+
+function renderStockBar() {
+  const count = stockChanges().length;
+  const bar = $("#stock-bar");
+  bar.hidden = false;
+  const modeButton = (mode, label) =>
+    el("button", {
+      type: "button",
+      class: "chip",
+      "aria-pressed": String(stockMode === mode),
+      text: label,
+      onclick: () => setStockMode(mode),
+    });
+  clear(
+    bar,
+    el("div", { class: "chips stock-modes", role: "group", "aria-label": "What to enter" }, modeButton("set", "Set stock levels"), modeButton("add", "Add a delivery")),
+    el("span", {
+      class: "muted stock-hint",
+      text: stockMode === "add" ? "Type how many arrived; they're added to what's there." : "Type the new count for anything that's changed.",
+    }),
+    el(
+      "div",
+      { class: "bulk-actions" },
+      el("strong", { class: "bulk-count", "aria-live": "polite", text: count ? `${plural(count, "change")}` : "No changes yet" }),
+      el("button", { type: "submit", form: "stock-editor", class: "btn btn-sm", disabled: !count, text: "Save stock" }),
+      el("button", { type: "button", class: "btn btn-sm btn-secondary", text: "Done", onclick: () => setStockMode(null) })
+    )
+  );
+}
+
+function renderStockEditor(visible) {
+  renderStockBar();
+  const form = $("#stock-editor");
+  const rows = visible.flatMap((item) =>
+    item.variants.map((variant, i) => {
+      const tracked = Number.isInteger(variant.stock);
+      const key = stockKey(item, variant);
+      const name = `stock.${item.id}.${variant.id}`;
+      const note = el("div", { class: "cell-sub stock-note" });
+      const describe = (value) => {
+        const raw = String(value ?? "").trim();
+        const n = Number(raw);
+        if (!raw || !Number.isInteger(n)) return "";
+        if (stockMode === "add") return tracked && n > 0 ? `→ ${variant.stock + n}` : "";
+        if (!tracked) return "starts tracking";
+        const diff = n - variant.stock;
+        return diff ? `${diff > 0 ? "+" : "−"}${Math.abs(diff)}` : "";
+      };
+      note.textContent = describe(stockEdits.get(key));
+      const input = el("input", {
+        type: "number",
+        name,
+        min: stockMode === "add" ? "1" : "0",
+        max: "100000",
+        step: "1",
+        inputmode: "numeric",
+        class: "stock-input",
+        value: stockEdits.get(key) ?? (stockMode === "set" && tracked ? String(variant.stock) : ""),
+        placeholder: tracked ? (stockMode === "add" ? "0" : "") : "—",
+        disabled: stockMode === "add" && !tracked,
+        "aria-label": `${stockMode === "add" ? "Units arriving" : "New stock"} for ${item.name}${variant.label ? `, ${variant.label}` : ""}`,
+        // Typing replaces the number rather than adding to it.
+        onfocus: (event) => event.target.select(),
+        oninput: (event) => {
+          stockEdits.set(key, event.target.value);
+          note.textContent = describe(event.target.value);
+          renderStockBar();
+        },
+        onkeydown: (event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          const inputs = $$("#stock-editor input:not([disabled])");
+          inputs[inputs.indexOf(event.target) + 1]?.focus();
+        },
+      });
+      return el(
+        "tr",
+        { class: i === 0 ? "group-start" : "" },
+        i === 0
+          ? el(
+              "td",
+              { rowspan: String(item.variants.length) },
+              el(
+                "div",
+                { class: "item-cell" },
+                artwork(item, "thumb"),
+                el("div", {}, el("div", { class: "cell-main", text: item.name }), el("div", { class: "cell-sub", text: [item.sku, item.active ? "" : "Hidden"].filter(Boolean).join(" · ") }))
+              )
+            )
+          : null,
+        el("td", { text: variant.label || "—" }),
+        el("td", { class: `num ${tracked && variant.stock <= 5 ? "low-text" : ""}`.trim(), text: tracked ? String(variant.stock) : "Not tracked" }),
+        el("td", {}, el("div", { class: "field stock-field" }, input, note))
+      );
+    })
+  );
+  clear(
+    form,
+    el(
+      "table",
+      { class: "table stock-table" },
+      el("thead", {}, el("tr", {}, ["Item", "Option", "Available now", stockMode === "add" ? "Arriving" : "New stock"].map((h) =>
+        el("th", { scope: "col", class: h === "Available now" ? "num" : "", text: h })
+      ))),
+      el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", { class: "empty", colspan: "4", text: "No items match." })))
+    )
+  );
+}
+
+$("#stock-editor").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  clearFieldErrors(form);
+  const changes = stockChanges();
+  if (!changes.length) return;
+  const save = $("#stock-bar button[type=submit]");
+  save.disabled = true;
+  try {
+    const result = await adminApi("/api/admin/catalog/stock", { method: "POST", body: { changes } });
+    const fresh = new Map(result.items.map((item) => [item.id, item]));
+    catalog = catalog.map((item) => fresh.get(item.id) ?? item);
+    stockEdits.clear();
+    stockMode = null;
+    renderCatalog();
+    renderKpis();
+    const adjusted = result.adjusted.length
+      ? ` ${plural(result.adjusted.length, "level")} also took account of orders placed while you were editing.`
+      : "";
+    toast(`Stock saved for ${plural(result.changed, "option")}.${adjusted}`, { timeout: adjusted ? 9000 : 5000 });
+  } catch (error) {
+    save.disabled = false;
+    toast(error.message, { tone: "error" });
+    // Problems may be on rows the filters hide: show everything first.
+    if (Object.keys(error.fieldErrors ?? {}).length) {
+      ui.catalogQuery = "";
+      ui.catalogCategory = "";
+      ui.showHidden = true;
+      $("#catalog-search").value = "";
+      $("#catalog-category").value = "";
+      $("#show-hidden").checked = true;
+      renderCatalog();
+      showFieldErrors($("#stock-editor"), error.fieldErrors);
+    }
+  }
+});
+
+$("#edit-stock").addEventListener("click", () => setStockMode("set"));
 
 const SIZES = ["S", "M", "L", "XL", "2XL", "3XL"];
 

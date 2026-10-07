@@ -72,6 +72,12 @@ shares nothing with SipScale.
   always 1); new items take both automatically. An **order increment** sells
   an item in steps (6 means 6, 12, 18…); the minimum and maximum must be
   multiples of it, and the shop's quantity buttons move in those steps.
+- **Edit stock** (Catalog & stock) lists every option of every item in one
+  table, filtered by the same search and category as the catalog. **Set stock
+  levels** to type new counts, or **Add a delivery** to type how many arrived,
+  and save them all at once. Orders placed while you're typing still count:
+  a level moves by the change you made rather than being overwritten. Typing
+  a number for an untracked item starts tracking it.
 - A new item's **SKU is made from its category and name** as you type
   ("J.F. Haden's Throw Pillow" in VIP becomes `VIP-THROW-PILLOW`), and you can
   still type your own. Existing SKUs never change.
