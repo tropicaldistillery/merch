@@ -74,10 +74,13 @@ shares nothing with SipScale.
   multiples of it, and the shop's quantity buttons move in those steps.
 - **Bulk edit** (Catalog & stock) changes many items at once, filtered by the
   same search and category as the catalog:
-  - **All details** is a spreadsheet of every item: name, category, brand,
-    unit, cost, minimum, maximum, steps, stock for each option, whether it's
-    shown in the store, supplier, their item number, order link and
-    description. Changed cells are highlighted. Tick items to set one thing
+  - **All details** is a spreadsheet of every item: name, SKU, category,
+    brand, unit, cost, minimum, maximum, steps, stock for each option,
+    whether it's shown in the store, supplier, their item number, order link
+    and description. Changed cells are highlighted, the item stays in view as
+    the grid scrolls sideways, and its sideways scrollbar stays at the bottom
+    of the window. SKUs must stay unique, but two items can swap theirs in
+    one save. Tick items to set one thing
     (category, brand, in store, cost, limits, unit, supplier or order link) on
     all of them, then check and save.
   - **Stock levels** lists every option to type new counts; **Add a

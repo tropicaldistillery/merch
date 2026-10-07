@@ -838,4 +838,23 @@ describe("bulk catalog edits", () => {
     assert.deepEqual(db.catalog, before, "nothing changed");
     assert.throws(() => bulkEditCatalog(db, {}), ValidationError);
   });
+
+  it("edits SKUs, lets two items swap theirs, and refuses duplicates", () => {
+    const db = initialState();
+    const [cap, mat] = [find(db, "jfh-cap"), find(db, "jfh-bar-mat")];
+    const [capSku, matSku] = [cap.sku, mat.sku];
+    bulkEditCatalog(db, { items: [{ id: "jfh-cap", patch: { sku: matSku } }, { id: "jfh-bar-mat", patch: { sku: capSku } }] });
+    assert.equal(find(db, "jfh-cap").sku, matSku);
+    assert.equal(find(db, "jfh-bar-mat").sku, capSku);
+
+    bulkEditCatalog(db, { items: [{ id: "jfh-cap", patch: { sku: " td-hat-001 " } }] });
+    assert.equal(find(db, "jfh-cap").sku, "TD-HAT-001", "tidied like the one-item editor");
+
+    const teeSku = find(db, "jfh-logo-tee").sku;
+    const clash = fieldErrors(() => bulkEditCatalog(db, { items: [{ id: "jfh-cap", patch: { sku: teeSku } }] }));
+    assert.ok(clash["jfh-cap.sku"]);
+    const twice = fieldErrors(() => bulkEditCatalog(db, { items: [{ id: "jfh-cap", patch: { sku: "TD-NEW-1" } }, { id: "jfh-bar-mat", patch: { sku: "TD-NEW-1" } }] }));
+    assert.ok(twice["jfh-cap.sku"] && twice["jfh-bar-mat.sku"]);
+    assert.equal(find(db, "jfh-cap").sku, "TD-HAT-001", "nothing saved");
+  });
 });

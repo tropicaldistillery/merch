@@ -958,9 +958,9 @@ function applyStockPlan(db, plan) {
   return { items: [...items.values()], adjusted };
 }
 
-// What the bulk editor can change on many items at once. Photos, options,
-// colours and SKUs stay with the one-item editor.
-export const BULK_FIELDS = ["name", "category", "brand", "unit", "costCents", "minPerOrder", "maxPerOrder", "orderIncrement", "active", "description"];
+// What the bulk editor can change on many items at once. Photos, options and
+// colours stay with the one-item editor.
+export const BULK_FIELDS = ["name", "sku", "category", "brand", "unit", "costCents", "minPerOrder", "maxPerOrder", "orderIncrement", "active", "description"];
 export const BULK_SUPPLIER_FIELDS = ["company", "itemNumber", "link"];
 export const MAX_BULK_ITEMS = 1000;
 
@@ -979,6 +979,11 @@ export function bulkEditCatalog(db, input) {
 
   const errors = {};
   const edited = new Map();
+  // SKUs are checked against the catalog as it will be, so two items can swap
+  // theirs in one save: the one-item check leaves out every item whose SKU is
+  // being changed, and the final SKUs are compared below.
+  const renaming = new Set(rawItems.filter((raw) => cleanText(raw?.patch?.sku, 40)).map((raw) => cleanText(raw.id, 80)));
+  const others = db.catalog.filter((i) => !renaming.has(i.id));
   for (const raw of rawItems) {
     const id = cleanText(raw?.id, 80);
     const existing = db.catalog.find((i) => i.id === id);
@@ -995,12 +1000,22 @@ export function bulkEditCatalog(db, input) {
       for (const field of BULK_SUPPLIER_FIELDS) if (field in patch.supplier) merged.supplier[field] = patch.supplier[field];
     }
     try {
-      edited.set(id, normalizeItem(merged, { catalog: db.catalog, existing }));
+      edited.set(id, normalizeItem(merged, { catalog: others.includes(existing) ? others : [...others, existing], existing }));
     } catch (error) {
       if (!(error instanceof ValidationError)) throw error;
       for (const [field, message] of Object.entries(error.fieldErrors)) errors[`${id}.${field}`] = message;
     }
   }
+  const owners = new Map();
+  for (const item of db.catalog) {
+    const sku = edited.get(item.id)?.sku ?? item.sku;
+    owners.set(sku, [...(owners.get(sku) ?? []), item.id]);
+  }
+  for (const ids of owners.values()) {
+    if (ids.length < 2) continue;
+    for (const id of ids) if (edited.has(id)) errors[`${id}.sku`] = "Another item already uses this SKU.";
+  }
+
   const { plan, errors: stockErrors } = planStock(db, stock);
   Object.assign(errors, stockErrors);
   if (Object.keys(errors).length) {

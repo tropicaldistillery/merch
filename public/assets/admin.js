@@ -1311,6 +1311,7 @@ function renderCatalog() {
   bulkCountNode = null;
   clear($("#catalog-bulk-bar"));
   $("#catalog-bulk-bar").hidden = true;
+  measureBulkScroll();
 
   clear(
     $("#catalog-table"),
@@ -1368,7 +1369,7 @@ const bulkSelected = new Set();
 const stockKey = (item, variant) => `${item.id}\u0000${variant.id}`;
 
 const EDIT_FIELDS = [
-  "name", "category", "brand", "unit", "costCents", "minPerOrder", "maxPerOrder", "orderIncrement", "active",
+  "name", "sku", "category", "brand", "unit", "costCents", "minPerOrder", "maxPerOrder", "orderIncrement", "active",
   "description", "supplier.company", "supplier.itemNumber", "supplier.link",
 ];
 const NUMBER_FIELDS = ["minPerOrder", "maxPerOrder", "orderIncrement"];
@@ -1404,6 +1405,8 @@ function isChanged(item, field) {
   const typed = edits[field];
   if (field === "active") return typed !== item.active;
   if (field === "costCents") return parseDollars(typed) !== item.costCents;
+  // SKUs are saved in capitals, and a blank one keeps the item's own.
+  if (field === "sku") return String(typed).trim() !== "" && String(typed).trim().toUpperCase() !== item.sku;
   return String(typed).trim() !== String(currentValue(item, field)).trim();
 }
 
@@ -1421,6 +1424,7 @@ function itemPatches() {
       let value = typeof typed === "string" ? typed.trim() : typed;
       // Anything that isn't a number goes as null, and the server says what's wrong.
       if (field === "costCents") value = Number.isNaN(parseDollars(typed)) ? null : parseDollars(typed);
+      if (field === "sku") value = value.toUpperCase();
       if (NUMBER_FIELDS.includes(field) && value !== "") value = Number.isFinite(Number(value)) ? Number(value) : null;
       if (field.startsWith("supplier.")) (patch.supplier ??= {})[field.slice(9)] = value;
       else patch[field] = value;
@@ -1628,7 +1632,7 @@ function bulkStockInputs(item, { compact }) {
 function renderBulkGrid(visible) {
   const form = $("#bulk-editor");
   const allTicked = visible.length > 0 && visible.every((i) => bulkSelected.has(i.id));
-  const head = ["Item", "Category", "Brand", "Unit", "Cost ($)", "Min", "Max", "Steps", "Stock", "In store", "Supplier", "Their item #", "Order link", "Description"];
+  const head = ["Item", "SKU", "Category", "Brand", "Unit", "Cost ($)", "Min", "Max", "Steps", "Stock", "In store", "Supplier", "Their item #", "Order link", "Description"];
   clear(
     form,
     el(
@@ -1662,7 +1666,8 @@ function renderBulkGrid(visible) {
                 el("div", { class: "item-cell" }, artwork(item, "thumb"),
                   el("div", { class: "bulk-name" },
                     bulkText(item, "name", { label: "Name", maxlength: "120" }),
-                    el("div", { class: "cell-sub", text: [item.sku, item.active ? "" : "Hidden"].filter(Boolean).join(" · ") })))),
+                    item.active ? null : el("div", { class: "cell-sub", text: "Hidden" })))),
+              el("td", {}, bulkText(item, "sku", { label: "SKU", maxlength: "40", class: "w-sku", autocapitalize: "characters", spellcheck: "false" })),
               el("td", {}, bulkCell(item, "category", el("select", { name: `${item.id}.category`, class: "w-cat", "aria-label": `Category for ${item.name}` }, options(CATEGORIES, { selected: editedValue(item, "category") })))),
               el("td", {}, bulkCell(item, "brand", el("select", { name: `${item.id}.brand`, class: "w-brand", "aria-label": `Brand for ${item.name}` }, options(BRANDS, { selected: editedValue(item, "brand") })))),
               el("td", {}, bulkText(item, "unit", { label: "Unit", maxlength: "40", class: "w-unit" })),
@@ -1758,6 +1763,7 @@ function renderBulkEditor(visible) {
   renderCatalogBulkBar();
   if (bulkMode === "all") renderBulkGrid(visible);
   else renderStockRows(visible);
+  measureBulkScroll();
 }
 
 $("#bulk-editor").addEventListener("submit", async (event) => {
@@ -1802,6 +1808,35 @@ $("#bulk-editor").addEventListener("submit", async (event) => {
 });
 
 $("#bulk-edit").addEventListener("click", () => setBulkMode("all"));
+
+/**
+ * A copy of a wide table's sideways scrollbar, stuck to the bottom of the
+ * window while the table is on screen, so it can be scrolled without first
+ * scrolling down to the end of the table. Returns a function to call when
+ * the table's width may have changed.
+ */
+function stickyScrollbar(scroller) {
+  const inner = el("div", { class: "hscroll-inner" });
+  const bar = el("div", { class: "hscroll", "aria-hidden": "true", hidden: true }, inner);
+  scroller.after(bar);
+  scroller.classList.add("has-hscroll");
+  // Each follows the other; setting an equal value fires nothing back.
+  bar.addEventListener("scroll", () => {
+    if (scroller.scrollLeft !== bar.scrollLeft) scroller.scrollLeft = bar.scrollLeft;
+  });
+  scroller.addEventListener("scroll", () => {
+    if (bar.scrollLeft !== scroller.scrollLeft) bar.scrollLeft = scroller.scrollLeft;
+  });
+  const measure = () => {
+    inner.style.width = `${scroller.scrollWidth}px`;
+    bar.hidden = scroller.hidden || scroller.scrollWidth <= scroller.clientWidth + 1;
+    bar.scrollLeft = scroller.scrollLeft;
+  };
+  new ResizeObserver(measure).observe(scroller);
+  return measure;
+}
+
+const measureBulkScroll = stickyScrollbar($("#bulk-editor"));
 
 const SIZES = ["S", "M", "L", "XL", "2XL", "3XL"];
 

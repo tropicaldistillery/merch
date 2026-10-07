@@ -3201,7 +3201,7 @@ dialog.password-dialog .field {
 /* ------------------------------------------------- bulk catalog editor */
 
 .bulk-table {
-  min-width: 2750px;
+  min-width: 2920px;
 }
 
 .bulk-table td {
@@ -3283,6 +3283,12 @@ dialog.password-dialog .field {
   width: 82px;
 }
 
+.bulk-table .w-sku {
+  width: 150px;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
 .bulk-table .w-cat {
   width: 185px;
 }
@@ -3341,4 +3347,65 @@ dialog.password-dialog .field {
 .bulk-stocks .dirty .stock-input {
   background: var(--warn-bg);
   border-color: var(--warn);
+}
+
+/* A wide table's sideways scrollbar, kept at the bottom of the window while
+   the table is on screen (see stickyScrollbar in admin.js). The table's own
+   scrollbar is hidden so there's only one. */
+.has-hscroll {
+  scrollbar-width: none;
+}
+
+.table-wrap.has-hscroll::-webkit-scrollbar {
+  display: none;
+  height: 0;
+}
+
+.hscroll {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  box-sizing: border-box;
+  height: 20px;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  margin-top: -1px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0 0 var(--radius-control) var(--radius-control);
+  box-shadow: 0 -6px 16px rgba(20, 32, 58, 0.08);
+  scrollbar-width: auto;
+  scrollbar-color: var(--muted) var(--surface-alt);
+}
+
+.hscroll[hidden] {
+  display: none;
+}
+
+.hscroll-inner {
+  height: 1px;
+}
+
+/* Styled scrollbars stay visible, even where the system hides them until you
+   scroll (macOS). */
+.hscroll::-webkit-scrollbar,
+.table-wrap::-webkit-scrollbar {
+  height: 14px;
+}
+
+.hscroll::-webkit-scrollbar-track,
+.table-wrap::-webkit-scrollbar-track {
+  background: var(--surface-alt);
+}
+
+.hscroll::-webkit-scrollbar-thumb,
+.table-wrap::-webkit-scrollbar-thumb {
+  background: #9aa2b4;
+  border: 3px solid var(--surface-alt);
+  border-radius: 999px;
+}
+
+.hscroll::-webkit-scrollbar-thumb:hover,
+.table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
