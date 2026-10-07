@@ -123,7 +123,11 @@ describe("catalog items", () => {
   });
 
   it("orders every starter item through Ten 10 Design unless it says otherwise", () => {
-    for (const item of SEED_CATALOG) assert.equal(item.supplier.company, "Ten 10 Design LLC", item.id);
+    // Sample bottles come from the distillery's own stock.
+    for (const item of SEED_CATALOG) {
+      const own = /^(jfh|twinp)-sample/.test(item.id);
+      assert.equal(item.supplier.company, own ? "Tropical Distillery (own stock)" : "Ten 10 Design LLC", item.id);
+    }
   });
 
   it("refuses unlabelled or repeated options", () => {
@@ -512,6 +516,31 @@ describe("starter items added to existing stores", () => {
     const crop = db.catalog.find((i) => i.id === "jfh-gradient-crop");
     assert.equal(imageFor(crop, "Black"), "/assets/merch/jfh-gradient-crop-black.jpg");
     assert.equal(crop.variants.length, 6);
+  });
+
+  it("adds each sample bottle as its own item, and the booklet, once, next to their kind", () => {
+    const SAMPLE_IDS = ["citrus", "espresso", "key-lime-pie", "lychee", "mango", "orange"].map((f) => `jfh-sample-${f}`).concat("twinp-sample");
+    const NEW = [...SAMPLE_IDS, "td-booklet"];
+    const meta = { teamPolo: 1, jfhPolo: 1, merchDrop2: 1, martiniTee: 1, proofDrop: 1, sunglassesSplit: 1, lipBalm: 1, proofDrop3: 1 };
+    const db = { meta, catalog: structuredClone(SEED_CATALOG).filter((i) => !NEW.includes(i.id)) };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), NEW);
+    assert.equal(needsAddedItems(db), false);
+    const ids = db.catalog.map((i) => i.id);
+    const at = ids.indexOf("td-sample-cups");
+    assert.deepEqual(ids.slice(at + 1, at + 8), SAMPLE_IDS, "in a run after the sample cups");
+    assert.equal(ids[ids.indexOf("td-sell-sheets") + 1], "td-booklet");
+
+    const lychee = db.catalog.find((i) => i.id === "jfh-sample-lychee");
+    assert.equal(lychee.name, "J.F. Haden's Lychee Liqueur Sample, 50 ml");
+    assert.equal(lychee.image, "/assets/merch/jfh-sample-lychee.jpg");
+    assert.equal(lychee.variants.length, 1);
+    assert.equal(lychee.minPerOrder, 1, "a bottle or two at a time");
+    assert.match(lychee.supplier.notes, /USPS/);
+    assert.equal(db.catalog.find((i) => i.id === "twinp-sample").brand, "twin-p");
+    assert.deepEqual(SAMPLE_IDS.map((id) => db.catalog.find((i) => i.id === id).sku), ["TD-EVT-005", "TD-EVT-006", "TD-EVT-007", "TD-EVT-008", "TD-EVT-009", "TD-EVT-010", "TD-EVT-011"]);
+    const booklet = db.catalog.find((i) => i.id === "td-booklet");
+    assert.equal(booklet.variants[0].stock, null, "printed to order");
+    assert.equal(booklet.supplier.company, "Ten 10 Design LLC");
   });
 
   it("fills in where to order starter items once, leaving an admin's details alone", () => {

@@ -29,6 +29,22 @@ const SEED_COLORS = {
   "jfh-dad-hat": ["Burgundy", "Navy", "Khaki"],
 };
 
+// The 50 ml sample bottles: each J.F. Haden's flavour and Twin P Whiskey is
+// its own item, with a photo of that bottle.
+const SAMPLES = [
+  ["citrus", "Citrus Liqueur", "citrus", "Made with 100% Florida citrus."],
+  ["espresso", "Espresso Liqueur", "espresso", "Made with 100% real espresso."],
+  ["key-lime-pie", "Key Lime Pie Liqueur", "lime", "Made with 100% real key lime."],
+  ["lychee", "Lychee Liqueur", "lychee", "Made with 100% real lychee."],
+  ["mango", "Mango Liqueur", "mango", "Made with 100% real mango."],
+  ["orange", "Orange Liqueur", "mango", "Made with 100% Florida oranges."],
+]
+  .map(([flavor, liqueur, tone, made]) => ({
+    id: `jfh-sample-${flavor}`, product: `J.F. Haden's ${liqueur}`, brand: "jf-hadens", tone, made, costCents: 300,
+  }))
+  .concat({ id: "twinp-sample", product: "Twin P Whiskey", brand: "twin-p", tone: "oak", made: "", costCents: 400 })
+  .map((sample, i) => ({ ...sample, sku: `TD-EVT-${String(5 + i).padStart(3, "0")}` }));
+
 // Product photos for the starter items, in public/assets/merch, main photo
 // first: one named after the item, numbered ones for a gallery, or one per
 // colour (td-team-polo-navy.jpg). Bump the version when photos are added so
@@ -81,6 +97,7 @@ export const SEED_PHOTOS = {
   "jfh-sunglasses-rainbow": one("jfh-sunglasses-rainbow"),
   "jfh-sunglasses-andy-green": one("jfh-sunglasses-andy-green"),
   "jfh-sunglasses-andy-black": one("jfh-sunglasses-andy-black"),
+  ...Object.fromEntries(SAMPLES.map(({ id }) => [id, one(id)])),
 };
 
 // Where an admin orders each item from. Merch comes through Ten 10 Design
@@ -91,7 +108,13 @@ export const SUPPLIER_FIELDS = { company: 120, contact: 120, email: 160, phone: 
 export const DEFAULT_SUPPLIER = "Ten 10 Design LLC";
 const emptySupplier = () => Object.fromEntries(Object.keys(SUPPLIER_FIELDS).map((k) => [k, ""]));
 const TEN10 = DEFAULT_SUPPLIER;
+const SAMPLE_SHIPPING =
+  "Pulled from distillery stock. Spirits can't go by USPS: hand-deliver, or ship with a carrier the distillery has an alcohol shipping agreement with, marked as samples.";
 const SEED_SUPPLIERS = {
+  ...Object.fromEntries(
+    SAMPLES.map(({ id, product }) => [id, { company: "Tropical Distillery (own stock)", itemNumber: `${product}, 50 ml`, notes: SAMPLE_SHIPPING }])
+  ),
+  "td-booklet": { itemNumber: "Saddle-stitched booklet" },
   "jfh-tote-bag": { itemNumber: "337572 Full Color Sublimated Canvas Everyday Bag with Zipper Closure", notes: "Top zipper in white; base band PMS 4260 C; logo front and back." },
   "jfh-beach-towel": { company: TEN10, itemNumber: "BP1518SB sublimated towel, 28 × 56 in, white", notes: "Sales order 1282403; 50 ordered." },
   "jfh-pool-koozie": { notes: "Inflatable stars-and-stripes drink float, 7.87 in." },
@@ -295,6 +318,14 @@ export const SEED_CATALOG = [
     description: "Clear 1 oz plastic sampling cups. Bought to order, so never out of stock.",
     costCents: 1100, maxPerOrder: 8, variants: single(null),
   },
+  // 50 ml samples, one item per bottle (see SAMPLES)
+  ...SAMPLES.map(({ id, sku, product, brand, tone, made, costCents }) => ({
+    id, sku, name: `${product} Sample, 50 ml`,
+    brand, category: "Sampling & Events", tone, art: "bottle", unit: "50 ml bottle",
+    description: `50 ml trade sample of ${product} for account visits and tastings.${made ? ` ${made}` : ""}`,
+    // Samples go out a bottle or two at a time, so no minimum despite the low cost.
+    costCents, minPerOrder: 1, maxPerOrder: 12, variants: single(48),
+  })),
   {
     id: "td-table-throw", sku: "TD-EVT-003", name: "6 ft Table Throw",
     brand: "tropical-distillery", category: "Sampling & Events", tone: "palm", art: "table-throw", unit: "Each",
@@ -314,6 +345,12 @@ export const SEED_CATALOG = [
     brand: "tropical-distillery", category: "Print", tone: "palm", art: "sheets", unit: "Pack of 50",
     description: "Two-sided sell sheets for all six J.F. Haden's flavors (Citrus, Espresso, Key Lime Pie, Lychee, Mango and Orange) and Twin P Whiskey: tasting notes, SKUs, case packs and UPCs. Printed to order.",
     costCents: 2200, maxPerOrder: 6, variants: single(null),
+  },
+  {
+    id: "td-booklet", sku: "TD-PRT-004", name: "Tropical Distillery Portfolio Booklet",
+    brand: "tropical-distillery", category: "Print", tone: "palm", art: "sheets", unit: "Each",
+    description: "Saddle-stitched booklet with the Tropical Distillery portfolio, J.F. Haden's liqueurs and Twin P Whiskey, to leave with accounts. Ordered in tens. Printed to order.",
+    costCents: 250, minPerOrder: 10, maxPerOrder: 100, orderIncrement: 10, variants: single(null),
   },
   {
     id: "jfh-recipe-cards", sku: "TD-PRT-002", name: "Signature Cocktail Recipe Cards",
@@ -606,6 +643,8 @@ const ADDED_ITEMS = [
   { flag: "proofDrop3", id: "jfh-dad-hat", after: "jfh-cap" },
   { flag: "proofDrop3", id: "jfh-martini-keychain-color", after: ["jfh-lip-balm", "jfh-pool-koozie"] },
   { flag: "proofDrop3", id: "jfh-martini-keychain-line", after: "jfh-martini-keychain-color" },
+  ...SAMPLES.map(({ id }, i) => ({ flag: "samplesDrop", id, after: i ? SAMPLES[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
+  { flag: "samplesDrop", id: "td-booklet", after: ["td-sell-sheets", "jfh-recipe-cards"] },
 ];
 
 // The first version of the sunglasses: one item with the five styles as
