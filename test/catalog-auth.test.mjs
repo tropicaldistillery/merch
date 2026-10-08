@@ -709,6 +709,20 @@ describe("starter items added to existing stores", () => {
     assert.deepEqual(shaker.variants.map((v) => v.stock), [0]);
   });
 
+  it("adds the J.F. Haden's paddle stirrers once, after the napkin caddy, with no stock yet", () => {
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "jfh-stirrers");
+    const lastBar = Math.max(...catalog.filter((i) => /^JFH-BAR-\d+$/.test(i.sku)).map((i) => Number(i.sku.slice(-3))));
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1 }, catalog };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["jfh-stirrers"]);
+    const ids = db.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("jfh-napkin-caddy") + 1], "jfh-stirrers");
+    const stirrers = db.catalog.find((i) => i.id === "jfh-stirrers");
+    assert.equal(stirrers.sku, `JFH-BAR-${String(lastBar + 1).padStart(3, "0")}`, "the next J.F. Haden's Bar Tools number");
+    assert.equal(stirrers.image, "/assets/merch/jfh-stirrers.jpg");
+    assert.deepEqual(stirrers.variants.map((v) => v.stock), [0]);
+    assert.equal(needsAddedItems(db), false);
+  });
+
   it("gives the booklet its photo when it has none, leaving an admin's own photo alone", () => {
     const db = { meta: { seedPhotos: 2 }, catalog: structuredClone(SEED_CATALOG) };
     const booklet = db.catalog.find((i) => i.id === "td-booklet");

@@ -94,6 +94,7 @@ export const SEED_PHOTOS = {
   "jfh-beach-towel": one("jfh-beach-towel"),
   "jfh-cobbler-shaker": one("jfh-cobbler-shaker"),
   "td-cobbler-shaker": one("td-cobbler-shaker"),
+  "jfh-stirrers": one("jfh-stirrers"),
   "td-booklet": one("td-booklet"),
   // the photo from the pool first, then the studio shot
   "jfh-pool-koozie": numbered("jfh-pool-koozie", 2),
@@ -552,6 +553,13 @@ export const SEED_CATALOG = [
     costCents: 1400, maxPerOrder: 4, variants: single(20),
   },
   {
+    id: "jfh-stirrers", name: "J.F. Haden's Paddle Stirrers",
+    brand: "jf-hadens", category: "Bar Tools", tone: "mango", art: "kit", unit: "Bag",
+    description: "White plastic drink stirrers with a round paddle printed with the J.F. Haden's wordmark and AMERICA'S CRAFT LIQUEUR COMPANY™. For cocktails at accounts, tastings and events.",
+    // Added after the 7 Oct 2026 stock reset, so it starts at 0 until it's counted.
+    costCents: 1000, maxPerOrder: 10, variants: single(0),
+  },
+  {
     id: "jfh-bluetooth-speaker", name: "J.F. Haden's Bluetooth Speaker",
     brand: "jf-hadens", category: "VIP", tone: "espresso", art: "kit", unit: "Each",
     description: "Compact magnetic Bluetooth speaker in black, with the J.F. Haden's logo in white above the power button. A thank-you for top accounts.",
@@ -712,6 +720,7 @@ const ADDED_ITEMS = [
   { flag: "sundayFunday", id: "twinp-sunday-funday-hat", after: ["twinp-sunday-funday-tee", "twinp-trucker"] },
   { flag: "sundayFunday", id: "twinp-sunday-funday-tote", after: ["jfh-tote-bag", "jfh-beach-towel"] },
   { flag: "tdShaker", id: "td-cobbler-shaker", after: ["td-shaker-set", "jfh-cobbler-shaker"] },
+  { flag: "stirrers", id: "jfh-stirrers", after: ["jfh-napkin-caddy", "jfh-cobbler-shaker", "jfh-jigger"] },
   ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 
