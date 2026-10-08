@@ -371,7 +371,7 @@ describe("automatic SKUs", () => {
     assert.equal(mangoTee.sku, "JFH-APP-099");
     assert.equal(item("td-team-polo").sku, "TD-APP-001", "the next free TD apparel number");
     assert.equal(item("td-tumbler").sku, "TD-GIV-001");
-    assert.equal(item("td-shaker-set").sku, "TD-BAR-001");
+    assert.equal(item("td-shaker-set").sku, "TD-BAR-003", "after the cobbler shaker's 002");
     assert.equal(item("td-booklet").sku, "TD-PRI-002");
     assert.equal(item("td-sell-sheets").sku, kept, "TD SKUs untouched");
     assert.equal(jfhTee.sku, "MY-OWN-TEE", "other brands keep typed-in SKUs");
@@ -693,6 +693,34 @@ describe("starter items added to existing stores", () => {
     assert.equal(item("twinp-sunday-funday-tee").variants.length, 6, "sized");
     assert.equal(item("twinp-sunday-funday-tote").category, "Giveaways");
     assert.equal(needsAddedItems(db), false);
+  });
+
+  it("adds the Tropical Distillery cobbler shaker once, with the next TD Bar Tools number", () => {
+    // like the live store: no other Tropical Distillery bar tools
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => !["td-cobbler-shaker", "td-shaker-set"].includes(i.id));
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1 }, catalog };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["td-cobbler-shaker"]);
+    const ids = db.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("jfh-cobbler-shaker") + 1], "td-cobbler-shaker");
+    const shaker = db.catalog.find((i) => i.id === "td-cobbler-shaker");
+    assert.equal(shaker.sku, "TD-BAR-001");
+    assert.equal(shaker.category, "Bar Tools");
+    assert.equal(shaker.image, "/assets/merch/td-cobbler-shaker.jpg");
+    assert.deepEqual(shaker.variants.map((v) => v.stock), [0]);
+  });
+
+  it("gives the booklet its photo when it has none, leaving an admin's own photo alone", () => {
+    const db = { meta: { seedPhotos: 2 }, catalog: structuredClone(SEED_CATALOG) };
+    const booklet = db.catalog.find((i) => i.id === "td-booklet");
+    booklet.image = "";
+    booklet.images = [];
+    const tee = db.catalog.find((i) => i.id === "jfh-logo-tee");
+    tee.images = [{ url: "/images/" + "0".repeat(32) + ".webp", color: "" }];
+    tee.image = tee.images[0].url;
+    assert.equal(needsSeedPhotos(db), true);
+    assert.equal(applySeedPhotos(db), 1);
+    assert.equal(booklet.image, "/assets/merch/td-booklet.jpg");
+    assert.equal(tee.image, "/images/" + "0".repeat(32) + ".webp");
   });
 
   it("replaces the 50 ml samples with the bottles and cases", () => {

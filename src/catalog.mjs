@@ -59,8 +59,8 @@ const RETIRED_SAMPLES = PRODUCTS.map(({ flavor, product }) => ({
 // first: one named after the item, numbered ones for a gallery, or one per
 // colour (td-team-polo-navy.jpg). Bump the version when photos are added so
 // existing stores pick them up once. The polos' main photo is Royal, the
-// colour they were actually photographed in.
-export const SEED_PHOTOS_VERSION = 2;
+// colour they were actually photographed in. Version 3: the booklet's photo.
+export const SEED_PHOTOS_VERSION = 3;
 const photo = (file, color = "") => ({ url: `/assets/merch/${file}.jpg`, color });
 const one = (id) => [photo(id)];
 const numbered = (id, n) => Array.from({ length: n }, (_, i) => photo(`${id}-${i + 1}`));
@@ -93,6 +93,8 @@ export const SEED_PHOTOS = {
   "jfh-tote-bag": one("jfh-tote-bag"),
   "jfh-beach-towel": one("jfh-beach-towel"),
   "jfh-cobbler-shaker": one("jfh-cobbler-shaker"),
+  "td-cobbler-shaker": one("td-cobbler-shaker"),
+  "td-booklet": one("td-booklet"),
   // the photo from the pool first, then the studio shot
   "jfh-pool-koozie": numbered("jfh-pool-koozie", 2),
   "jfh-bluetooth-speaker": one("jfh-bluetooth-speaker"),
@@ -335,6 +337,13 @@ export const SEED_CATALOG = [
     brand: "tropical-distillery", category: "Bar Tools", tone: "palm", art: "shaker", unit: "Set of 2",
     description: "Weighted 28 oz and 18 oz Boston tins, laser-etched.",
     costCents: 1900, maxPerOrder: 6, variants: single(24),
+  },
+  {
+    id: "td-cobbler-shaker", name: "Tropical Distillery Cobbler Shaker",
+    brand: "tropical-distillery", category: "Bar Tools", tone: "palm", art: "shaker", unit: "Each",
+    description: "Polished stainless steel cobbler shaker with a built-in strainer and cap, and the Tropical Distillery palm logo in blue and pink.",
+    // Added after the 7 Oct 2026 stock reset, so it starts at 0 until it's counted.
+    costCents: 1600, maxPerOrder: 6, variants: single(0),
   },
   {
     id: "jfh-jigger", name: "J.F. Haden's Japanese Jigger",
@@ -656,10 +665,10 @@ export function applySeedPhotos(db) {
  * Starter items put into existing stores once, with their colours and
  * photos: the Team Polo (back in stores that had deleted it), the J.F.
  * Haden's Polo, the second merch drop, and the items made from vendor
- * proofs. Each goes after the item named, when that's still there. A store
- * that has the item, or its own item of the same name, is left alone; the
- * SKU is remade if another item has taken it; and deleting one afterwards
- * sticks, since each group is only tried once.
+ * proofs. Each goes after the item named, when that's still there, with
+ * the next SKU number for its brand and category in that store. A store
+ * that has the item, or its own item of the same name, is left alone; and
+ * deleting one afterwards sticks, since each group is only tried once.
  */
 const ADDED_ITEMS = [
   { flag: "teamPolo", id: "td-team-polo", after: "jfh-logo-tee" },
@@ -702,6 +711,7 @@ const ADDED_ITEMS = [
   { flag: "sundayFunday", id: "twinp-sunday-funday-tee", after: ["twinp-game-day-tee", "twinp-trucker"] },
   { flag: "sundayFunday", id: "twinp-sunday-funday-hat", after: ["twinp-sunday-funday-tee", "twinp-trucker"] },
   { flag: "sundayFunday", id: "twinp-sunday-funday-tote", after: ["jfh-tote-bag", "jfh-beach-towel"] },
+  { flag: "tdShaker", id: "td-cobbler-shaker", after: ["td-shaker-set", "jfh-cobbler-shaker"] },
   ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 
@@ -739,8 +749,8 @@ export function applyAddedItems(db) {
     const name = seed.name.toLowerCase();
     if (db.catalog.some((i) => i.id === seed.id || String(i.name).trim().toLowerCase() === name)) continue;
     const item = structuredClone(seed);
-    const taken = db.catalog.map((i) => i.sku);
-    if (taken.includes(item.sku)) item.sku = generateSku(item.brand, item.category, taken);
+    // The next number for its brand and category in this store, as a new item gets.
+    item.sku = generateSku(item.brand, item.category, db.catalog.map((i) => i.sku));
     const anchor = [after].flat().find((a) => db.catalog.some((i) => i.id === a));
     const at = db.catalog.findIndex((i) => i.id === anchor);
     db.catalog.splice(at >= 0 ? at + 1 : db.catalog.length, 0, item);
