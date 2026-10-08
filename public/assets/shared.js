@@ -57,13 +57,15 @@ function firstThreeLetters(text) {
   return (letters || "ITM").padEnd(3, "X").slice(0, 3);
 }
 
-// Categories that don't use their first three letters, which Samples and
-// Sampling & Events would otherwise share.
+// Codes that aren't simply the first three letters: Tropical Distillery is
+// TD, and Samples and Sampling & Events would otherwise share SAM.
+const BRAND_SKU_CODES = { "tropical-distillery": "TD" };
 const CATEGORY_SKU_CODES = { Samples: "SMP", "Sampling & Events": "EVNT" };
 
-/** The start of every SKU for a brand and category: JFH-APP. */
+/** The start of every SKU for a brand and category: JFH-APP, TD-EVNT. */
 export function skuPrefix(brand, category) {
-  return `${firstThreeLetters(labelFor(BRANDS, brand))}-${CATEGORY_SKU_CODES[category] ?? firstThreeLetters(category)}`;
+  const brandCode = BRAND_SKU_CODES[brand] ?? firstThreeLetters(labelFor(BRANDS, brand));
+  return `${brandCode}-${CATEGORY_SKU_CODES[category] ?? firstThreeLetters(category)}`;
 }
 
 /**
@@ -75,7 +77,7 @@ export function generateSku(brand, category, taken = []) {
   const prefix = skuPrefix(brand, category);
   let highest = 0;
   for (const sku of taken) {
-    const match = /^([A-Z]{3}-[A-Z]{3,4})-(\d+)$/.exec(String(sku).toUpperCase());
+    const match = /^([A-Z]{2,3}-[A-Z]{3,4})-(\d+)$/.exec(String(sku).toUpperCase());
     if (match && match[1] === prefix) highest = Math.max(highest, Number(match[2]));
   }
   return `${prefix}-${String(highest + 1).padStart(3, "0")}`;

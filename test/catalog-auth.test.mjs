@@ -266,7 +266,7 @@ describe("automatic SKUs", () => {
   it("is the brand's and category's first three letters and the next number", () => {
     assert.equal(skuPrefix("jf-hadens", "Apparel"), "JFH-APP");
     assert.equal(skuPrefix("twin-p", "Bar Tools"), "TWI-BAR");
-    assert.equal(skuPrefix("tropical-distillery", "Sampling & Events"), "TRO-EVNT");
+    assert.equal(skuPrefix("tropical-distillery", "Sampling & Events"), "TD-EVNT", "Tropical Distillery is TD");
     assert.equal(skuPrefix("twin-p", "Samples"), "TWI-SMP", "so Samples don't share SAM");
     assert.equal(generateSku("jf-hadens", "Giveaways"), "JFH-GIV-001");
     // after the highest number with the same start, so a deleted item's isn't reused
@@ -283,11 +283,11 @@ describe("automatic SKUs", () => {
   it("numbers the starter catalog in the store's order", () => {
     const sku = (id) => SEED_CATALOG.find((i) => i.id === id).sku;
     assert.equal(sku("jfh-logo-tee"), "JFH-APP-001");
-    assert.equal(sku("td-team-polo"), "TRO-APP-001");
+    assert.equal(sku("td-team-polo"), "TD-APP-001");
     assert.equal(sku("twinp-trucker"), "TWI-APP-001");
-    assert.ok(SEED_CATALOG.every((i) => /^[A-Z]{3}-[A-Z]{3,4}-\d{3}$/.test(i.sku)), "every SKU in the new format");
-    assert.equal(sku("td-tasting-kit"), "TRO-EVNT-001");
-    assert.equal(generateSku("tropical-distillery", "Sampling & Events", SEED_CATALOG.map((i) => i.sku)), "TRO-EVNT-005");
+    assert.ok(SEED_CATALOG.every((i) => /^[A-Z]{2,3}-[A-Z]{3,4}-\d{3}$/.test(i.sku)), "every SKU in the new format");
+    assert.equal(sku("td-tasting-kit"), "TD-EVNT-001");
+    assert.equal(generateSku("tropical-distillery", "Sampling & Events", SEED_CATALOG.map((i) => i.sku)), "TD-EVNT-005");
   });
 
   it("renumbers an existing store's SKUs once, in store order", () => {
@@ -310,14 +310,14 @@ describe("automatic SKUs", () => {
     db.meta.skuFormat = 2;
     for (const item of db.catalog) if (item.category === "Samples") item.sku = item.sku.replace("-SMP-", "-SAM-");
     const kit = db.catalog.find((i) => i.id === "td-tasting-kit");
-    kit.sku = "TRO-SAM-001";
+    kit.sku = "TRO-SAM-001"; // as version 2 numbered it
     const tee = db.catalog.find((i) => i.id === "jfh-logo-tee");
     tee.sku = "MY-OWN-TEE"; // an admin's own SKU since
     assert.equal(needsSkuFormat(db), true);
     assert.equal(applySkuFormat(db), 14 + 1, "the 14 samples, and the kit (the only Sampling & Events item given SAM here)");
     assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, "JFH-SMP-001");
     assert.equal(db.catalog.find((i) => i.id === "twinp-case").sku, "TWI-SMP-002");
-    assert.equal(kit.sku, "TRO-EVNT-001", "and Sampling & Events moves to EVNT");
+    assert.equal(kit.sku, "TD-EVNT-001", "and Sampling & Events moves to EVNT, Tropical Distillery to TD");
     assert.equal(tee.sku, "MY-OWN-TEE");
     assert.equal(needsSkuFormat(db), false);
   });
@@ -325,11 +325,24 @@ describe("automatic SKUs", () => {
   it("moves a version 3 store's Sampling & Events from SAM to EVNT, touching nothing else", () => {
     const db = initialState();
     db.meta.skuFormat = 3;
-    for (const item of db.catalog) if (item.category === "Sampling & Events") item.sku = item.sku.replace("-EVNT-", "-SAM-");
+    for (const item of db.catalog) if (item.category === "Sampling & Events") item.sku = item.sku.replace("TD-EVNT-", "TRO-SAM-");
     const sampleSku = db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku;
     assert.equal(applySkuFormat(db), 4);
-    assert.equal(db.catalog.find((i) => i.id === "td-pullup-banner").sku, "TRO-EVNT-004");
+    assert.equal(db.catalog.find((i) => i.id === "td-pullup-banner").sku, "TD-EVNT-004");
     assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, sampleSku);
+  });
+
+  it("moves a version 4 store's Tropical Distillery SKUs from TRO to TD, keeping their numbers", () => {
+    const db = initialState();
+    db.meta.skuFormat = 4;
+    const tdItems = db.catalog.filter((i) => i.brand === "tropical-distillery");
+    for (const item of tdItems) item.sku = item.sku.replace(/^TD-/, "TRO-");
+    const want = new Map(tdItems.map((i) => [i.id, i.sku.replace(/^TRO-/, "TD-")]));
+    const jfh = db.catalog.find((i) => i.id === "jfh-logo-tee").sku;
+    assert.equal(applySkuFormat(db), tdItems.length);
+    for (const item of tdItems) assert.equal(item.sku, want.get(item.id));
+    assert.equal(db.catalog.find((i) => i.id === "jfh-logo-tee").sku, jfh, "other brands untouched");
+    assert.equal(needsSkuFormat(db), false);
   });
 });
 

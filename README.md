@@ -101,13 +101,14 @@ shares nothing with SipScale.
   and colors stay in the one-item editor.
 - **SKUs** are the first three letters of the brand and of the category and a
   number: JFH-APP-001 is the first J.F. Haden's apparel item, TWI-SMP-002 the
-  second Twin P sample, TRO-GIV-004 the fourth Tropical Distillery giveaway.
+  second Twin P sample, TD-GIV-004 the fourth Tropical Distillery giveaway
+  (Tropical Distillery is TD rather than its first three letters).
   A new item gets the next number for its brand and category as you choose
   them (after the highest one used, so a deleted item's number isn't
   reused), and you can still type your own. Every existing SKU was
   renumbered this way once, in the store's order; past orders keep the SKUs
   they were placed with. Samples use SMP and Sampling & Events use EVNT
-  (TRO-EVNT-001), so the two don't share SAM.
+  (TD-EVNT-001), so the two don't share SAM.
 - **Reorder** the catalog list with each row's ⠿ handle (drag), its ▲▼
   buttons or the arrow keys on the handle. Items stay grouped by category,
   so this sets the order within each, and it's saved straight away, with an
