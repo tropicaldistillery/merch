@@ -102,7 +102,8 @@ shares nothing with SipScale.
 - **SKUs** are the first three letters of the brand and of the category and a
   number: JFH-APP-001 is the first J.F. Haden's apparel item, TWI-SMP-002 the
   second Twin P sample, TD-GIV-004 the fourth Tropical Distillery giveaway
-  (Tropical Distillery is TD rather than its first three letters).
+  (Tropical Distillery is TD rather than its first three letters, and every
+  Tropical Distillery item was given a TD SKU once, typed-in ones too).
   A new item gets the next number for its brand and category as you choose
   them (after the highest one used, so a deleted item's number isn't
   reused), and you can still type your own. Every existing SKU was

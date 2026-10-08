@@ -284,9 +284,16 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   }
   // After the category moves, as the SKU says the category.
   if (needsSkuFormat(initial)) {
+    const before = new Map(initial.catalog.map((item) => [item.id, item.sku]));
     const changed = await store.mutate((db) => applySkuFormat(db));
-    console.log(`[catalog] updated ${changed} SKU(s) to brand-category-number (TD for Tropical Distillery, SMP, EVNT)`);
     initial = await store.read();
+    const swaps = initial.catalog.filter((item) => before.get(item.id) !== item.sku).map((item) => `${before.get(item.id) || "(none)"} → ${item.sku}`);
+    const td = initial.catalog.filter((item) => item.brand === "tropical-distillery").length;
+    console.log(
+      `[catalog] updated ${changed} SKU(s) to brand-category-number (TD for Tropical Distillery, SMP, EVNT)` +
+        (swaps.length && swaps.length <= 40 ? `: ${swaps.join(", ")}` : "") +
+        `; ${td} Tropical Distillery item(s) in the catalog`
+    );
   }
   if (needsStockCleared(initial)) {
     const cleared = await store.mutate((db) => applyStockCleared(db));

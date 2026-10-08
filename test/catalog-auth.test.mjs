@@ -344,6 +344,29 @@ describe("automatic SKUs", () => {
     assert.equal(db.catalog.find((i) => i.id === "jfh-logo-tee").sku, jfh, "other brands untouched");
     assert.equal(needsSkuFormat(db), false);
   });
+
+  it("gives every Tropical Distillery item a TD SKU, typed-in ones too", () => {
+    const db = initialState();
+    db.meta.skuFormat = 5;
+    const item = (id) => db.catalog.find((i) => i.id === id);
+    item("td-team-polo").sku = "POLO-2026"; // typed in
+    item("td-tumbler").sku = "JFH-GIV-007"; // another brand's code, category fits
+    item("td-shaker-set").sku = "TRO-APP-009"; // category part doesn't fit any more
+    item("td-booklet").sku = ""; // none at all
+    const kept = item("td-sell-sheets").sku;
+    const jfhTee = { ...structuredClone(item("jfh-logo-tee")), id: "jfh-typed", sku: "MY-OWN-TEE" };
+    db.catalog.push(jfhTee);
+    assert.equal(applySkuFormat(db), 4);
+    assert.equal(item("td-team-polo").sku, "TD-APP-001", "the next free TD apparel number");
+    assert.equal(item("td-tumbler").sku, "TD-GIV-007", "keeps its number");
+    assert.equal(item("td-shaker-set").sku, "TD-BAR-001");
+    assert.equal(item("td-booklet").sku, "TD-PRI-002");
+    assert.equal(item("td-sell-sheets").sku, kept, "TD SKUs untouched");
+    assert.equal(jfhTee.sku, "MY-OWN-TEE", "other brands keep typed-in SKUs");
+    assert.ok(db.catalog.filter((i) => i.brand === "tropical-distillery").every((i) => /^TD-[A-Z]{3,4}-\d{3}$/.test(i.sku)));
+    assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
+    assert.equal(needsSkuFormat(db), false);
+  });
 });
 
 describe("colors and photo galleries", () => {
