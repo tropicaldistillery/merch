@@ -661,6 +661,24 @@ describe("starter items added to existing stores", () => {
     assert.equal(booklet.supplier.company, "Ten 10 Design LLC");
   });
 
+  it("adds the From Happy Hour to Game Day tee once, after the Twin P trucker, with no stock yet", () => {
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "twinp-game-day-tee");
+    // an admin's own Twin P item already has the number the starter catalog gives the tee
+    catalog.push({ ...structuredClone(catalog.find((i) => i.id === "twinp-trucker")), id: "own-twinp", name: "Twin P Koozie", sku: "TWI-APP-002" });
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1 }, catalog };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["twinp-game-day-tee"]);
+    const ids = db.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("twinp-trucker") + 1], "twinp-game-day-tee");
+    const tee = db.catalog.find((i) => i.id === "twinp-game-day-tee");
+    assert.equal(tee.brand, "twin-p");
+    assert.equal(tee.category, "Apparel");
+    assert.equal(tee.sku, "TWI-APP-003");
+    assert.equal(tee.image, "/assets/merch/twinp-game-day-tee.jpg");
+    assert.deepEqual(tee.variants.map((v) => v.stock), [0, 0, 0, 0, 0, 0]);
+    assert.equal(needsAddedItems(db), false);
+    assert.deepEqual(applyAddedItems(db), [], "only once");
+  });
+
   it("replaces the 50 ml samples with the bottles and cases", () => {
     const sample = (flavor, product, sku) => ({ ...structuredClone(SEED_CATALOG.find((i) => i.id === "jfh-citrus-bottle")), id: flavor, name: `${product} Sample, 50 ml`, sku });
     const catalog = structuredClone(SEED_CATALOG).filter((i) => !SPIRIT_IDS.includes(i.id));

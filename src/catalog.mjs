@@ -77,6 +77,8 @@ export const SEED_PHOTOS = {
   "jfh-martini-tee": [photo("jfh-martini-tee-woman", "White"), photo("jfh-martini-tee-man", "White"), ...perColor("jfh-martini-tee", "White")],
   "jfh-cap": one("jfh-cap"),
   "twinp-trucker": one("twinp-trucker"),
+  // printed on the back
+  "twinp-game-day-tee": one("twinp-game-day-tee"),
   "jfh-bar-mat": one("jfh-bar-mat"),
   "jfh-spill-mat": one("jfh-spill-mat"),
   "jfh-lychee-pin": one("jfh-lychee-pin"),
@@ -232,6 +234,13 @@ export const SEED_CATALOG = [
     brand: "twin-p", category: "Apparel", tone: "oak", art: "cap", unit: "Each",
     description: "Mesh-back trucker with a leather Twin P patch.",
     costCents: 1300, maxPerOrder: 4, variants: single(20),
+  },
+  {
+    id: "twinp-game-day-tee", name: "From Happy Hour to Game Day Tee",
+    brand: "twin-p", category: "Apparel", tone: "oak", art: "tee", unit: "Each",
+    description: "White tee with FROM HAPPY HOUR TO GAME DAY in navy and gold varsity letters and the Twin P Whiskey badge, printed on the back.",
+    // Added after the 7 Oct 2026 stock reset, so it starts at 0 like everything else until it's counted.
+    costCents: 1400, maxPerOrder: 6, variants: sized([0, 0, 0, 0, 0, 0]),
   },
   {
     id: "jfh-apron", name: "J.F. Haden's Bartender Apron",
@@ -666,6 +675,7 @@ const ADDED_ITEMS = [
   { flag: "proofDrop3", id: "jfh-martini-keychain-color", after: ["jfh-lip-balm", "jfh-pool-koozie"] },
   { flag: "proofDrop3", id: "jfh-martini-keychain-line", after: "jfh-martini-keychain-color" },
   { flag: "samplesDrop", id: "td-booklet", after: ["td-sell-sheets", "jfh-recipe-cards"] },
+  { flag: "gameDayTee", id: "twinp-game-day-tee", after: ["twinp-trucker", "jfh-gradient-crop", "jfh-gradient-tee"] },
   ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 
