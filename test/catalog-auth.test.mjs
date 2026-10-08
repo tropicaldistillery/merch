@@ -345,20 +345,32 @@ describe("automatic SKUs", () => {
     assert.equal(needsSkuFormat(db), false);
   });
 
-  it("gives every Tropical Distillery item a TD SKU, typed-in ones too", () => {
+  it("gives every Tropical Distillery item a TD SKU, including typed-in ones and ones saved under another brand", () => {
     const db = initialState();
     db.meta.skuFormat = 5;
     const item = (id) => db.catalog.find((i) => i.id === id);
     item("td-team-polo").sku = "POLO-2026"; // typed in
-    item("td-tumbler").sku = "JFH-GIV-007"; // another brand's code, category fits
+    item("td-tumbler").sku = "JFH-GIV-007"; // another brand's code
     item("td-shaker-set").sku = "TRO-APP-009"; // category part doesn't fit any more
     item("td-booklet").sku = ""; // none at all
     const kept = item("td-sell-sheets").sku;
     const jfhTee = { ...structuredClone(item("jfh-logo-tee")), id: "jfh-typed", sku: "MY-OWN-TEE" };
     db.catalog.push(jfhTee);
-    assert.equal(applySkuFormat(db), 4);
+    // Saved under J.F. Haden's, the brand a new item starts on.
+    const banner = { ...structuredClone(item("td-pullup-banner")), id: "banner-2", name: "Tropical Distillery Step & Repeat", brand: "jf-hadens", sku: "JFH-EVNT-001" };
+    db.catalog.push(banner);
+    item("td-table-throw").brand = "twin-p"; // started as a Tropical Distillery item
+    const mangoTee = { ...structuredClone(item("jfh-logo-tee")), id: "jfh-tropical-tee", name: "Tropical Mango Tee", sku: "JFH-APP-099" };
+    db.catalog.push(mangoTee);
+    assert.equal(applySkuFormat(db), 5);
+    assert.equal(banner.brand, "tropical-distillery");
+    assert.equal(banner.sku, "TD-EVNT-005", "the next TD Sampling & Events number");
+    assert.equal(item("td-table-throw").brand, "tropical-distillery");
+    assert.equal(item("td-table-throw").sku, "TD-EVNT-003", "already TD, so it keeps its SKU");
+    assert.equal(mangoTee.brand, "jf-hadens", "only items named Tropical Distillery move");
+    assert.equal(mangoTee.sku, "JFH-APP-099");
     assert.equal(item("td-team-polo").sku, "TD-APP-001", "the next free TD apparel number");
-    assert.equal(item("td-tumbler").sku, "TD-GIV-007", "keeps its number");
+    assert.equal(item("td-tumbler").sku, "TD-GIV-001");
     assert.equal(item("td-shaker-set").sku, "TD-BAR-001");
     assert.equal(item("td-booklet").sku, "TD-PRI-002");
     assert.equal(item("td-sell-sheets").sku, kept, "TD SKUs untouched");

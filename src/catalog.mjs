@@ -856,8 +856,10 @@ export function applyCategoryMoves(db) {
 // Version 3: Samples use SMP, so they don't share SAM with Sampling & Events.
 // Version 4: Sampling & Events use EVNT.
 // Version 5: Tropical Distillery uses TD.
-// Version 6: every Tropical Distillery item starts with TD, whatever it had.
-export const SKU_FORMAT_VERSION = 6;
+// Versions 6 and 7: every Tropical Distillery item starts with TD, whatever
+// it had, including items saved under another brand whose name says
+// Tropical Distillery.
+export const SKU_FORMAT_VERSION = 7;
 
 /** Give every item a brand-category-number SKU, in the store's order. */
 export function renumberSkus(items) {
@@ -881,10 +883,10 @@ export function needsSkuFormat(db) {
  * changed since swapped (Samples SAM → SMP, Sampling & Events SAM → EVNT,
  * Tropical Distillery TRO → TD), keeping their numbers, so nothing else an
  * admin has changed is touched. The one exception is Tropical Distillery:
- * every one of its items ends up with a TD SKU, so one with a typed-in SKU
- * or another brand's code gets TD and keeps its number when the category
- * part fits, or else the next TD number for its category. Past orders keep the SKUs they
- * were placed with.
+ * an item that's its by name (or started as one of its items) but was saved
+ * under another brand moves back to it, and every Tropical Distillery item
+ * without a TD SKU gets the next TD number for its category. Past orders
+ * keep the SKUs they were placed with.
  */
 export function applySkuFormat(db) {
   const before = new Map(db.catalog.map((item) => [item.id, item.sku]));
@@ -896,17 +898,17 @@ export function applySkuFormat(db) {
     if (version < 4) swapSkus(db, (i) => i.category === "Sampling & Events", /^([A-Z]{2,3})-SAM-(\d+)$/, (m) => `${m[1]}-EVNT-${m[2]}`);
     if (version < 5) swapSkus(db, (i) => i.brand === "tropical-distillery", /^TRO-([A-Z]{3,4})-(\d+)$/, (m) => `TD-${m[1]}-${m[2]}`);
   }
-  if (version < 6) {
-    swapSkus(
-      db,
-      (i) => i.brand === "tropical-distillery" && !/^TD-[A-Z]{3,4}-\d+$/.test(i.sku ?? ""),
-      /^(?:[A-Z]{2,4}-([A-Z]{3,4})-(\d+)|[^]*)$/,
-      // Keep the number when the category part still fits the item.
-      (m, item) => (m[1] && skuPrefix(item.brand, item.category) === `TD-${m[1]}` ? `TD-${m[1]}-${m[2]}` : null)
-    );
+  if (version < 7) {
+    for (const item of db.catalog) if (isTropicalByName(item)) item.brand = "tropical-distillery";
+    swapSkus(db, (i) => i.brand === "tropical-distillery" && !/^TD-[A-Z]{3,4}-\d+$/.test(i.sku ?? ""), /^/, () => null);
   }
   db.meta.skuFormat = SKU_FORMAT_VERSION;
   return db.catalog.filter((item) => before.get(item.id) !== item.sku).length;
+}
+
+/** A Tropical Distillery item saved under another brand (the editor starts on J.F. Haden's). */
+function isTropicalByName(item) {
+  return item.brand !== "tropical-distillery" && (item.id.startsWith("td-") || /\btropical\s+distillery\b/i.test(item.name ?? ""));
 }
 
 /**
@@ -919,7 +921,7 @@ function swapSkus(db, applies, pattern, rebuild) {
   for (const item of db.catalog) {
     const match = applies(item) && pattern.exec(String(item.sku ?? "").toUpperCase());
     if (!match) continue;
-    let next = rebuild(match, item);
+    let next = rebuild(match);
     if (!next || taken.has(next)) next = generateSku(item.brand, item.category, [...taken]);
     taken.delete(item.sku);
     taken.add(next);

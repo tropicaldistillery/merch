@@ -284,16 +284,19 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   }
   // After the category moves, as the SKU says the category.
   if (needsSkuFormat(initial)) {
-    const before = new Map(initial.catalog.map((item) => [item.id, item.sku]));
+    const before = new Map(initial.catalog.map((item) => [item.id, item]));
     const changed = await store.mutate((db) => applySkuFormat(db));
     initial = await store.read();
-    const swaps = initial.catalog.filter((item) => before.get(item.id) !== item.sku).map((item) => `${before.get(item.id) || "(none)"} → ${item.sku}`);
-    const td = initial.catalog.filter((item) => item.brand === "tropical-distillery").length;
+    const was = (item) => before.get(item.id) ?? {};
+    const swaps = initial.catalog.filter((item) => was(item).sku !== item.sku).map((item) => `${was(item).sku || "(none)"} → ${item.sku}`);
+    const rebranded = initial.catalog.filter((item) => was(item).brand && was(item).brand !== item.brand).map((item) => `${item.name} (was ${was(item).brand})`);
+    const td = initial.catalog.filter((item) => item.brand === "tropical-distillery").map((item) => `${item.sku} ${item.name}`);
     console.log(
       `[catalog] updated ${changed} SKU(s) to brand-category-number (TD for Tropical Distillery, SMP, EVNT)` +
-        (swaps.length && swaps.length <= 40 ? `: ${swaps.join(", ")}` : "") +
-        `; ${td} Tropical Distillery item(s) in the catalog`
+        (swaps.length && swaps.length <= 40 ? `: ${swaps.join(", ")}` : "")
     );
+    if (rebranded.length) console.log(`[catalog] moved ${rebranded.length} item(s) to Tropical Distillery: ${rebranded.join(", ")}`);
+    console.log(`[catalog] ${td.length} Tropical Distillery item(s): ${td.join(", ")}`);
   }
   if (needsStockCleared(initial)) {
     const cleared = await store.mutate((db) => applyStockCleared(db));
