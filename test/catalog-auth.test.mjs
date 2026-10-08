@@ -665,18 +665,34 @@ describe("starter items added to existing stores", () => {
     const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "twinp-game-day-tee");
     // an admin's own Twin P item already has the number the starter catalog gives the tee
     catalog.push({ ...structuredClone(catalog.find((i) => i.id === "twinp-trucker")), id: "own-twinp", name: "Twin P Koozie", sku: "TWI-APP-002" });
-    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1 }, catalog };
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, sundayFunday: 1 }, catalog };
     assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["twinp-game-day-tee"]);
     const ids = db.catalog.map((i) => i.id);
     assert.equal(ids[ids.indexOf("twinp-trucker") + 1], "twinp-game-day-tee");
     const tee = db.catalog.find((i) => i.id === "twinp-game-day-tee");
     assert.equal(tee.brand, "twin-p");
     assert.equal(tee.category, "Apparel");
-    assert.equal(tee.sku, "TWI-APP-003");
+    assert.equal(tee.sku, "TWI-APP-005", "after the highest Twin P apparel number (the Sunday Funday tee and hat have 003 and 004)");
     assert.equal(tee.image, "/assets/merch/twinp-game-day-tee.jpg");
     assert.deepEqual(tee.variants.map((v) => v.stock), [0, 0, 0, 0, 0, 0]);
     assert.equal(needsAddedItems(db), false);
     assert.deepEqual(applyAddedItems(db), [], "only once");
+  });
+
+  it("adds the Sunday Funday tee, dad hat and tote once, next to their kind, with no stock yet", () => {
+    const NEW = ["twinp-sunday-funday-tee", "twinp-sunday-funday-hat", "twinp-sunday-funday-tote"];
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1 }, catalog: structuredClone(SEED_CATALOG).filter((i) => !NEW.includes(i.id)) };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), NEW);
+    const ids = db.catalog.map((i) => i.id);
+    assert.deepEqual(ids.slice(ids.indexOf("twinp-game-day-tee") + 1, ids.indexOf("twinp-game-day-tee") + 3), NEW.slice(0, 2));
+    assert.equal(ids[ids.indexOf("jfh-tote-bag") + 1], "twinp-sunday-funday-tote");
+    const item = (id) => db.catalog.find((i) => i.id === id);
+    assert.deepEqual(NEW.map((id) => item(id).sku), ["TWI-APP-003", "TWI-APP-004", "TWI-GIV-001"]);
+    assert.deepEqual(NEW.map((id) => item(id).image), NEW.map((id) => `/assets/merch/${id}.jpg`));
+    assert.ok(NEW.every((id) => item(id).brand === "twin-p" && item(id).variants.every((v) => v.stock === 0)));
+    assert.equal(item("twinp-sunday-funday-tee").variants.length, 6, "sized");
+    assert.equal(item("twinp-sunday-funday-tote").category, "Giveaways");
+    assert.equal(needsAddedItems(db), false);
   });
 
   it("replaces the 50 ml samples with the bottles and cases", () => {

@@ -79,6 +79,9 @@ export const SEED_PHOTOS = {
   "twinp-trucker": one("twinp-trucker"),
   // printed on the back
   "twinp-game-day-tee": one("twinp-game-day-tee"),
+  "twinp-sunday-funday-tee": one("twinp-sunday-funday-tee"),
+  "twinp-sunday-funday-hat": one("twinp-sunday-funday-hat"),
+  "twinp-sunday-funday-tote": one("twinp-sunday-funday-tote"),
   "jfh-bar-mat": one("jfh-bar-mat"),
   "jfh-spill-mat": one("jfh-spill-mat"),
   "jfh-lychee-pin": one("jfh-lychee-pin"),
@@ -241,6 +244,19 @@ export const SEED_CATALOG = [
     description: "White tee with FROM HAPPY HOUR TO GAME DAY in navy and gold varsity letters and the Twin P Whiskey badge, printed on the back.",
     // Added after the 7 Oct 2026 stock reset, so it starts at 0 like everything else until it's counted.
     costCents: 1400, maxPerOrder: 6, variants: sized([0, 0, 0, 0, 0, 0]),
+  },
+  // The Sunday Funday set, also added after the stock reset.
+  {
+    id: "twinp-sunday-funday-tee", name: "Sunday Funday Tee",
+    brand: "twin-p", category: "Apparel", tone: "oak", art: "tee", unit: "Each",
+    description: "Royal blue tee with SUNDAY FUNDAY in white and gold block letters around a Twin P Whiskey football helmet, printed on the front.",
+    costCents: 1400, maxPerOrder: 6, variants: sized([0, 0, 0, 0, 0, 0]),
+  },
+  {
+    id: "twinp-sunday-funday-hat", name: "Sunday Funday Dad Hat",
+    brand: "twin-p", category: "Apparel", tone: "oak", art: "cap", unit: "Each",
+    description: "Royal blue cotton dad hat with the SUNDAY FUNDAY Twin P Whiskey helmet design on the front.",
+    costCents: 1400, maxPerOrder: 4, variants: single(0),
   },
   {
     id: "jfh-apron", name: "J.F. Haden's Bartender Apron",
@@ -441,6 +457,13 @@ export const SEED_CATALOG = [
     brand: "jf-hadens", category: "Giveaways", tone: "oak", art: "kit", unit: "Each",
     description: "Soft sublimated canvas tote, 17.5 × 12.5 in with a 5 in gusset and a white top zipper. Cream with a tan base and the J.F. Haden's logo on both sides.",
     costCents: 1400, maxPerOrder: 6, variants: single(30),
+  },
+  {
+    id: "twinp-sunday-funday-tote", name: "Sunday Funday Tote Bag",
+    brand: "twin-p", category: "Giveaways", tone: "oak", art: "kit", unit: "Each",
+    description: "Royal blue canvas tote with long handles and the SUNDAY FUNDAY Twin P Whiskey helmet design on the front.",
+    // Added after the 7 Oct 2026 stock reset.
+    costCents: 1400, maxPerOrder: 6, variants: single(0),
   },
   {
     id: "jfh-beach-towel", name: "J.F. Haden's Beach Towel",
@@ -676,6 +699,9 @@ const ADDED_ITEMS = [
   { flag: "proofDrop3", id: "jfh-martini-keychain-line", after: "jfh-martini-keychain-color" },
   { flag: "samplesDrop", id: "td-booklet", after: ["td-sell-sheets", "jfh-recipe-cards"] },
   { flag: "gameDayTee", id: "twinp-game-day-tee", after: ["twinp-trucker", "jfh-gradient-crop", "jfh-gradient-tee"] },
+  { flag: "sundayFunday", id: "twinp-sunday-funday-tee", after: ["twinp-game-day-tee", "twinp-trucker"] },
+  { flag: "sundayFunday", id: "twinp-sunday-funday-hat", after: ["twinp-sunday-funday-tee", "twinp-trucker"] },
+  { flag: "sundayFunday", id: "twinp-sunday-funday-tote", after: ["jfh-tote-bag", "jfh-beach-towel"] },
   ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 
