@@ -95,6 +95,7 @@ export const SEED_PHOTOS = {
   "jfh-cobbler-shaker": one("jfh-cobbler-shaker"),
   "td-cobbler-shaker": one("td-cobbler-shaker"),
   "jfh-stirrers": one("jfh-stirrers"),
+  "jfh-sample-cups": one("jfh-sample-cups"),
   "td-booklet": one("td-booklet"),
   // the photo from the pool first, then the studio shot
   "jfh-pool-koozie": numbered("jfh-pool-koozie", 2),
@@ -365,6 +366,13 @@ export const SEED_CATALOG = [
     brand: "tropical-distillery", category: "Sampling & Events", tone: "palm", art: "cups", unit: "Sleeve of 250",
     description: "Clear 1 oz plastic sampling cups. Bought to order, so never out of stock.",
     costCents: 1100, maxPerOrder: 8, variants: single(null),
+  },
+  {
+    id: "jfh-sample-cups", name: "J.F. Haden's Clear Sample Cups",
+    brand: "jf-hadens", category: "Sampling & Events", tone: "mango", art: "cups", unit: "Sleeve",
+    description: "Clear plastic tasting cups printed in black with the J.F. Haden's wordmark and AMERICA'S CRAFT LIQUEUR COMPANY™. For samples at tastings and events.",
+    // Added after the 7 Oct 2026 stock reset, so it starts at 0 until it's counted.
+    costCents: 1000, maxPerOrder: 10, variants: single(0),
   },
   // 750 ml bottles and cases (see SPIRITS)
   ...SPIRITS.map(({ id, product, brand, tone, made, kind }) =>
@@ -721,6 +729,7 @@ const ADDED_ITEMS = [
   { flag: "sundayFunday", id: "twinp-sunday-funday-tote", after: ["jfh-tote-bag", "jfh-beach-towel"] },
   { flag: "tdShaker", id: "td-cobbler-shaker", after: ["td-shaker-set", "jfh-cobbler-shaker"] },
   { flag: "stirrers", id: "jfh-stirrers", after: ["jfh-napkin-caddy", "jfh-cobbler-shaker", "jfh-jigger"] },
+  { flag: "sampleCups", id: "jfh-sample-cups", after: ["td-sample-cups", "td-tasting-kit"] },
   ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 

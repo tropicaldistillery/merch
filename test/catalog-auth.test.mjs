@@ -723,6 +723,19 @@ describe("starter items added to existing stores", () => {
     assert.equal(needsAddedItems(db), false);
   });
 
+  it("adds the J.F. Haden's clear sample cups once, in Sampling & Events, with no stock yet", () => {
+    // like the live store: none of the starter Sampling & Events items left
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "jfh-sample-cups" && i.category !== "Sampling & Events");
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1 }, catalog };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["jfh-sample-cups"]);
+    const cups = db.catalog.find((i) => i.id === "jfh-sample-cups");
+    assert.equal(cups.sku, "JFH-EVNT-001");
+    assert.equal(cups.category, "Sampling & Events");
+    assert.equal(cups.image, "/assets/merch/jfh-sample-cups.jpg");
+    assert.deepEqual(cups.variants.map((v) => v.stock), [0]);
+    assert.equal(needsAddedItems(db), false);
+  });
+
   it("gives the booklet its photo when it has none, leaving an admin's own photo alone", () => {
     const db = { meta: { seedPhotos: 2 }, catalog: structuredClone(SEED_CATALOG) };
     const booklet = db.catalog.find((i) => i.id === "td-booklet");
