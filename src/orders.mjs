@@ -126,6 +126,7 @@ function readLines(rawLines, catalog, errors) {
       variantId: variant.id,
       sku: item.sku,
       name: item.name,
+      category: item.category,
       variantLabel: variant.label,
       color: colors.length ? color : "",
       unit: item.unit,

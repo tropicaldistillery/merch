@@ -1,6 +1,8 @@
 // Order emails, sent through Resend (https://resend.com):
 //   - every new order: an alert to the merch admins (ORDER_EMAIL_TO) and a
-//     confirmation to the person who placed it
+//     confirmation to the person who placed it. With ORDER_EMAIL_TO_POS and/or
+//     ORDER_EMAIL_TO_SAMPLES set, the alert is split: point-of-sale lines go
+//     to one inbox and samples to the other, each with just its own lines
 //   - every status change: an update to that person (approved, shipped with
 //     the tracking link, delivered, declined with the reason, cancelled)
 //   - a requester cancelling their own order: a note to the admins
@@ -34,6 +36,51 @@ function calendarDate(iso) {
 function firstName(name) {
   return String(name || "").trim().split(/\s+/)[0] || "there";
 }
+
+/* ---------------------------------------------------------------- routing */
+
+/** A sample: the Samples category, or for orders from before lines kept it, an SMP SKU. */
+export function isSampleLine(line) {
+  return line.category ? line.category === "Samples" : /-SMP-\d+$/i.test(String(line.sku ?? ""));
+}
+
+/** Just these lines of an order, with their own totals. */
+function partOf(order, lines) {
+  return {
+    ...order,
+    lines,
+    totalUnits: lines.reduce((n, l) => n + l.quantity, 0),
+    totalCents: lines.reduce((n, l) => n + l.lineTotalCents, 0),
+  };
+}
+
+const sameList = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
+
+/**
+ * Who the admin emails about an order go to, as [{ kind, to, order }]. With
+ * no routes, everyone in adminTo gets the whole order (kind ""). With routes,
+ * point-of-sale lines go to routes.pos and samples to routes.samples (either
+ * falling back to adminTo), each with only its part of the order; when both
+ * parts go to the same people they get one email with the whole order.
+ */
+export function adminRoutes(order, { adminTo = [], routes = {} } = {}) {
+  const posTo = routes.pos?.length ? routes.pos : adminTo;
+  const samplesTo = routes.samples?.length ? routes.samples : adminTo;
+  if (!routes.pos?.length && !routes.samples?.length) return adminTo.length ? [{ kind: "", to: adminTo, order }] : [];
+  const samples = order.lines.filter(isSampleLine);
+  const pos = order.lines.filter((l) => !isSampleLine(l));
+  if (pos.length && samples.length && sameList(posTo, samplesTo)) return posTo.length ? [{ kind: "", to: posTo, order }] : [];
+  const groups = [];
+  if (pos.length && posTo.length) groups.push({ kind: "pos", to: posTo, order: samples.length ? partOf(order, pos) : order });
+  if (samples.length && samplesTo.length) groups.push({ kind: "samples", to: samplesTo, order: pos.length ? partOf(order, samples) : order });
+  return groups;
+}
+
+const KIND = {
+  "": { request: "merch order", other: "" },
+  pos: { request: "point-of-sale request", other: "This order also has samples, which went to the samples inbox." },
+  samples: { request: "samples request", other: "This order also has point-of-sale items, which went to the point-of-sale inbox." },
+};
 
 /* ---------------------------------------------------------------- content */
 
@@ -75,28 +122,38 @@ function orderDetails(order, { forAdmin }) {
  * The emails one event sends, as [{ role, to, replyTo, subject, blocks }].
  * `byRequester` marks a cancellation the requester made themselves.
  */
-export function orderEmails(event, order, { adminTo = [], baseUrl = "", byRequester = false } = {}) {
+export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl = "", byRequester = false } = {}) {
   const base = baseUrl.replace(/\/$/, "");
   const adminLink = base ? `${base}/admin?order=${encodeURIComponent(order.id)}` : "";
   const mineLink = base ? `${base}/orders` : "";
   const latest = order.history[order.history.length - 1] ?? {};
   const requester = order.requester;
   const hi = `Hi ${firstName(requester.name)},`;
-  const toRequester = (subject, blocks) => ({ role: "requester", to: [requester.email], replyTo: adminTo, subject, blocks });
-  const toAdmins = (subject, blocks) =>
-    adminTo.length ? { role: "admin", to: adminTo, replyTo: [requester.email], subject, blocks } : null;
+  const groups = adminRoutes(order, { adminTo, routes });
+  const replyTo = [...new Set(groups.flatMap((g) => g.to))];
+  const toRequester = (subject, blocks) => ({ role: "requester", to: [requester.email], replyTo, subject, blocks });
+  // one email per inbox the order goes to, each about its own part
+  const toAdmins = (build) =>
+    groups.map((g) => {
+      const { subject, blocks } = build(g.order, KIND[g.kind]);
+      const split = g.order !== order;
+      return { role: g.kind ? `admin-${g.kind}` : "admin", to: g.to, replyTo: [requester.email], subject, blocks: split ? [blocks[0], block.p(KIND[g.kind].other), ...blocks.slice(1)] : blocks };
+    });
 
   const emails = [];
   switch (event) {
     case "order.created": {
       const rush = order.shippingSpeed === "rush";
       emails.push(
-        toAdmins(`${rush ? "RUSH: " : ""}New merch order ${order.number} from ${requester.name}`, [
-          block.p(`${requester.name} placed order ${order.number}. It's waiting for your approval.`),
-          block.items(order),
-          orderDetails(order, { forAdmin: true }),
-          block.button("Review it in the admin console", adminLink),
-        ]),
+        ...toAdmins((part, kind) => ({
+          subject: `${rush ? "RUSH: " : ""}New ${kind.request} ${order.number} from ${requester.name}`,
+          blocks: [
+            block.p(`${requester.name} placed order ${order.number}. It's waiting for your approval.`),
+            block.items(part),
+            orderDetails(order, { forAdmin: true }),
+            block.button("Review it in the admin console", adminLink),
+          ],
+        })),
         toRequester(`We got your merch order ${order.number}`, [
           block.p(hi),
           block.p(`Thanks for your order. The merch admin will review it, and you'll get an email when it's approved and when it ships.`),
@@ -162,11 +219,14 @@ export function orderEmails(event, order, { adminTo = [], baseUrl = "", byReques
     case "order.cancelled":
       if (byRequester) {
         emails.push(
-          toAdmins(`${requester.name} cancelled merch order ${order.number}`, [
-            block.p(`${requester.name} cancelled order ${order.number} before it was approved. Its stock is back on the shelf.`),
-            block.items(order),
-            block.button("Open it in the admin console", adminLink),
-          ])
+          ...toAdmins((part, kind) => ({
+            subject: `${requester.name} cancelled ${kind.request} ${order.number}`,
+            blocks: [
+              block.p(`${requester.name} cancelled order ${order.number} before it was approved. Its stock is back on the shelf.`),
+              block.items(part),
+              block.button("Open it in the admin console", adminLink),
+            ],
+          }))
         );
       } else {
         emails.push(
@@ -263,6 +323,7 @@ export function createEmailer({
   apiKey,
   from,
   adminTo = [],
+  routes = {},
   baseUrl = "",
   log = console,
   fetchImpl = (...args) => fetch(...args),
@@ -305,7 +366,7 @@ export function createEmailer({
   }
 
   return function notify(event, order, { byRequester = false } = {}) {
-    const emails = orderEmails(event, order, { adminTo, baseUrl, byRequester });
+    const emails = orderEmails(event, order, { adminTo, routes, baseUrl, byRequester });
     for (const email of emails) {
       // The same event on the same order is only ever emailed once, even if a
       // request is retried.

@@ -106,6 +106,76 @@ describe("order emails", () => {
   });
 });
 
+describe("point-of-sale and samples inboxes", () => {
+  const POS = ["pos@tropicaldistillery.com"], SAMPLES = ["samples@tropicaldistillery.com"];
+  function mixed(lines) {
+    const db = initialState();
+    return placeOrder(
+      db,
+      {
+        shipTo: { type: "self", attention: "Jane Rep", phone: "(305) 555-0100", address1: "1 Main St", city: "Miami", state: "FL", postalCode: "33101" },
+        purpose: "account-activation",
+        neededBy: "2026-10-20",
+        shippingSpeed: "standard",
+        lines,
+      },
+      { requester: { name: "Jane Rep", email: "jane@tropicaldistillery.com" }, now: NOW, timeZone: "America/New_York", prefix: "TD" }
+    );
+  }
+  const mat = { itemId: "jfh-bar-mat", variantId: "default", quantity: 2 };
+  const bottle = { itemId: "jfh-citrus-bottle", variantId: "default", quantity: 3 };
+
+  it("splits an order with both: each inbox gets just its own lines", () => {
+    const order = mixed([mat, bottle]);
+    assert.equal(order.lines.find((l) => l.itemId === "jfh-citrus-bottle").category, "Samples", "lines keep their category");
+    const emails = orderEmails("order.created", order, { adminTo: ADMINS, routes: { pos: POS, samples: SAMPLES } });
+    const pos = emails.find((e) => e.role === "admin-pos"), samples = emails.find((e) => e.role === "admin-samples");
+    assert.deepEqual(pos.to, POS);
+    assert.equal(pos.subject, "New point-of-sale request TD-1001 from Jane Rep");
+    const posText = renderEmail(pos).text;
+    assert.match(posText, /2 × J\.F\. Haden's Rubber Bar Mat/);
+    assert.doesNotMatch(posText, /Citrus/);
+    assert.match(posText, /also has samples, which went to the samples inbox/);
+    assert.match(posText, /Total: 2 units/);
+    assert.deepEqual(samples.to, SAMPLES);
+    assert.equal(samples.subject, "New samples request TD-1001 from Jane Rep");
+    const samplesText = renderEmail(samples).text;
+    assert.match(samplesText, /3 × J\.F\. Haden's Citrus/);
+    assert.doesNotMatch(samplesText, /Bar Mat/);
+    const requester = emails.find((e) => e.role === "requester");
+    assert.deepEqual(requester.replyTo.sort(), [...POS, ...SAMPLES].sort(), "the requester can reply to both");
+  });
+
+  it("sends an all-samples order only to the samples inbox, whole", () => {
+    const emails = orderEmails("order.created", mixed([bottle]), { adminTo: ADMINS, routes: { pos: POS, samples: SAMPLES } });
+    assert.deepEqual(emails.filter((e) => e.role.startsWith("admin")).map((e) => e.to), [SAMPLES]);
+    assert.doesNotMatch(renderEmail(emails[0]).text, /also has/);
+  });
+
+  it("falls back to ORDER_EMAIL_TO for a part with no inbox of its own", () => {
+    const emails = orderEmails("order.created", mixed([mat, bottle]), { adminTo: ADMINS, routes: { samples: SAMPLES } });
+    assert.deepEqual(emails.find((e) => e.role === "admin-pos").to, ADMINS);
+    assert.deepEqual(emails.find((e) => e.role === "admin-samples").to, SAMPLES);
+  });
+
+  it("tells each inbox when a requester cancels, and spots older sample lines by SKU", () => {
+    const order = mixed([mat, bottle]);
+    for (const line of order.lines) delete line.category; // as orders from before lines kept it
+    const emails = orderEmails("order.cancelled", order, { adminTo: ADMINS, routes: { pos: POS, samples: SAMPLES }, byRequester: true });
+    assert.deepEqual(emails.map((e) => e.subject), ["Jane Rep cancelled point-of-sale request TD-1001", "Jane Rep cancelled samples request TD-1001"]);
+  });
+
+  it("emails each inbox under its own key, so Resend sends both", async () => {
+    const calls = [];
+    const notify = createEmailer({ apiKey: "re_test", from: "merch@tropicaldistillery.com", adminTo: ADMINS, routes: { pos: POS, samples: SAMPLES }, sleep: async () => {}, log: { error: () => {} },
+      fetchImpl: async (url, init) => { calls.push(init.headers["Idempotency-Key"]); return new Response("{}", { status: 200 }); } });
+    const order = mixed([mat, bottle]);
+    await notify("order.created", order);
+    assert.equal(calls.length, 3);
+    assert.equal(new Set(calls).size, 3);
+  });
+});
+
 describe("sending through Resend", () => {
   function fakeResend(statuses) {
     const calls = [];

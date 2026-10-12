@@ -176,6 +176,11 @@ below):
 - every new order emails the admins in `ORDER_EMAIL_TO` (rush orders say so in
   the subject), with the items, where it ships and a button straight to the
   order; replying goes to the person who placed it
+- with `ORDER_EMAIL_TO_POS` and `ORDER_EMAIL_TO_SAMPLES` set, those alerts are
+  split instead: samples (the Samples category) go to one inbox as "New samples
+  request…" and everything else to the other as "New point-of-sale request…".
+  An order with both sends each inbox just its own lines, with a note that the
+  rest went to the other. Either one left empty falls back to `ORDER_EMAIL_TO`
 - the person who placed it gets a confirmation, then an email when it's
   approved, shipped (with the carrier's tracking link), delivered, declined
   (with the reason) or cancelled; replying goes to the admins
@@ -196,8 +201,9 @@ To turn them on:
 4. On the Render service's **Environment** page, add `RESEND_API_KEY` (the
    key), `ORDER_EMAIL_FROM` (e.g. `Tropical Distillery Merch
    <merch@tropicaldistillery.com>`, on the verified domain), `ORDER_EMAIL_TO`
-   (the admins' addresses, comma-separated) and, if it isn't set yet,
-   `PUBLIC_URL`. Saving redeploys; the log then shows "Order emails on".
+   (the admins' addresses, comma-separated), optionally `ORDER_EMAIL_TO_POS`
+   and `ORDER_EMAIL_TO_SAMPLES`, and, if it isn't set yet, `PUBLIC_URL`.
+   Saving redeploys; the log then shows "Order emails on".
 
 `ORDER_WEBHOOK_URL` (below) still works alongside the emails, for posting
 orders to a Slack channel.
@@ -236,6 +242,8 @@ Open <http://localhost:4100>. Without `DATABASE_URL`, data is kept in
 | `RESEND_API_KEY` | Optional. A [Resend](https://resend.com) API key with sending access. With it and `ORDER_EMAIL_FROM`, the store sends order emails (see "Where orders go"). |
 | `ORDER_EMAIL_FROM` | The address order emails come from, on a domain verified in Resend, e.g. `Tropical Distillery Merch <merch@tropicaldistillery.com>`. |
 | `ORDER_EMAIL_TO` | The admins who get an email for every new order, comma-separated. |
+| `ORDER_EMAIL_TO_POS` | Optional. Point-of-sale requests (everything but samples) go here instead of `ORDER_EMAIL_TO`, comma-separated. |
+| `ORDER_EMAIL_TO_SAMPLES` | Optional. Samples requests (the Samples category) go here instead of `ORDER_EMAIL_TO`, comma-separated. |
 | `PUBLIC_URL` | Optional. The site's address, e.g. `https://merch.tropicaldistillery.com`, so notifications and emails link straight to the order. |
 | `ORDER_PREFIX` | Order-number prefix. Default `TD` (TD-1001, TD-1002, …). |
 | `TIMEZONE` | Where "today" is for needed-by dates. Default `America/New_York`. |

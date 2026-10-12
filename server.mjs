@@ -18,6 +18,9 @@
  *   ORDER_EMAIL_FROM    the address emails come from, on a domain verified in Resend,
  *                       e.g. "Tropical Distillery Merch <merch@tropicaldistillery.com>"
  *   ORDER_EMAIL_TO      comma-separated admin addresses that get new-order alerts
+ *   ORDER_EMAIL_TO_POS      optional: point-of-sale (everything but samples) alerts go here instead
+ *   ORDER_EMAIL_TO_SAMPLES  optional: samples alerts go here instead; an order with both
+ *                           is split, each inbox getting just its own lines
  *   PUBLIC_URL          optional, this site's address, used for links in notifications
  *   SESSION_SECRET      optional; by default a secret is generated and kept with the data
  *   ORDER_PREFIX        order number prefix (default TD → TD-1001)
@@ -94,17 +97,20 @@ if (!config.adminPassword) console.warn("[config] ADMIN_PASSWORD is not set — 
 else if (config.adminPassword.length < 12) console.warn("[config] ADMIN_PASSWORD is short. Use at least 12 characters.");
 
 const emailTo = parseAddresses(env.ORDER_EMAIL_TO);
+const emailRoutes = { pos: parseAddresses(env.ORDER_EMAIL_TO_POS), samples: parseAddresses(env.ORDER_EMAIL_TO_SAMPLES) };
 const emailFrom = (env.ORDER_EMAIL_FROM || "").trim();
 const emailsOn = Boolean(env.RESEND_API_KEY && emailFrom);
 if (env.RESEND_API_KEY && !emailFrom) {
   console.warn("[config] Order emails are off: set ORDER_EMAIL_FROM to an address on a domain verified in Resend.");
 }
-if (emailsOn && !emailTo.length) console.warn("[config] ORDER_EMAIL_TO is not set, so no admin gets new-order emails.");
+if (emailsOn && !emailTo.length && !(emailRoutes.pos.length && emailRoutes.samples.length)) {
+  console.warn("[config] ORDER_EMAIL_TO is not set, so some new orders reach no admin by email.");
+}
 if (emailsOn && !env.PUBLIC_URL) console.warn("[config] PUBLIC_URL is not set, so order emails can't link to the store.");
 
 const store = await openStore({ databaseUrl: env.DATABASE_URL, dataDir });
 const webhook = createNotifier(env.ORDER_WEBHOOK_URL, { baseUrl: env.PUBLIC_URL || "" });
-const email = createEmailer({ apiKey: env.RESEND_API_KEY, from: emailFrom, adminTo: emailTo, baseUrl: env.PUBLIC_URL || "" });
+const email = createEmailer({ apiKey: env.RESEND_API_KEY, from: emailFrom, adminTo: emailTo, routes: emailRoutes, baseUrl: env.PUBLIC_URL || "" });
 function notify(event, order, context) {
   webhook(event, order);
   email(event, order, context);
@@ -117,7 +123,11 @@ server.listen(port, () => {
   console.log(`Data                              ${store.kind} (${store.location})`);
   console.log(`Admin console                     ${config.adminPassword ? `http://localhost:${port}/admin` : "off"}`);
   if (env.ORDER_WEBHOOK_URL) console.log("Order notifications               on");
-  if (emailsOn) console.log(`Order emails                      on (Resend, alerts to ${emailTo.length} admin address${emailTo.length === 1 ? "" : "es"})`);
+  if (emailsOn) {
+    const n = (list) => `${list.length} address${list.length === 1 ? "" : "es"}`;
+    const routed = emailRoutes.pos.length || emailRoutes.samples.length;
+    console.log(`Order emails                      on (Resend${routed ? `, point of sale to ${n(emailRoutes.pos.length ? emailRoutes.pos : emailTo)}, samples to ${n(emailRoutes.samples.length ? emailRoutes.samples : emailTo)}` : `, alerts to ${n(emailTo)}`})`);
+  }
 });
 
 function shutdown(signal) {
