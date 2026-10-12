@@ -138,6 +138,8 @@ server.listen(port, () => {
     console.log(`Order emails                      on (Resend${routed
       ? `, point of sale to ${n(emailRoutes.pos.length ? emailRoutes.pos : emailTo)}${plus(ccOf("pos"))}, samples to ${n(emailRoutes.samples.length ? emailRoutes.samples : emailTo)}${plus(ccOf("samples"))}`
       : `, alerts to ${n(emailTo)}${plus(cc.all)}`})`);
+  } else {
+    console.log("Order emails                      off (set RESEND_API_KEY and ORDER_EMAIL_FROM)");
   }
 });
 

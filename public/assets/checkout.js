@@ -119,7 +119,27 @@ function setMode(next) {
 }
 
 for (const radio of form.elements.namedItem("shipTo.type")) {
-  radio.addEventListener("change", () => setMode(radio.value));
+  radio.addEventListener("change", () => {
+    setMode(radio.value);
+    try {
+      localStorage.setItem("tdmerch:ship-to", radio.value);
+    } catch {
+      // ignore
+    }
+  });
+}
+
+// Start on whatever was picked on the shop page's Ship to me / Ship to an
+// account cards.
+try {
+  const picked = localStorage.getItem("tdmerch:ship-to");
+  const radio = [...form.elements.namedItem("shipTo.type")].find((r) => r.value === picked);
+  if (radio) {
+    radio.checked = true;
+    setMode(radio.value);
+  }
+} catch {
+  // ignore: they choose here instead
 }
 
 savedSelect.addEventListener("change", () => {

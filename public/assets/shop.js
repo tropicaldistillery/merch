@@ -609,6 +609,43 @@ inStockToggle.addEventListener("change", () => {
   renderGrid();
 });
 
+/* --------------------------------------------------------------- ship to */
+
+// The two cards at the top pick where the order ships; checkout opens with
+// that choice already made (and it can still be changed there).
+const SHIP_KEY = "tdmerch:ship-to";
+const SHIP_NOTE = {
+  self: "Shipping to you. Checkout will be set up for your address.",
+  account: "Shipping to an account. Checkout will ask for the account's address.",
+};
+const shipCards = document.querySelectorAll(".way[data-ship]");
+
+function showShipTo(value) {
+  for (const card of shipCards) card.setAttribute("aria-pressed", String(card.dataset.ship === value));
+}
+
+for (const card of shipCards) {
+  card.addEventListener("click", () => {
+    const value = card.dataset.ship;
+    showShipTo(value);
+    try {
+      localStorage.setItem(SHIP_KEY, value);
+    } catch {
+      // ignore: checkout just asks again
+    }
+    toast(SHIP_NOTE[value]);
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    $(".toolbar")?.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
+  });
+}
+
+try {
+  const saved = localStorage.getItem(SHIP_KEY);
+  if (Object.hasOwn(SHIP_NOTE, saved ?? "")) showShipTo(saved);
+} catch {
+  // ignore
+}
+
 /* ------------------------------------------------------------------ load */
 
 try {
