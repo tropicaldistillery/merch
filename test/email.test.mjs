@@ -240,6 +240,15 @@ describe("sending through Resend", () => {
     assert.notEqual(calls[0].init.headers["Idempotency-Key"], calls[1].init.headers["Idempotency-Key"]);
   });
 
+  it("logs each email Resend accepts", async () => {
+    const sent = [];
+    const { fetchImpl } = fakeResend([]);
+    const notify = createEmailer({ apiKey: "re_test", from: "merch@tropicaldistillery.com", adminTo: ADMINS, fetchImpl, sleep: noWait, log: { error: () => {}, info: (m) => sent.push(m) } });
+    await notify("order.created", placed().order);
+    assert.equal(sent.length, 2);
+    assert.match(sent[1], /^\[email\] sent "We got your merch order TD-1001" to 1 address \(Resend id email-1\)$/);
+  });
+
   it("retries when Resend is busy, and logs what it can't send", async () => {
     const errors = [];
     const { calls, fetchImpl } = fakeResend([429, 200, 422]);

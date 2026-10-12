@@ -368,7 +368,11 @@ export function createEmailer({
         await sleep(1000 * attempt);
         continue;
       }
-      if (response.ok) return;
+      if (response.ok) {
+        const { id } = await response.json().catch(() => ({}));
+        const count = email.to.length + (email.cc?.length ?? 0);
+        return log.info?.(`[email] sent "${email.subject}" to ${count} address${count === 1 ? "" : "es"}${id ? ` (Resend id ${id})` : ""}`);
+      }
       const retry = response.status === 429 || response.status >= 500;
       if (!retry || attempt === 3) {
         const detail = await response.text().catch(() => "");
