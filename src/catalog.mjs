@@ -96,6 +96,7 @@ export const SEED_PHOTOS = {
   "td-cobbler-shaker": one("td-cobbler-shaker"),
   "jfh-stirrers": one("jfh-stirrers"),
   "jfh-sample-cups": one("jfh-sample-cups"),
+  "jfh-leather-coasters": one("jfh-leather-coasters"),
   "td-booklet": one("td-booklet"),
   // the photo from the pool first, then the studio shot
   "jfh-pool-koozie": numbered("jfh-pool-koozie", 2),
@@ -573,6 +574,13 @@ export const SEED_CATALOG = [
     description: "Compact magnetic Bluetooth speaker in black, with the J.F. Haden's logo in white above the power button. A thank-you for top accounts.",
     costCents: 1500, maxPerOrder: 2, variants: single(20),
   },
+  {
+    id: "jfh-leather-coasters", name: "J.F. Haden's Leather Coaster Set",
+    brand: "jf-hadens", category: "VIP", tone: "oak", art: "cards", unit: "Set of 4 with holder",
+    description: "Four 4 in round leather coasters with the J.F. Haden's logo laser-engraved and a stitched edge, in a matching stitched leather holder with a thumb notch. A gift for top accounts.",
+    // Added after the 7 Oct 2026 stock reset, so it starts at 0 until it's counted.
+    costCents: 3000, maxPerOrder: 4, variants: single(0),
+  },
 ].map((item) => ({
   ...item,
   minPerOrder: item.minPerOrder ?? Math.min(suggestedMinPerOrder(item.costCents, item.category), item.maxPerOrder),
@@ -730,6 +738,7 @@ const ADDED_ITEMS = [
   { flag: "tdShaker", id: "td-cobbler-shaker", after: ["td-shaker-set", "jfh-cobbler-shaker"] },
   { flag: "stirrers", id: "jfh-stirrers", after: ["jfh-napkin-caddy", "jfh-cobbler-shaker", "jfh-jigger"] },
   { flag: "sampleCups", id: "jfh-sample-cups", after: ["td-sample-cups", "td-tasting-kit"] },
+  { flag: "leatherCoasters", id: "jfh-leather-coasters", after: ["jfh-bluetooth-speaker", "jfh-throw-pillow"] },
   ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 

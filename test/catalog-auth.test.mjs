@@ -736,6 +736,21 @@ describe("starter items added to existing stores", () => {
     assert.equal(needsAddedItems(db), false);
   });
 
+  it("adds the J.F. Haden's leather coaster set once, in VIP, with no stock yet", () => {
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "jfh-leather-coasters");
+    const lastVip = Math.max(...catalog.filter((i) => /^JFH-VIP-\d+$/.test(i.sku)).map((i) => Number(i.sku.slice(-3))));
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1 }, catalog };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["jfh-leather-coasters"]);
+    const ids = db.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("jfh-bluetooth-speaker") + 1], "jfh-leather-coasters");
+    const set = db.catalog.find((i) => i.id === "jfh-leather-coasters");
+    assert.equal(set.sku, `JFH-VIP-${String(lastVip + 1).padStart(3, "0")}`);
+    assert.equal(set.unit, "Set of 4 with holder");
+    assert.equal(set.image, "/assets/merch/jfh-leather-coasters.jpg");
+    assert.deepEqual(set.variants.map((v) => v.stock), [0]);
+    assert.equal(needsAddedItems(db), false);
+  });
+
   it("gives the booklet its photo when it has none, leaving an admin's own photo alone", () => {
     const db = { meta: { seedPhotos: 2 }, catalog: structuredClone(SEED_CATALOG) };
     const booklet = db.catalog.find((i) => i.id === "td-booklet");
