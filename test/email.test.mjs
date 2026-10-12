@@ -165,6 +165,34 @@ describe("point-of-sale and samples inboxes", () => {
     assert.deepEqual(emails.map((e) => e.subject), ["Jane Rep cancelled point-of-sale request TD-1001", "Jane Rep cancelled samples request TD-1001"]);
   });
 
+  it("copies people in on each inbox's alerts, falling back to the general cc list", () => {
+    const routes = { pos: POS, samples: SAMPLES, cc: { pos: ["boss@tropicaldistillery.com"], all: ["ops@tropicaldistillery.com", "pos@tropicaldistillery.com"] } };
+    const emails = orderEmails("order.created", mixed([mat, bottle]), { adminTo: ADMINS, routes });
+    assert.deepEqual(emails.find((e) => e.role === "admin-pos").cc, ["boss@tropicaldistillery.com"]);
+    assert.deepEqual(emails.find((e) => e.role === "admin-samples").cc, ["ops@tropicaldistillery.com", "pos@tropicaldistillery.com"]);
+    assert.equal(emails.find((e) => e.role === "requester").cc, undefined, "the requester's own emails aren't copied");
+    // without routes, the general list copies the one alert, minus anyone already on To
+    const [plain] = orderEmails("order.created", mixed([mat]), { adminTo: ADMINS, routes: { cc: { all: ["ops@tropicaldistillery.com", "boss@tropicaldistillery.com"] } } });
+    assert.deepEqual(plain.cc, ["boss@tropicaldistillery.com"]);
+  });
+
+  it("copies both parts' people when both parts go to the same inbox", () => {
+    const routes = { pos: POS, samples: POS, cc: { pos: ["a@tropicaldistillery.com"], samples: ["b@tropicaldistillery.com"] } };
+    const emails = orderEmails("order.created", mixed([mat, bottle]), { adminTo: ADMINS, routes });
+    const admin = emails.filter((e) => e.role.startsWith("admin"));
+    assert.equal(admin.length, 1);
+    assert.deepEqual(admin[0].cc, ["a@tropicaldistillery.com", "b@tropicaldistillery.com"]);
+  });
+
+  it("sends the cc list to Resend", async () => {
+    const bodies = [];
+    const notify = createEmailer({ apiKey: "re_test", from: "merch@tropicaldistillery.com", adminTo: ADMINS, routes: { cc: { all: ["boss@tropicaldistillery.com"] } }, sleep: async () => {}, log: { error: () => {} },
+      fetchImpl: async (url, init) => { bodies.push(JSON.parse(init.body)); return new Response("{}", { status: 200 }); } });
+    await notify("order.created", mixed([mat]));
+    assert.deepEqual(bodies[0].cc, ["boss@tropicaldistillery.com"]);
+    assert.equal(bodies[1].cc, undefined);
+  });
+
   it("emails each inbox under its own key, so Resend sends both", async () => {
     const calls = [];
     const notify = createEmailer({ apiKey: "re_test", from: "merch@tropicaldistillery.com", adminTo: ADMINS, routes: { pos: POS, samples: SAMPLES }, sleep: async () => {}, log: { error: () => {} },

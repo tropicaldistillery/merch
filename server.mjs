@@ -21,6 +21,9 @@
  *   ORDER_EMAIL_TO_POS      optional: point-of-sale (everything but samples) alerts go here instead
  *   ORDER_EMAIL_TO_SAMPLES  optional: samples alerts go here instead; an order with both
  *                           is split, each inbox getting just its own lines
+ *   ORDER_EMAIL_CC_POS      optional: copied (cc) on the point-of-sale alerts
+ *   ORDER_EMAIL_CC_SAMPLES  optional: copied (cc) on the samples alerts
+ *   ORDER_EMAIL_CC          optional: copied on every admin alert without a cc of its own
  *   PUBLIC_URL          optional, this site's address, used for links in notifications
  *   SESSION_SECRET      optional; by default a secret is generated and kept with the data
  *   ORDER_PREFIX        order number prefix (default TD → TD-1001)
@@ -97,7 +100,11 @@ if (!config.adminPassword) console.warn("[config] ADMIN_PASSWORD is not set — 
 else if (config.adminPassword.length < 12) console.warn("[config] ADMIN_PASSWORD is short. Use at least 12 characters.");
 
 const emailTo = parseAddresses(env.ORDER_EMAIL_TO);
-const emailRoutes = { pos: parseAddresses(env.ORDER_EMAIL_TO_POS), samples: parseAddresses(env.ORDER_EMAIL_TO_SAMPLES) };
+const emailRoutes = {
+  pos: parseAddresses(env.ORDER_EMAIL_TO_POS),
+  samples: parseAddresses(env.ORDER_EMAIL_TO_SAMPLES),
+  cc: { all: parseAddresses(env.ORDER_EMAIL_CC), pos: parseAddresses(env.ORDER_EMAIL_CC_POS), samples: parseAddresses(env.ORDER_EMAIL_CC_SAMPLES) },
+};
 const emailFrom = (env.ORDER_EMAIL_FROM || "").trim();
 const emailsOn = Boolean(env.RESEND_API_KEY && emailFrom);
 if (env.RESEND_API_KEY && !emailFrom) {
@@ -126,7 +133,11 @@ server.listen(port, () => {
   if (emailsOn) {
     const n = (list) => `${list.length} address${list.length === 1 ? "" : "es"}`;
     const routed = emailRoutes.pos.length || emailRoutes.samples.length;
-    console.log(`Order emails                      on (Resend${routed ? `, point of sale to ${n(emailRoutes.pos.length ? emailRoutes.pos : emailTo)}, samples to ${n(emailRoutes.samples.length ? emailRoutes.samples : emailTo)}` : `, alerts to ${n(emailTo)}`})`);
+    const cc = emailRoutes.cc, ccOf = (kind) => (cc[kind].length ? cc[kind] : cc.all);
+    const plus = (list) => (list.length ? ` + cc ${n(list)}` : "");
+    console.log(`Order emails                      on (Resend${routed
+      ? `, point of sale to ${n(emailRoutes.pos.length ? emailRoutes.pos : emailTo)}${plus(ccOf("pos"))}, samples to ${n(emailRoutes.samples.length ? emailRoutes.samples : emailTo)}${plus(ccOf("samples"))}`
+      : `, alerts to ${n(emailTo)}${plus(cc.all)}`})`);
   }
 });
 

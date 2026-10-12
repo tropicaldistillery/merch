@@ -57,19 +57,32 @@ function partOf(order, lines) {
 const sameList = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
 
 /**
- * Who the admin emails about an order go to, as [{ kind, to, order }]. With
+ * Who the admin emails about an order go to, as [{ kind, to, cc, order }]. With
  * no routes, everyone in adminTo gets the whole order (kind ""). With routes,
  * point-of-sale lines go to routes.pos and samples to routes.samples (either
  * falling back to adminTo), each with only its part of the order; when both
  * parts go to the same people they get one email with the whole order.
+ * routes.cc copies people in: cc.pos / cc.samples on those parts' emails,
+ * falling back to cc.all, which is also the copy list when nothing is routed.
  */
 export function adminRoutes(order, { adminTo = [], routes = {} } = {}) {
+  const cc = routes.cc ?? {};
+  // copy people in, but never someone already on the To line
+  const ccFor = (kind) => (cc[kind]?.length ? cc[kind] : cc.all) ?? [];
+  const withCc = (group) => {
+    const list = group.kinds ? [...new Set(group.kinds.flatMap(ccFor))] : ccFor(group.kind);
+    return { ...group, cc: list.filter((a) => !group.to.includes(a)) };
+  };
+  return routeGroups(order, adminTo, routes).map(withCc);
+}
+
+function routeGroups(order, adminTo, routes) {
   const posTo = routes.pos?.length ? routes.pos : adminTo;
   const samplesTo = routes.samples?.length ? routes.samples : adminTo;
   if (!routes.pos?.length && !routes.samples?.length) return adminTo.length ? [{ kind: "", to: adminTo, order }] : [];
   const samples = order.lines.filter(isSampleLine);
   const pos = order.lines.filter((l) => !isSampleLine(l));
-  if (pos.length && samples.length && sameList(posTo, samplesTo)) return posTo.length ? [{ kind: "", to: posTo, order }] : [];
+  if (pos.length && samples.length && sameList(posTo, samplesTo)) return posTo.length ? [{ kind: "", kinds: ["pos", "samples"], to: posTo, order }] : [];
   const groups = [];
   if (pos.length && posTo.length) groups.push({ kind: "pos", to: posTo, order: samples.length ? partOf(order, pos) : order });
   if (samples.length && samplesTo.length) groups.push({ kind: "samples", to: samplesTo, order: pos.length ? partOf(order, samples) : order });
@@ -137,7 +150,7 @@ export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl =
     groups.map((g) => {
       const { subject, blocks } = build(g.order, KIND[g.kind]);
       const split = g.order !== order;
-      return { role: g.kind ? `admin-${g.kind}` : "admin", to: g.to, replyTo: [requester.email], subject, blocks: split ? [blocks[0], block.p(KIND[g.kind].other), ...blocks.slice(1)] : blocks };
+      return { role: g.kind ? `admin-${g.kind}` : "admin", to: g.to, cc: g.cc, replyTo: [requester.email], subject, blocks: split ? [blocks[0], block.p(KIND[g.kind].other), ...blocks.slice(1)] : blocks };
     });
 
   const emails = [];
@@ -337,7 +350,7 @@ export function createEmailer({
 
   async function send(email, key) {
     const { html, text } = renderEmail(email);
-    const body = JSON.stringify({ from, to: email.to, reply_to: email.replyTo.length ? email.replyTo : undefined, subject: email.subject, html, text });
+    const body = JSON.stringify({ from, to: email.to, cc: email.cc?.length ? email.cc : undefined, reply_to: email.replyTo.length ? email.replyTo : undefined, subject: email.subject, html, text });
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const wait = last + gapMs - Date.now();
       if (wait > 0) await sleep(wait);

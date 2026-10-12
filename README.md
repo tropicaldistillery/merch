@@ -181,6 +181,9 @@ below):
   request…" and everything else to the other as "New point-of-sale request…".
   An order with both sends each inbox just its own lines, with a note that the
   rest went to the other. Either one left empty falls back to `ORDER_EMAIL_TO`
+- to copy people in on those alerts, add them to `ORDER_EMAIL_CC_POS` and/or
+  `ORDER_EMAIL_CC_SAMPLES` (comma-separated); `ORDER_EMAIL_CC` copies people
+  on every admin alert that has no cc list of its own
 - the person who placed it gets a confirmation, then an email when it's
   approved, shipped (with the carrier's tracking link), delivered, declined
   (with the reason) or cancelled; replying goes to the admins
@@ -244,6 +247,9 @@ Open <http://localhost:4100>. Without `DATABASE_URL`, data is kept in
 | `ORDER_EMAIL_TO` | The admins who get an email for every new order, comma-separated. |
 | `ORDER_EMAIL_TO_POS` | Optional. Point-of-sale requests (everything but samples) go here instead of `ORDER_EMAIL_TO`, comma-separated. |
 | `ORDER_EMAIL_TO_SAMPLES` | Optional. Samples requests (the Samples category) go here instead of `ORDER_EMAIL_TO`, comma-separated. |
+| `ORDER_EMAIL_CC_POS` | Optional. Copied (cc) on the point-of-sale alerts, comma-separated. |
+| `ORDER_EMAIL_CC_SAMPLES` | Optional. Copied (cc) on the samples alerts, comma-separated. |
+| `ORDER_EMAIL_CC` | Optional. Copied on every admin alert that has no cc list of its own (all of them when nothing is routed). |
 | `PUBLIC_URL` | Optional. The site's address, e.g. `https://merch.tropicaldistillery.com`, so notifications and emails link straight to the order. |
 | `ORDER_PREFIX` | Order-number prefix. Default `TD` (TD-1001, TD-1002, …). |
 | `TIMEZONE` | Where "today" is for needed-by dates. Default `America/New_York`. |
