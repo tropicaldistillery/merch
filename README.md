@@ -39,8 +39,8 @@ shares nothing with SipScale.
 - Under **My orders**, follow each order through Submitted → Approved →
   Shipped → Delivered, open the carrier's tracking page, cancel an order that
   hasn't been approved yet, or reorder in one click.
-- Once personal codes are on, swap their code for a **password of their own**
-  (**Change password** at the top of the store). It is kept only as a salted
+- Once personal codes are on, swap their code for **one of their own**
+  (**Change code** at the top of the store). It is kept only as a salted
   hash, so not even the admin can see it. Their other devices are signed out;
   if they forget it, the admin issues a new code.
 

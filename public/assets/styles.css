@@ -2376,9 +2376,16 @@ dialog.confirm h2 {
 
 dialog.confirm .dialog-actions {
   display: flex;
+  /* side by side when they fit; otherwise each on its own full-width row,
+     the main action on top */
+  flex-wrap: wrap-reverse;
   justify-content: flex-end;
   gap: 10px;
   margin-top: 22px;
+}
+
+dialog.confirm .dialog-actions .btn {
+  flex: 1 1 auto;
 }
 
 /* --------------------------------------------------------- packing slip */
