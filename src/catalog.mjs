@@ -98,6 +98,12 @@ export const SEED_PHOTOS = {
   "jfh-sample-cups": one("jfh-sample-cups"),
   "jfh-leather-coasters": one("jfh-leather-coasters"),
   "twinp-leather-coasters": one("twinp-leather-coasters"),
+  // each banner on its own, then the brand's whole set
+  "twinp-banner-white": [photo("twinp-banner-white"), photo("twinp-banners")],
+  "twinp-banner-navy": [photo("twinp-banner-navy"), photo("twinp-banners")],
+  "jfh-banner-bottles": [photo("jfh-banner-bottles"), photo("jfh-banners")],
+  "jfh-banner-side-title": [photo("jfh-banner-side-title"), photo("jfh-banners")],
+  "jfh-banner-in-hand": [photo("jfh-banner-in-hand"), photo("jfh-banners")],
   "td-booklet": one("td-booklet"),
   // the photo from the pool first, then the studio shot
   "jfh-pool-koozie": numbered("jfh-pool-koozie", 2),
@@ -403,6 +409,37 @@ export const SEED_CATALOG = [
     brand: "tropical-distillery", category: "Sampling & Events", tone: "mango", art: "banner", unit: "Each",
     description: "33 × 80 in portfolio banner with a carry case.",
     costCents: 12000, maxPerOrder: 1, variants: single(4),
+  },
+  // Pull-up banners from the 2026 brand mockups, added after the stock reset.
+  {
+    id: "twinp-banner-white", name: "Twin P Whiskey Pull-up Banner, Built on Legacy (White)",
+    brand: "twin-p", category: "Sampling & Events", tone: "oak", art: "banner", unit: "Each",
+    description: "33 × 80 in retractable banner with a carry case. Built on legacy. over the Twin P Whiskey bottle, framed by illustrated football action, on white, with Available online and tropicaldistillery.com.",
+    costCents: 12000, maxPerOrder: 1, variants: single(0),
+  },
+  {
+    id: "twinp-banner-navy", name: "Twin P Whiskey Pull-up Banner, Built on Legacy (Navy)",
+    brand: "twin-p", category: "Sampling & Events", tone: "oak", art: "banner", unit: "Each",
+    description: "33 × 80 in retractable banner with a carry case. Built on legacy. over the Twin P Whiskey bottle on deep navy, football action across the top, with Available online and tropicaldistillery.com.",
+    costCents: 12000, maxPerOrder: 1, variants: single(0),
+  },
+  {
+    id: "jfh-banner-bottles", name: "J.F. Haden's Pull-up Banner, Miami in a Bottle",
+    brand: "jf-hadens", category: "Sampling & Events", tone: "mango", art: "banner", unit: "Each",
+    description: "33 × 80 in retractable banner with a carry case. Miami in a Bottle with the Espresso, Mango and Lychee liqueur bottles on cream, football action across the top and a navy footer with tropicaldistillery.com.",
+    costCents: 12000, maxPerOrder: 1, variants: single(0),
+  },
+  {
+    id: "jfh-banner-side-title", name: "J.F. Haden's Pull-up Banner, Miami in a Bottle (Portrait)",
+    brand: "jf-hadens", category: "Sampling & Events", tone: "mango", art: "banner", unit: "Each",
+    description: "33 × 80 in retractable banner with a carry case. Miami in a Bottle running up the side, the Mango Liqueur bottle and a portrait photo over football action, black footer with tropicaldistillery.com.",
+    costCents: 12000, maxPerOrder: 1, variants: single(0),
+  },
+  {
+    id: "jfh-banner-in-hand", name: "J.F. Haden's Pull-up Banner, Bottles in Hand",
+    brand: "jf-hadens", category: "Sampling & Events", tone: "lychee", art: "banner", unit: "Each",
+    description: "33 × 80 in retractable banner with a carry case. The Lychee and Mango liqueur bottles held in hand over football action, black footer with tropicaldistillery.com.",
+    costCents: 12000, maxPerOrder: 1, variants: single(0),
   },
 
   // Print
@@ -748,6 +785,11 @@ const ADDED_ITEMS = [
   { flag: "sampleCups", id: "jfh-sample-cups", after: ["td-sample-cups", "td-tasting-kit"] },
   { flag: "leatherCoasters", id: "jfh-leather-coasters", after: ["jfh-bluetooth-speaker", "jfh-throw-pillow"] },
   { flag: "twinpLeatherCoasters", id: "twinp-leather-coasters", after: ["jfh-leather-coasters", "twinp-tin-sign"] },
+  { flag: "banners2026", id: "twinp-banner-white", after: ["td-pullup-banner", "jfh-sample-cups", "td-table-throw"] },
+  { flag: "banners2026", id: "twinp-banner-navy", after: "twinp-banner-white" },
+  { flag: "banners2026", id: "jfh-banner-bottles", after: "twinp-banner-navy" },
+  { flag: "banners2026", id: "jfh-banner-side-title", after: "jfh-banner-bottles" },
+  { flag: "banners2026", id: "jfh-banner-in-hand", after: "jfh-banner-side-title" },
   ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 

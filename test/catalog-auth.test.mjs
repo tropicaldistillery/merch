@@ -726,7 +726,7 @@ describe("starter items added to existing stores", () => {
   it("adds the J.F. Haden's clear sample cups once, in Sampling & Events, with no stock yet", () => {
     // like the live store: none of the starter Sampling & Events items left
     const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "jfh-sample-cups" && i.category !== "Sampling & Events");
-    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1 }, catalog };
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, banners2026: 1 }, catalog };
     assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["jfh-sample-cups"]);
     const cups = db.catalog.find((i) => i.id === "jfh-sample-cups");
     assert.equal(cups.sku, "JFH-EVNT-001");
@@ -739,7 +739,7 @@ describe("starter items added to existing stores", () => {
   it("adds the J.F. Haden's leather coaster set once, in VIP, with no stock yet", () => {
     const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "jfh-leather-coasters");
     const lastVip = Math.max(...catalog.filter((i) => /^JFH-VIP-\d+$/.test(i.sku)).map((i) => Number(i.sku.slice(-3))));
-    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1, twinpLeatherCoasters: 1 }, catalog };
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1, twinpLeatherCoasters: 1, banners2026: 1 }, catalog };
     assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["jfh-leather-coasters"]);
     const ids = db.catalog.map((i) => i.id);
     assert.equal(ids[ids.indexOf("jfh-bluetooth-speaker") + 1], "jfh-leather-coasters");
@@ -754,7 +754,7 @@ describe("starter items added to existing stores", () => {
   it("adds the Twin P leather coaster set once, next to the J.F. Haden's set", () => {
     const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "twinp-leather-coasters");
     const lastVip = Math.max(...catalog.filter((i) => /^TWI-VIP-\d+$/.test(i.sku)).map((i) => Number(i.sku.slice(-3))));
-    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1, leatherCoasters: 1 }, catalog };
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1, leatherCoasters: 1, banners2026: 1 }, catalog };
     assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["twinp-leather-coasters"]);
     const ids = db.catalog.map((i) => i.id);
     assert.equal(ids[ids.indexOf("jfh-leather-coasters") + 1], "twinp-leather-coasters");
@@ -763,6 +763,23 @@ describe("starter items added to existing stores", () => {
     assert.equal(set.sku, `TWI-VIP-${String(lastVip + 1).padStart(3, "0")}`);
     assert.equal(set.image, "/assets/merch/twinp-leather-coasters.jpg");
     assert.deepEqual(set.variants.map((v) => v.stock), [0]);
+    assert.equal(needsAddedItems(db), false);
+  });
+
+  it("adds the five pull-up banners once, together in Sampling & Events, each with its own photo and the brand's set", () => {
+    const NEW = ["twinp-banner-white", "twinp-banner-navy", "jfh-banner-bottles", "jfh-banner-side-title", "jfh-banner-in-hand"];
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => !NEW.includes(i.id));
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1, leatherCoasters: 1, twinpLeatherCoasters: 1 }, catalog };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), NEW);
+    const ids = db.catalog.map((i) => i.id);
+    const at = ids.indexOf("td-pullup-banner");
+    assert.deepEqual(ids.slice(at + 1, at + 6), NEW);
+    const item = (id) => db.catalog.find((i) => i.id === id);
+    assert.ok(NEW.every((id) => item(id).category === "Sampling & Events" && item(id).variants[0].stock === 0));
+    assert.deepEqual(item("twinp-banner-navy").images.map((p) => p.url), ["/assets/merch/twinp-banner-navy.jpg", "/assets/merch/twinp-banners.jpg"]);
+    assert.equal(item("jfh-banner-in-hand").images[1].url, "/assets/merch/jfh-banners.jpg");
+    assert.deepEqual(NEW.map((id) => item(id).sku.replace(/\d+$/, "")), ["TWI-EVNT-", "TWI-EVNT-", "JFH-EVNT-", "JFH-EVNT-", "JFH-EVNT-"]);
+    assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
     assert.equal(needsAddedItems(db), false);
   });
 
