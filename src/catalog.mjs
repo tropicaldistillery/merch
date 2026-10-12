@@ -97,6 +97,7 @@ export const SEED_PHOTOS = {
   "jfh-stirrers": one("jfh-stirrers"),
   "jfh-sample-cups": one("jfh-sample-cups"),
   "jfh-leather-coasters": one("jfh-leather-coasters"),
+  "twinp-leather-coasters": one("twinp-leather-coasters"),
   "td-booklet": one("td-booklet"),
   // the photo from the pool first, then the studio shot
   "jfh-pool-koozie": numbered("jfh-pool-koozie", 2),
@@ -581,6 +582,13 @@ export const SEED_CATALOG = [
     // Added after the 7 Oct 2026 stock reset, so it starts at 0 until it's counted.
     costCents: 3000, maxPerOrder: 4, variants: single(0),
   },
+  {
+    id: "twinp-leather-coasters", name: "Twin P Whiskey Leather Coaster Set",
+    brand: "twin-p", category: "VIP", tone: "oak", art: "cards", unit: "Set of 4 with holder",
+    description: "Four 4 in round dark brown leather coasters with the TWIN-P WHISKEY lettering and badge in gold foil and gold stitching, in a matching stitched leather holder with a thumb notch. A gift for top accounts.",
+    // Added after the 7 Oct 2026 stock reset, so it starts at 0 until it's counted.
+    costCents: 3000, maxPerOrder: 4, variants: single(0),
+  },
 ].map((item) => ({
   ...item,
   minPerOrder: item.minPerOrder ?? Math.min(suggestedMinPerOrder(item.costCents, item.category), item.maxPerOrder),
@@ -739,6 +747,7 @@ const ADDED_ITEMS = [
   { flag: "stirrers", id: "jfh-stirrers", after: ["jfh-napkin-caddy", "jfh-cobbler-shaker", "jfh-jigger"] },
   { flag: "sampleCups", id: "jfh-sample-cups", after: ["td-sample-cups", "td-tasting-kit"] },
   { flag: "leatherCoasters", id: "jfh-leather-coasters", after: ["jfh-bluetooth-speaker", "jfh-throw-pillow"] },
+  { flag: "twinpLeatherCoasters", id: "twinp-leather-coasters", after: ["jfh-leather-coasters", "twinp-tin-sign"] },
   ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 

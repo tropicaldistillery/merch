@@ -739,7 +739,7 @@ describe("starter items added to existing stores", () => {
   it("adds the J.F. Haden's leather coaster set once, in VIP, with no stock yet", () => {
     const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "jfh-leather-coasters");
     const lastVip = Math.max(...catalog.filter((i) => /^JFH-VIP-\d+$/.test(i.sku)).map((i) => Number(i.sku.slice(-3))));
-    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1 }, catalog };
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1, twinpLeatherCoasters: 1 }, catalog };
     assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["jfh-leather-coasters"]);
     const ids = db.catalog.map((i) => i.id);
     assert.equal(ids[ids.indexOf("jfh-bluetooth-speaker") + 1], "jfh-leather-coasters");
@@ -747,6 +747,21 @@ describe("starter items added to existing stores", () => {
     assert.equal(set.sku, `JFH-VIP-${String(lastVip + 1).padStart(3, "0")}`);
     assert.equal(set.unit, "Set of 4 with holder");
     assert.equal(set.image, "/assets/merch/jfh-leather-coasters.jpg");
+    assert.deepEqual(set.variants.map((v) => v.stock), [0]);
+    assert.equal(needsAddedItems(db), false);
+  });
+
+  it("adds the Twin P leather coaster set once, next to the J.F. Haden's set", () => {
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "twinp-leather-coasters");
+    const lastVip = Math.max(...catalog.filter((i) => /^TWI-VIP-\d+$/.test(i.sku)).map((i) => Number(i.sku.slice(-3))));
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1, leatherCoasters: 1 }, catalog };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["twinp-leather-coasters"]);
+    const ids = db.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("jfh-leather-coasters") + 1], "twinp-leather-coasters");
+    const set = db.catalog.find((i) => i.id === "twinp-leather-coasters");
+    assert.equal(set.brand, "twin-p");
+    assert.equal(set.sku, `TWI-VIP-${String(lastVip + 1).padStart(3, "0")}`);
+    assert.equal(set.image, "/assets/merch/twinp-leather-coasters.jpg");
     assert.deepEqual(set.variants.map((v) => v.stock), [0]);
     assert.equal(needsAddedItems(db), false);
   });
