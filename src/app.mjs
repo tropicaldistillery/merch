@@ -70,6 +70,7 @@ import {
   addPeople,
   applyReadableDistributorCodes,
   credentialOf,
+  distributorActivity,
   distributorForCode,
   issueInvite,
   needsReadableDistributorCodes,
@@ -78,6 +79,7 @@ import {
   passwordProblem,
   personForInvite,
   personForSignIn,
+  recordRepSignIn,
   removeDistributor,
   removePerson,
   repKey,
@@ -499,12 +501,11 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
     }
 
     // Remember the sign-in, for the admin's team report. Reps are kept apart,
-    // per distributor.
+    // per distributor, with a log of each sign-in.
     const at = clock().toISOString();
     await store.mutate((db) => {
-      const people = session.did ? (db.reps ??= {}) : db.members;
-      const key = session.did ? repKey(session.did, session.email) : session.email;
-      people[key] = { ...people[key], name: session.name, lastSignInAt: at };
+      if (session.did) recordRepSignIn(db, distributor, { name: session.name, email: session.email, at });
+      else db.members[session.email] = { ...db.members[session.email], name: session.name, lastSignInAt: at };
     });
 
     const user = { name: session.name, email: session.email, ...(session.did ? { distributor: session.distributor } : {}) };
@@ -942,6 +943,40 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
       );
       accessChanged();
       sendJson(res, 200, { ok: true, distributor });
+    }],
+
+    // Who has signed in with a distributor's code, and when.
+    ["GET", /^\/api\/admin\/distributors\/([\w-]+)\/activity$/, "admin", async ({ res, params }) => {
+      const db = await store.read();
+      if (!teamState(db).distributors.some((d) => d.id === params[0])) {
+        throw new ValidationError("That distributor could not be found.", {}, 404);
+      }
+      sendJson(res, 200, { ok: true, ...distributorActivity(db, params[0]) });
+    }],
+
+    // The same as a spreadsheet, to send the distributor: every rep, then each sign-in.
+    ["GET", /^\/api\/admin\/distributors\/([\w-]+)\/sign-ins\.csv$/, "admin", async ({ res, params }) => {
+      const db = await store.read();
+      const distributor = teamState(db).distributors.find((d) => d.id === params[0]);
+      if (!distributor) throw new ValidationError("That distributor could not be found.", {}, 404);
+      const { reps, signIns } = distributorActivity(db, distributor.id);
+      const rows = [["signed_in_at", "name", "email", "distributor", "first_sign_in", "sign_ins", "orders", "order_value"].join(",")];
+      const byEmail = new Map(reps.map((r) => [r.email, r]));
+      const line = (at, name, email) => {
+        const rep = byEmail.get(email) ?? {};
+        return [at, name, email, distributor.name, rep.firstSignInAt ?? "", rep.signIns ?? "", rep.orders ?? "", ((rep.valueCents ?? 0) / 100).toFixed(2)];
+      };
+      // Every sign-in still in the log, and a row for any rep whose sign-ins
+      // are all older than it.
+      const logged = new Set(signIns.map((e) => e.email));
+      for (const e of signIns) rows.push(line(e.at, e.name, e.email).map(csvCell).join(","));
+      for (const r of reps.filter((r) => !logged.has(r.email))) rows.push(line(r.lastSignInAt ?? "", r.name, r.email).map(csvCell).join(","));
+      const slug = distributor.code.replace(/[^a-z0-9-]/g, "");
+      send(res, 200, rows.join("\r\n") + "\r\n", {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${slug}-sign-ins-${clock().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      });
     }],
 
     ["DELETE", /^\/api\/admin\/distributors\/([\w-]+)$/, "admin", async ({ res, params }) => {

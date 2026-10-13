@@ -791,6 +791,49 @@ describe("distributor codes", () => {
     }
   });
 
+  it("logs who signs in with each distributor's code, for the admin and as a CSV", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const app = await start(dir);
+    try {
+      const admin = await signedInAdmin(app);
+      const make = async (name) =>
+        (await admin("/api/admin/distributors", { method: "POST", body: { name, categories: ["Bar Tools"] } })).data.distributor;
+      const reyes = await make("Reyes Beverage Group Florida");
+      const rndc = await make("RNDC Texas");
+      const signIn = (name, email, code) =>
+        app.client()("/api/session", { method: "POST", body: { name, email, code } });
+      await signIn("Rita Rep", "rita@rbg.com", reyes.code);
+      await signIn("Rita R.", "Rita@RBG.com", reyes.code);
+      const sam = app.client();
+      await sam("/api/session", { method: "POST", body: { name: "Sam", email: "sam@rbg.com", code: reyes.code } });
+      await sam("/api/orders", { method: "POST", body: ACCOUNT_ORDER });
+      await signIn("Tex", "tex@rndc.com", rndc.code);
+      await signIn("Nobody", "x@rbg.com", "td-wrong");
+
+      const { reps, signIns } = (await admin(`/api/admin/distributors/${reyes.id}/activity`)).data;
+      assert.deepEqual(reps.map((r) => [r.email, r.name, r.signIns, r.orders]), [
+        ["sam@rbg.com", "Sam", 1, 1],
+        ["rita@rbg.com", "Rita R.", 2, 0],
+      ]);
+      assert.ok(reps[1].firstSignInAt <= reps[1].lastSignInAt);
+      assert.deepEqual(signIns.map((e) => e.email), ["sam@rbg.com", "rita@rbg.com", "rita@rbg.com"], "newest first, this distributor only");
+      assert.equal((await admin("/api/admin/team")).data.distributors.find((d) => d.id === reyes.id).reps, 2);
+
+      const csv = await admin(`/api/admin/distributors/${reyes.id}/sign-ins.csv`);
+      assert.match(csv.headers.get("content-disposition"), /td-rbgfl-sign-ins-/);
+      const lines = csv.data.trim().split("\r\n");
+      assert.equal(lines[0], "signed_in_at,name,email,distributor,first_sign_in,sign_ins,orders,order_value");
+      assert.equal(lines.length, 4);
+      assert.match(lines[1], /,Sam,sam@rbg\.com,Reyes Beverage Group Florida,.*,1,1,44\.00$/);
+      assert.ok(!csv.data.includes("tex@rndc.com"));
+      assert.equal((await admin("/api/admin/distributors/nope/activity")).status, 404);
+      assert.equal((await sam(`/api/admin/distributors/${reyes.id}/activity`)).status, 401);
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("works without a shared team code too, with any email", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
     const app = await start(dir, { teamAccessCode: "" });

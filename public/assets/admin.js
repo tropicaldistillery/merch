@@ -3401,7 +3401,13 @@ function renderDistributors() {
                 ]
               : el("span", { class: "tag", text: "Turned off" })
           ),
-          el("td", { class: "num", text: String(d.reps) }),
+          el(
+            "td",
+            { class: "num" },
+            d.reps
+              ? el("button", { type: "button", class: "link-button", text: String(d.reps), "aria-label": `See who has signed in for ${d.name}`, onclick: () => openDistributorActivity(d) })
+              : "0"
+          ),
           el("td", { class: "num" }, el("div", { text: String(d.orders) }), el("div", { class: "cell-sub", text: formatMoney(d.valueCents) })),
           el("td", { text: active ? formatDate(active) : "Not yet" }),
           el(
@@ -3410,6 +3416,7 @@ function renderDistributors() {
             el(
               "div",
               { class: "action-row" },
+              el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Sign-ins", "aria-label": `Sign-ins for ${d.name}`, onclick: () => openDistributorActivity(d) }),
               el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Edit", "aria-label": `Edit ${d.name}`, onclick: () => openDistributor(d) }),
               d.active
                 ? el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "New code", "aria-label": `New code for ${d.name}`, onclick: () => resetDistributorCode(d) })
@@ -3501,6 +3508,82 @@ $("#distributor-add-form").addEventListener("submit", async (event) => {
     button.disabled = false;
   }
 });
+
+// Who has signed in with a distributor's code: each rep, then each sign-in.
+async function openDistributorActivity(d) {
+  let activity;
+  try {
+    activity = await adminApi(`/api/admin/distributors/${encodeURIComponent(d.id)}/activity`);
+  } catch (error) {
+    return toast(error.message, { tone: "error" });
+  }
+  const { reps, signIns } = activity;
+  const total = reps.reduce((sum, r) => sum + r.signIns, 0);
+  detailTitle.textContent = `${d.name}: sign-ins`;
+  clear(
+    detailBody,
+    el(
+      "p",
+      { class: "muted" },
+      reps.length
+        ? `${plural(reps.length, "rep")} ${reps.length === 1 ? "has" : "have"} signed in with ${d.code}, ${plural(total, "time")} in all. Each rep is one email address.`
+        : `Nobody has signed in with ${d.code} yet.`
+    ),
+    reps.length
+      ? section(
+          "Reps",
+          el(
+            "div",
+            { class: "table-wrap" },
+            el(
+              "table",
+              { class: "table" },
+              el("thead", {}, el("tr", {}, ["Rep", "Signed in", "Last sign-in", "Orders"].map((h) =>
+                el("th", { scope: "col", class: h === "Signed in" || h === "Orders" ? "num" : "", text: h })
+              ))),
+              el(
+                "tbody",
+                {},
+                reps.map((r) =>
+                  el(
+                    "tr",
+                    {},
+                    el("td", {}, el("div", { class: "cell-main", text: r.name || "—" }), el("a", { class: "cell-sub", href: `mailto:${r.email}`, text: r.email })),
+                    el("td", { class: "num" }, el("div", { text: plural(r.signIns, "time") }), r.firstSignInAt ? el("div", { class: "cell-sub", text: `since ${formatDate(r.firstSignInAt)}` }) : null),
+                    el("td", { text: r.lastSignInAt ? formatDateTime(r.lastSignInAt) : "—" }),
+                    el("td", { class: "num" }, el("div", { text: String(r.orders) }), el("div", { class: "cell-sub", text: formatMoney(r.valueCents) }))
+                  )
+                )
+              )
+            )
+          )
+        )
+      : null,
+    signIns.length
+      ? section(
+          "Recent sign-ins",
+          el(
+            "ul",
+            { class: "sign-in-log" },
+            signIns.slice(0, 100).map((e) =>
+              el("li", {}, el("span", { class: "cell-sub", text: formatDateTime(e.at) }), el("span", { text: ` ${e.name} · ${e.email}` }))
+            )
+          ),
+          signIns.length > 100 ? el("p", { class: "hint", text: "The download has every sign-in still on record." }) : null
+        )
+      : null
+  );
+  clear(
+    detailFoot,
+    el(
+      "div",
+      { class: "inline-actions" },
+      el("a", { class: "btn", href: `/api/admin/distributors/${encodeURIComponent(d.id)}/sign-ins.csv`, text: "Download CSV" }),
+      el("button", { type: "button", class: "btn btn-secondary", "data-close": "", text: "Close" })
+    )
+  );
+  drawer.open();
+}
 
 function openDistributor(d) {
   const form = el("form", { id: "distributor-form", novalidate: true });

@@ -2802,6 +2802,18 @@ dialog.confirm .dialog-actions .btn {
   font-size: 13.5px;
 }
 
+.sign-in-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sign-in-log li {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
 .tag.distributor {
   background: #efe6fb;
   color: #5b2a91;

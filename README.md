@@ -200,6 +200,11 @@ gives you a ready-to-send note with the store's address.
 - Their orders are tagged with the distributor in the order list, the order
   alert email ("from Dee Rep (Southern Glazer's)"), the CSV export and the
   tracker, and they go through the same approval and inboxes as everyone else.
+- **Sign-ins** on a distributor's row (or its rep count) shows everyone who
+  has signed in with its code: each rep's name and email, how many times, first
+  and last sign-in, and their orders, then a log of recent sign-ins. **Download
+  CSV** gives you the same to send the distributor. The store keeps each rep's
+  totals for good and the most recent 1,000 sign-ins across all distributors.
 - **New code** (the next number, `td-rbgfl-2`) or a code you type under
   **Edit** signs all of a distributor's reps out; send them the new one. A
   replaced code is never handed out again. **Turn off** signs them out until

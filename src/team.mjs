@@ -509,6 +509,55 @@ export function repKey(distributorId, email) {
   return `${distributorId}:${email}`;
 }
 
+// The most recent rep sign-ins kept, across all distributors. Each rep's own
+// first and last sign-in and count are kept for good.
+export const SIGN_IN_LOG_MAX = 1000;
+
+/** Note a rep's sign-in: on their record, and in the sign-in log. */
+export function recordRepSignIn(db, distributor, { name, email, at }) {
+  db.reps ??= {};
+  const key = repKey(distributor.id, email);
+  const rep = db.reps[key] ?? {};
+  db.reps[key] = {
+    ...rep,
+    name,
+    firstSignInAt: rep.firstSignInAt ?? rep.lastSignInAt ?? at,
+    lastSignInAt: at,
+    signIns: (rep.signIns ?? (rep.lastSignInAt ? 1 : 0)) + 1,
+  };
+  db.signInLog ??= [];
+  db.signInLog.push({ at, distributorId: distributor.id, distributor: distributor.name, name, email });
+  if (db.signInLog.length > SIGN_IN_LOG_MAX) db.signInLog.splice(0, db.signInLog.length - SIGN_IN_LOG_MAX);
+}
+
+/**
+ * Who has signed in with a distributor's code: each rep (by email) with their
+ * sign-ins and orders, most recent first, and its recent sign-ins.
+ */
+export function distributorActivity(db, distributorId) {
+  const prefix = `${distributorId}:`;
+  const reps = Object.entries(db.reps ?? {})
+    .filter(([key]) => key.startsWith(prefix))
+    .map(([key, rep]) => {
+      const email = key.slice(prefix.length);
+      const orders = db.orders.filter((o) => o.requester.distributorId === distributorId && o.requester.email === email);
+      const counted = orders.filter((o) => !RELEASED_STATUSES.includes(o.status));
+      return {
+        name: rep.name ?? "",
+        email,
+        firstSignInAt: rep.firstSignInAt ?? rep.lastSignInAt ?? null,
+        lastSignInAt: rep.lastSignInAt ?? null,
+        signIns: rep.signIns ?? (rep.lastSignInAt ? 1 : 0),
+        orders: counted.length,
+        valueCents: counted.reduce((sum, o) => sum + o.totalCents, 0),
+        lastOrderAt: orders.length ? orders[orders.length - 1].createdAt : null,
+      };
+    })
+    .sort((a, b) => (b.lastSignInAt ?? "").localeCompare(a.lastSignInAt ?? ""));
+  const signIns = (db.signInLog ?? []).filter((e) => e.distributorId === distributorId).reverse();
+  return { reps, signIns };
+}
+
 /* ------------------------------------------------------------- sign-in */
 
 /**

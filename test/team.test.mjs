@@ -9,6 +9,8 @@ import {
   addPeople,
   issueInvite,
   personForInvite,
+  recordRepSignIn,
+  SIGN_IN_LOG_MAX,
   applyReadableDistributorCodes,
   distributorForCode,
   generateCode,
@@ -209,6 +211,22 @@ describe("distributor codes", () => {
     assert.equal(other.code, "td-rndc-houston");
     assert.match(taken("td-rndctx"), /already in use/, "its own replaced code can't come back");
     assert.equal(taken("td-rndc-houston"), null, "keeping the same code is fine");
+  });
+
+  it("keep a rep's sign-in count for good, and the log to its limit", () => {
+    const db = initialState();
+    const d = addDistributor(db, { name: "RNDC Texas", categories: ["Print"] }, by);
+    db.reps[`${d.id}:old@rndc.com`] = { name: "Old", lastSignInAt: "2026-10-01T00:00:00.000Z" };
+    recordRepSignIn(db, d, { name: "Old", email: "old@rndc.com", at: AT });
+    assert.deepEqual(db.reps[`${d.id}:old@rndc.com`], {
+      name: "Old",
+      firstSignInAt: "2026-10-01T00:00:00.000Z",
+      lastSignInAt: AT,
+      signIns: 2,
+    }, "a sign-in from before the log counts as the first");
+    for (let i = 0; i < SIGN_IN_LOG_MAX + 5; i += 1) recordRepSignIn(db, d, { name: "Tex", email: "tex@rndc.com", at: AT });
+    assert.equal(db.signInLog.length, SIGN_IN_LOG_MAX);
+    assert.equal(db.reps[`${d.id}:tex@rndc.com`].signIns, SIGN_IN_LOG_MAX + 5);
   });
 
   it("replace the first, long codes once", () => {
