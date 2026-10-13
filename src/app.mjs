@@ -65,8 +65,11 @@ import {
 import {
   addDistributor,
   addPeople,
+  applyReadableDistributorCodes,
   credentialOf,
   distributorForCode,
+  needsReadableDistributorCodes,
+  normalizeCode,
   hashPassword,
   passwordProblem,
   personForSignIn,
@@ -317,6 +320,15 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   }
   const secret = config.sessionSecret || initial.meta.sessionSecret;
   const teamCode = String(config.teamAccessCode || "").trim();
+  // No distributor may have the shared team code, or it would sign the team in as reps.
+  const reservedCodes = teamCode ? [normalizeCode(teamCode)] : [];
+  if (needsReadableDistributorCodes(initial)) {
+    const changed = await store.mutate((db) =>
+      applyReadableDistributorCodes(db, { at: clock().toISOString(), reserved: reservedCodes })
+    );
+    console.log(`[team] gave ${changed.length} distributor(s) td- codes: ${changed.map((d) => `${d.name} → ${d.code}`).join(", ")}`);
+    initial = await store.read();
+  }
   const adminPassword = String(config.adminPassword || "");
   const teamFingerprint = teamCode ? credentialFingerprint(secret, `team:${teamCode.toLowerCase()}`) : null;
   const adminFingerprint = adminPassword ? credentialFingerprint(secret, `admin:${adminPassword}`) : null;
@@ -816,14 +828,18 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     // Admin: distributor codes, shared by each distributor's reps
     ["POST", "/api/admin/distributors", "admin", async ({ req, res, admin }) => {
       const body = await readJson(req);
-      const distributor = await store.mutate((db) => addDistributor(db, body, { by: admin.name, at: clock().toISOString() }));
+      const distributor = await store.mutate((db) =>
+        addDistributor(db, body, { by: admin.name, at: clock().toISOString(), reserved: reservedCodes })
+      );
       accessChanged();
       sendJson(res, 201, { ok: true, distributor });
     }],
 
     ["PATCH", /^\/api\/admin\/distributors\/([\w-]+)$/, "admin", async ({ req, res, params }) => {
       const body = await readJson(req);
-      const distributor = await store.mutate((db) => updateDistributor(db, params[0], body, { at: clock().toISOString() }));
+      const distributor = await store.mutate((db) =>
+        updateDistributor(db, params[0], body, { at: clock().toISOString(), reserved: reservedCodes })
+      );
       accessChanged();
       sendJson(res, 200, { ok: true, distributor });
     }],

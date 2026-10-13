@@ -359,3 +359,43 @@ export function trackByPerson(orders, { from = "", to = "", people = [] } = {}) 
     }))
     .sort((a, b) => b.valueCents - a.valueCents || b.units - a.units || a.name.localeCompare(b.name));
 }
+
+/* ---------------------------------------------------------- distributors */
+
+// State names, lowercased, to their postal codes: "new york" → "ny".
+const STATE_CODES = Object.fromEntries(US_STATES.map(([code, name]) => [name.toLowerCase(), code.toLowerCase()]));
+// Left out of the initials: "Breakthru Beverage Group of Florida" is td-bbgfl.
+const CODE_FILLER = new Set(["of", "and", "the", "a", "an", "inc", "llc", "ltd", "corp", "corporation"]);
+
+/**
+ * A distributor's sign-in code: "td-", then the first letter of each word of
+ * its name, with a state written out shortened to its postal code and an
+ * acronym kept whole. Reyes Beverage Group Florida is td-rbgfl; RNDC Texas
+ * is td-rndctx.
+ */
+export function distributorCodeFor(name) {
+  const words = String(name ?? "")
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/['’]/g, "")
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean);
+  const parts = [];
+  for (let i = 0; i < words.length; i += 1) {
+    // Two- and three-word states first: New York, District of Columbia.
+    const span = [3, 2].find((n) => STATE_CODES[words.slice(i, i + n).join(" ").toLowerCase()]);
+    if (span) {
+      parts.push(STATE_CODES[words.slice(i, i + span).join(" ").toLowerCase()]);
+      i += span - 1;
+      continue;
+    }
+    const word = words[i];
+    const lower = word.toLowerCase();
+    if (STATE_CODES[lower]) parts.push(STATE_CODES[lower]);
+    else if (CODE_FILLER.has(lower)) continue;
+    else if (/^\d+$/.test(word)) parts.push(word);
+    else if (word.length > 1 && word === word.toUpperCase()) parts.push(lower);
+    else parts.push(lower[0]);
+  }
+  return `td-${parts.join("").slice(0, 24) || "distributor"}`;
+}

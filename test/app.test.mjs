@@ -606,7 +606,7 @@ describe("distributor codes", () => {
       });
       assert.equal(created.status, 201);
       const sgws = created.data.distributor;
-      assert.match(sgws.code, /^tropical-southern-\d{4}-\d{4}$/);
+      assert.equal(sgws.code, "td-sgfl");
       assert.deepEqual(sgws.categories, ["Print", "Bar Tools"]);
       const dupe = await admin("/api/admin/distributors", { method: "POST", body: { name: "southern glazer's fl", categories: ["Print"] } });
       assert.equal(dupe.status, 400);
@@ -666,7 +666,7 @@ describe("distributor codes", () => {
       assert.equal((await rep("/api/catalog")).status, 401);
       assert.equal((await app.client()("/api/session", { method: "POST", body: { name: "Dee", email: "dee@sgws.com", code: sgws.code } })).status, 401);
       const renewed = (await admin(`/api/admin/distributors/${sgws.id}`, { method: "PATCH", body: { active: true, resetCode: true, categories: ["Print"] } })).data.distributor;
-      assert.notEqual(renewed.code, sgws.code);
+      assert.equal(renewed.code, "td-sgfl-2");
       assert.equal((await app.client()("/api/session", { method: "POST", body: { name: "Dee", email: "dee@sgws.com", code: sgws.code } })).status, 401);
       const again = app.client();
       assert.equal((await again("/api/session", { method: "POST", body: { name: "Dee", email: "dee@sgws.com", code: renewed.code } })).status, 200);

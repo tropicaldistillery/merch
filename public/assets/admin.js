@@ -34,6 +34,7 @@ import {
   TRANSITIONS,
   US_STATES,
   byCategory,
+  distributorCodeFor,
   formatMoney,
   generateSku,
   itemImages,
@@ -3249,6 +3250,11 @@ function categoryChoices(selected) {
 let newDistributorCategories = categoryChoices(REP_DEFAULT_CATEGORIES);
 clear($("#distributor-categories"), newDistributorCategories.boxes);
 
+// The code it will get if none is typed, shown as the name is typed.
+$("#distributor-name").addEventListener("input", (event) => {
+  $("#distributor-code").placeholder = event.target.value.trim() ? distributorCodeFor(event.target.value) : "td-rbgfl";
+});
+
 const repMessage = (d) =>
   `Tropical Distillery merch store for ${d.name} reps\nSign in at ${location.origin} with your name, your email and this code: ${d.code}`;
 
@@ -3362,13 +3368,15 @@ $("#distributor-add-form").addEventListener("submit", async (event) => {
   try {
     const { distributor } = await adminApi("/api/admin/distributors", {
       method: "POST",
-      body: { name: $("#distributor-name").value, categories: newDistributorCategories.value },
+      body: { name: $("#distributor-name").value, code: $("#distributor-code").value, categories: newDistributorCategories.value },
     });
     $("#distributor-name").value = "";
+    $("#distributor-code").value = "";
+    $("#distributor-code").placeholder = "td-rbgfl";
     newDistributorCategories = categoryChoices(REP_DEFAULT_CATEGORIES);
     clear($("#distributor-categories"), newDistributorCategories.boxes);
     await reloadTeam();
-    toast(`${distributor.name} added. Copy the message to send its reps the code.`, {
+    toast(`${distributor.name} added with the code ${distributor.code}. Copy the message to send it to its reps.`, {
       action: { label: "Copy message", onClick: () => copyText(repMessage(distributor), "Message") },
       timeout: 10000,
     });
@@ -3393,6 +3401,11 @@ function openDistributor(d) {
       field("Distributor", el("input", { id: "distributor-edit-name", name: "name", type: "text", maxlength: "80", value: d.name, autofocus: true }), {
         hint: "Shown on its reps' orders. Past orders keep the name they were placed under.",
       }),
+      field(
+        "Code",
+        el("input", { id: "distributor-edit-code", name: "code", type: "text", maxlength: "40", value: d.code, autocomplete: "off", autocapitalize: "off", spellcheck: "false" }),
+        { hint: "Changing it signs this distributor's reps out; send them the new one." }
+      ),
       el(
         "fieldset",
         { class: "field span-6" },
@@ -3407,9 +3420,13 @@ function openDistributor(d) {
     clearFieldErrors(form);
     setAlert(alertBox, "");
     try {
-      await patchDistributor(d, { name: form.elements.namedItem("name").value, categories: choices.value });
+      const saved = await patchDistributor(d, {
+        name: form.elements.namedItem("name").value,
+        code: form.elements.namedItem("code").value,
+        categories: choices.value,
+      });
       drawer.close();
-      toast("Saved.");
+      toast(saved.code !== d.code ? `Saved. The new code is ${saved.code}; its reps sign in again with it.` : "Saved.");
     } catch (error) {
       setAlert(alertBox, error.fieldErrors?.categories || error.message);
       showFieldErrors(form, error.fieldErrors);

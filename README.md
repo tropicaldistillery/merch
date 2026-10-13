@@ -170,9 +170,12 @@ is one click.
 
 Distributor reps don't go on the team list. Instead, in **Team → Distributor
 codes**, add each distributor and tick what its reps can order (point of sale
-is ticked to start with; apparel, samples and VIP aren't). It gets one code,
-like `tropical-southern-4821-7730`, to share with all of its reps: **Copy
-message** gives you a ready-to-send note with the store's address.
+is ticked to start with; apparel, samples and VIP aren't). It gets one code to
+share with all of its reps: `td-` and the distributor's initials, with a state
+shortened to its postal code, so Reyes Beverage Group Florida is `td-rbgfl`
+(a second one with the same initials gets `td-rbgfl-2`). Type your own code
+instead if you like, when adding it or later under **Edit**. **Copy message**
+gives you a ready-to-send note with the store's address.
 
 - Reps sign in with that code, their own name and any email. On the sign-in
   page they pick **Distributor rep?**; typing a distributor code on the team
@@ -183,8 +186,10 @@ message** gives you a ready-to-send note with the store's address.
 - Their orders are tagged with the distributor in the order list, the order
   alert email ("from Dee Rep (Southern Glazer's)"), the CSV export and the
   tracker, and they go through the same approval and inboxes as everyone else.
-- **New code** signs all of a distributor's reps out; send them the new one.
-  **Turn off** does the same until you turn it back on. Removing a distributor
+- **New code** (the next number, `td-rbgfl-2`) or a code you type under
+  **Edit** signs all of a distributor's reps out; send them the new one. A
+  replaced code is never handed out again. **Turn off** signs them out until
+  you turn it back on. Removing a distributor
   keeps its name on past orders.
 
 Distributor codes work the same whether your team is on personal codes or the
@@ -358,12 +363,16 @@ that, the next step is real tables.
 
 ## Security model
 
-- A **distributor code** is shared and works with any email, so it is longer
-  than a personal code (eight digits). Each rep's details are kept per
-  distributor, apart from the team's, so typing someone else's email shows
-  them nothing of that person's. A rep only ever sees their own distributor's
-  categories, orders and accounts, and the server enforces the categories on
-  every order, not just in the shop.
+- A **distributor code** is shared and works with any email, and the
+  `td-initials` style is easy to remember, which also makes it easy to guess
+  for anyone who knows the distributor's name and the pattern. What a guessed
+  code gets someone: ordering that distributor's categories (every order still
+  needs the admin's approval) and seeing the accounts that distributor has
+  shipped to, never the team's orders or anyone's saved address. To make one
+  harder to guess, add a few digits under **Edit** (`td-rbgfl-27`). Each rep's
+  details are kept per distributor, apart from the team's, so typing someone
+  else's email shows them nothing of that person's, and the server enforces
+  the categories on every order, not just in the shop.
 
 - With **personal codes** on, each order is tied to the person whose code was
   used, and one person can be locked out without affecting anyone else. Codes

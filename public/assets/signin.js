@@ -51,7 +51,7 @@ function setRep(on) {
   const hint = $("#code-hint");
   if (on) {
     hint.dataset.team ??= hint.hidden ? "" : hint.textContent;
-    hint.textContent = "It looks like tropical-southern-4821-7730. Ask your distributor or your Tropical Distillery contact if you don't have it.";
+    hint.textContent = "It starts with td-, like td-rbgfl. Ask your distributor or your Tropical Distillery contact if you don't have it.";
     hint.hidden = false;
   } else if (hint.dataset.team !== undefined) {
     hint.textContent = hint.dataset.team;

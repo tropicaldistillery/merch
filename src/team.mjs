@@ -18,13 +18,14 @@
 // If they forget it, the admin issues a new code, which replaces it.
 //
 // Distributor codes work alongside either: each distributor the admin sets up
-// has one code its reps share, typed with their own name and any email. Reps
+// has one code its reps share (td- and its initials, like td-rbgfl), typed
+// with their own name and any email. Reps
 // see only the categories chosen for their distributor, and only their own
 // orders, saved address and the accounts their distributor has shipped to.
 
 import { randomBytes, randomInt, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
 
-import { CATEGORIES, RELEASED_STATUSES } from "../public/assets/shared.js";
+import { CATEGORIES, RELEASED_STATUSES, distributorCodeFor } from "../public/assets/shared.js";
 import { ValidationError, cleanLine, isValidEmail, normalizeEmail } from "./validation.mjs";
 
 export const MODES = ["shared", "personal"];
@@ -56,15 +57,17 @@ export function generateCode(taken = new Set(), { name = "", email = "" } = {}) 
   }
 }
 
-// A distributor's code is shared by its reps and works with any email, so it
-// is longer: eight digits, like tropical-southern-4821-7730.
-export function generateDistributorCode(taken = new Set(), name = "") {
-  const who = codeName(name, "");
-  for (;;) {
-    const code = `tropical-${who}-${randomInt(1000, 10000)}-${randomInt(1000, 10000)}`;
-    if (!taken.has(code)) return code;
-  }
+// A distributor's code is "td-" and its initials, like td-rbgfl for Reyes
+// Beverage Group Florida (see distributorCodeFor), numbered if that is taken:
+// td-rbgfl-2. The admin can type a code of their own instead.
+export function nextDistributorCode(name, taken = new Set()) {
+  const base = distributorCodeFor(name);
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n += 1) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
 }
+
+// The codes before td-initials: tropical-southern-4821-7730.
+const OLD_DISTRIBUTOR_CODE = /^tropical-[a-z]+-\d{4}-\d{4}$/;
 
 /** Forgive capitals, spaces or underscores for hyphens, and stray punctuation. */
 export function normalizeCode(value) {
@@ -221,7 +224,7 @@ export function addPeople(db, text, { by, at }) {
     throw new ValidationError(`The team list holds at most ${MAX_PEOPLE} people.`, {});
   }
 
-  const taken = new Set(team.people.map((p) => p.code));
+  const taken = codesInUse(team);
   const added = [];
   const already = [];
   for (const { name, email } of entries) {
@@ -271,14 +274,14 @@ export function updatePerson(db, id, patch, { at }) {
 
   // A new code also replaces a password they set themselves, which is how
   // someone who forgot theirs gets back in.
-  if (src.resetCode === true) issueCode(person, new Set(team.people.map((p) => p.code)), at);
+  if (src.resetCode === true) issueCode(person, codesInUse(team), at);
   return person;
 }
 
 /** A new code for everyone on the list, e.g. after changing the code style. */
 export function resetAllCodes(db, { at }) {
   const team = ensureTeam(db);
-  const taken = new Set();
+  const taken = new Set(team.distributors.flatMap((d) => [d.code, ...(d.retiredCodes ?? [])]));
   for (const person of team.people) {
     issueCode(person, taken, at);
     taken.add(person.code);
@@ -326,17 +329,43 @@ function readDistributorName(team, value, errors, id = null) {
   return name;
 }
 
+// Every code anyone signs in with, and every distributor code ever replaced,
+// so an old (perhaps passed around) code never comes back for someone else.
 function codesInUse(team) {
-  return new Set([...team.people.map((p) => p.code), ...team.distributors.map((d) => d.code)].filter(Boolean));
+  return new Set(
+    [
+      ...team.people.map((p) => p.code),
+      ...(team.distributors ?? []).flatMap((d) => [d.code, ...(d.retiredCodes ?? [])]),
+    ].filter(Boolean)
+  );
 }
 
-/** A new distributor with its own code, and the categories its reps see. */
-export function addDistributor(db, input, { by, at }) {
+/** A code the admin typed: tidied like any code, and not anyone else's. */
+function readCode(value, team, errors, { own = null, reserved = [] } = {}) {
+  const code = normalizeCode(value);
+  const taken = codesInUse(team);
+  if (own) taken.delete(own.code);
+  if (code.length < 4 || code.length > 40) errors.code = "Use 4 to 40 letters, numbers and hyphens.";
+  else if (taken.has(code) || reserved.includes(code)) errors.code = "That code is already in use. Choose another.";
+  return code;
+}
+
+function retire(distributor) {
+  distributor.retiredCodes = [...(distributor.retiredCodes ?? []), distributor.code];
+}
+
+/**
+ * A new distributor with its own code, and the categories its reps see. The
+ * code is td- and its initials unless the admin typed one. `reserved` holds
+ * codes nobody may have, like the shared team code.
+ */
+export function addDistributor(db, input, { by, at, reserved = [] }) {
   const team = ensureTeam(db);
   const src = input && typeof input === "object" ? input : {};
   const errors = {};
   const name = readDistributorName(team, src.name, errors);
   const categories = readCategories(src.categories, errors);
+  const typed = String(src.code ?? "").trim() ? readCode(src.code, team, errors, { reserved }) : null;
   if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
   if (team.distributors.length >= MAX_DISTRIBUTORS) {
     throw new ValidationError(`The store holds at most ${MAX_DISTRIBUTORS} distributors.`, {});
@@ -344,7 +373,7 @@ export function addDistributor(db, input, { by, at }) {
   const distributor = {
     id: randomUUID(),
     name,
-    code: generateDistributorCode(codesInUse(team), name),
+    code: typed ?? nextDistributorCode(name, new Set([...codesInUse(team), ...reserved])),
     categories,
     active: true,
     createdAt: at,
@@ -362,25 +391,50 @@ function findDistributor(team, id) {
 }
 
 /**
- * Rename, change categories, turn the code off or on, or issue a new code.
- * Turning it off or a new code signs every one of its reps out.
+ * Rename, change categories or the code, turn the code off or on, or issue a
+ * new one (the next number: td-rbgfl-2). A different code, turning it off or
+ * a new code signs every one of its reps out.
  */
-export function updateDistributor(db, id, patch, { at }) {
+export function updateDistributor(db, id, patch, { at, reserved = [] }) {
   const team = ensureTeam(db);
   const distributor = findDistributor(team, id);
   const src = patch && typeof patch === "object" ? patch : {};
   const errors = {};
   const name = "name" in src ? readDistributorName(team, src.name, errors, id) : distributor.name;
   const categories = "categories" in src ? readCategories(src.categories, errors) : distributor.categories;
+  const typed = "code" in src ? readCode(src.code, team, errors, { own: distributor, reserved }) : distributor.code;
   if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
   distributor.name = name;
   distributor.categories = categories;
   if (typeof src.active === "boolean") distributor.active = src.active;
   if (src.resetCode === true) {
-    distributor.code = generateDistributorCode(codesInUse(team), distributor.name);
+    retire(distributor);
+    distributor.code = nextDistributorCode(distributor.name, new Set([...codesInUse(team), ...reserved]));
+    distributor.codeSetAt = at;
+  } else if (typed !== distributor.code) {
+    retire(distributor);
+    distributor.code = typed;
     distributor.codeSetAt = at;
   }
   return distributor;
+}
+
+/** Distributors still on the first, long codes get td-initials ones. */
+export function needsReadableDistributorCodes(db) {
+  return teamState(db).distributors.some((d) => OLD_DISTRIBUTOR_CODE.test(d.code));
+}
+
+export function applyReadableDistributorCodes(db, { at, reserved = [] }) {
+  const team = ensureTeam(db);
+  const changed = [];
+  for (const d of team.distributors) {
+    if (!OLD_DISTRIBUTOR_CODE.test(d.code)) continue;
+    retire(d);
+    d.code = nextDistributorCode(d.name, new Set([...codesInUse(team), ...reserved]));
+    d.codeSetAt = at;
+    changed.push(d);
+  }
+  return changed;
 }
 
 /** Past orders keep the distributor's name; its reps are signed out. */

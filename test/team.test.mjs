@@ -4,8 +4,12 @@ import { describe, it } from "node:test";
 import { safeEqual } from "../src/auth.mjs";
 import { initialState } from "../src/store/initial-state.mjs";
 import {
+  addDistributor,
   addPeople,
+  applyReadableDistributorCodes,
+  distributorForCode,
   generateCode,
+  needsReadableDistributorCodes,
   normalizeCode,
   parseTeamEntries,
   credentialOf,
@@ -17,10 +21,11 @@ import {
   setMode,
   setOwnPassword,
   teamReport,
+  updateDistributor,
   updatePerson,
   verifyPassword,
 } from "../src/team.mjs";
-import { suggestedMaxPerOrder } from "../public/assets/shared.js";
+import { distributorCodeFor, suggestedMaxPerOrder } from "../public/assets/shared.js";
 import { ValidationError } from "../src/validation.mjs";
 
 const AT = "2026-10-05T12:00:00.000Z";
@@ -127,6 +132,71 @@ describe("team list", () => {
     const taken = new Set();
     for (let i = 0; i < 500; i += 1) taken.add(generateCode(taken));
     assert.equal(taken.size, 500);
+  });
+});
+
+describe("distributor codes", () => {
+  const by = { by: "Allie", at: AT };
+
+  it("are td- and the distributor's initials, with the state shortened", () => {
+    assert.equal(distributorCodeFor("Reyes Beverage Group Florida"), "td-rbgfl");
+    assert.equal(distributorCodeFor("Reyes Beverage Group FL"), "td-rbgfl");
+    assert.equal(distributorCodeFor("Southern Glazer's — Florida"), "td-sgfl");
+    assert.equal(distributorCodeFor("RNDC Texas"), "td-rndctx");
+    assert.equal(distributorCodeFor("Breakthru Beverage Group of New York"), "td-bbgny");
+    assert.equal(distributorCodeFor("Johnson Brothers Inc."), "td-jb");
+    assert.equal(distributorCodeFor(""), "td-distributor");
+  });
+
+  it("number a repeat, and never reuse a replaced code", () => {
+    const db = initialState();
+    const first = addDistributor(db, { name: "Reyes Beverage Group Florida", categories: ["Print"] }, by);
+    const twin = addDistributor(db, { name: "Reyes Beverage Group FL North", categories: ["Print"] }, by);
+    assert.equal(first.code, "td-rbgfl");
+    assert.equal(twin.code, "td-rbgfln");
+    const clash = addDistributor(db, { name: "Royal Bay Group Florida", categories: ["Print"] }, by);
+    assert.equal(clash.code, "td-rbgfl-2");
+
+    updateDistributor(db, first.id, { resetCode: true }, by);
+    assert.equal(first.code, "td-rbgfl-3", "not the old code, and not the one Royal Bay has");
+    assert.equal(distributorForCode(db.team, "td-rbgfl", safeEqual), null, "the old code no longer signs in");
+    assert.equal(distributorForCode(db.team, "TD-RBGFL-3", safeEqual), first);
+  });
+
+  it("can be typed by the admin, but not one in use, retired or the team code", () => {
+    const db = initialState();
+    const reserved = ["mango-sunrise-tasting"];
+    const mine = addDistributor(db, { name: "Reyes Beverage Group Florida", categories: ["Print"], code: " TD RBG Miami " }, { ...by, reserved });
+    assert.equal(mine.code, "td-rbg-miami");
+    const other = addDistributor(db, { name: "RNDC Texas", categories: ["Print"] }, { ...by, reserved });
+    const taken = (code) => {
+      try {
+        updateDistributor(db, other.id, { code }, { ...by, reserved });
+        return null;
+      } catch (error) {
+        return error.fieldErrors.code;
+      }
+    };
+    assert.match(taken("td-rbg-miami"), /already in use/);
+    assert.match(taken("Mango Sunrise Tasting"), /already in use/);
+    assert.match(taken("td"), /4 to 40/);
+    assert.equal(taken("td-rndc-houston"), null);
+    assert.equal(other.code, "td-rndc-houston");
+    assert.match(taken("td-rndctx"), /already in use/, "its own replaced code can't come back");
+    assert.equal(taken("td-rndc-houston"), null, "keeping the same code is fine");
+  });
+
+  it("replace the first, long codes once", () => {
+    const db = initialState();
+    db.team.distributors.push(
+      { id: "d1", name: "Reyes Beverage Group Florida", code: "tropical-reyes-1234-5678", categories: ["Print"], active: true },
+      { id: "d2", name: "Typed Code", code: "td-typed", categories: ["Print"], active: true }
+    );
+    assert.equal(needsReadableDistributorCodes(db), true);
+    const changed = applyReadableDistributorCodes(db, { at: AT });
+    assert.deepEqual(changed.map((d) => d.code), ["td-rbgfl"]);
+    assert.equal(db.team.distributors[1].code, "td-typed");
+    assert.equal(needsReadableDistributorCodes(db), false);
   });
 });
 
