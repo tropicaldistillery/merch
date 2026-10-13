@@ -17,13 +17,20 @@
 // only as a slow salted hash: nobody, the admin included, can read it back.
 // If they forget it, the admin issues a new code, which replaces it.
 //
+// Or the admin sends them an invite: an email with a link, good once for
+// INVITE_DAYS, to a page where they choose their password straight away and
+// are signed in. Only a hash of the link's token is kept. A new invite
+// replaces the last one, so it also serves as a reset for a forgotten
+// password. People with a code or password of their own can sign in with it
+// in either mode; the shared code is the only thing the mode switches.
+//
 // Distributor codes work alongside either: each distributor the admin sets up
 // has one code its reps share (td- and its initials, like td-rbgfl), typed
 // with their own name and any email. Reps
 // see only the categories chosen for their distributor, and only their own
 // orders, saved address and the accounts their distributor has shipped to.
 
-import { randomBytes, randomInt, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
 
 import { CATEGORIES, RELEASED_STATUSES, distributorCodeFor } from "../public/assets/shared.js";
 import { ValidationError, cleanLine, isValidEmail, normalizeEmail } from "./validation.mjs";
@@ -166,6 +173,47 @@ function issueCode(person, taken, at) {
   person.codeSetAt = at;
   delete person.passwordHash;
   delete person.passwordSetAt;
+}
+
+/* --------------------------------------------------------------- invites */
+
+export const INVITE_DAYS = 14;
+export const INVITE_GONE = "This link has expired or has already been used. Ask the merch admin to send you a new invite.";
+const tokenHash = (token) => createHash("sha256").update(String(token)).digest("hex");
+
+/**
+ * A new invite link token for this person, replacing any earlier one. The
+ * token itself is returned once, for the email, and never stored.
+ */
+export function issueInvite(db, id, { by, at, days = INVITE_DAYS }) {
+  const person = findPerson(ensureTeam(db), id);
+  const token = randomBytes(24).toString("base64url");
+  person.invite = {
+    tokenHash: tokenHash(token),
+    sentAt: at,
+    sentBy: by,
+    expiresAt: new Date(Date.parse(at) + days * 24 * 60 * 60 * 1000).toISOString(),
+  };
+  return { person, token };
+}
+
+/** The person a current invite link is for, or null. */
+export function personForInvite(team, token, now = new Date()) {
+  if (typeof token !== "string" || token.length < 20 || token.length > 100) return null;
+  const hash = tokenHash(token);
+  const person = team.people.find((p) => p.invite?.tokenHash === hash);
+  return person && person.invite.expiresAt > now.toISOString() ? person : null;
+}
+
+/** Their chosen password (already hashed) replaces their code; the link stops working. */
+export function acceptInvite(db, token, { hash, now = new Date() }) {
+  const person = personForInvite(ensureTeam(db), token, now);
+  if (!person) throw new ValidationError(INVITE_GONE, {}, 410);
+  person.passwordHash = hash;
+  person.passwordSetAt = now.toISOString();
+  person.code = null;
+  delete person.invite;
+  return person;
 }
 
 /* ------------------------------------------------------------- the list */
@@ -501,6 +549,8 @@ export function teamReport(db, { now = new Date() } = {}) {
       addedAt: person.addedAt,
       codeSetAt: person.codeSetAt,
       ownPasswordSetAt: person.passwordSetAt ?? null,
+      invitedAt: person.invite?.sentAt ?? null,
+      inviteExpiresAt: person.invite?.expiresAt ?? null,
       orders: counted.length,
       units: counted.reduce((sum, o) => sum + o.totalUnits, 0),
       valueCents: counted.reduce((sum, o) => sum + o.totalCents, 0),

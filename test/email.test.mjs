@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createEmailer, escapeHtml, orderEmails, parseAddresses, renderEmail } from "../src/email.mjs";
+import { createEmailer, escapeHtml, inviteEmail, orderEmails, parseAddresses, renderEmail } from "../src/email.mjs";
 import { placeOrder, updateOrder } from "../src/orders.mjs";
 import { initialState } from "../src/store/initial-state.mjs";
 
@@ -210,6 +210,46 @@ describe("point-of-sale and samples inboxes", () => {
     await notify("order.created", order);
     assert.equal(calls.length, 3);
     assert.equal(new Set(calls).size, 3);
+  });
+});
+
+describe("invite emails", () => {
+  const LINK = "https://merch.tropicaldistillery.com/welcome?invite=abc";
+
+  it("invite people to create a password, or to choose a new one", () => {
+    const invite = inviteEmail({ name: "Jane Rep", email: "jane@tropicaldistillery.com" }, { link: LINK, by: "Allie" });
+    assert.deepEqual(invite.to, ["jane@tropicaldistillery.com"]);
+    assert.equal(invite.subject, "Create your Tropical Distillery merch store password");
+    const { html, text } = renderEmail(invite);
+    assert.match(text, /Hi Jane,/);
+    assert.match(text, /Allie invited you/);
+    assert.match(text, /Create your password: https:\/\/merch\.tropicaldistillery\.com\/welcome\?invite=abc/);
+    assert.ok(html.includes(`href="${LINK}"`));
+
+    const reset = inviteEmail({ name: "<b>Jane</b>", email: "jane@tropicaldistillery.com", passwordSetAt: "2026-10-01" }, { link: LINK });
+    assert.equal(reset.subject, "Choose a new password for the Tropical Distillery merch store");
+    assert.match(renderEmail(reset).text, /The merch admin sent you a link/);
+    assert.ok(!renderEmail(reset).html.includes("<b>Jane"));
+  });
+
+  it("are sent through the same queue, each under its own key", async () => {
+    const calls = [];
+    const notify = createEmailer({
+      apiKey: "re_test",
+      from: "merch@tropicaldistillery.com",
+      adminTo: ADMINS,
+      sleep: async () => {},
+      log: { error: () => {} },
+      fetchImpl: async (url, init) => {
+        calls.push({ key: init.headers["Idempotency-Key"], body: JSON.parse(init.body) });
+        return new Response("{}", { status: 200 });
+      },
+    });
+    assert.equal(notify.enabled, true);
+    await notify.invite({ id: "p1", name: "Jane", email: "jane@tropicaldistillery.com" }, { link: LINK, by: "Allie", key: "k1" });
+    assert.equal(calls[0].key, "invite:p1:k1");
+    assert.deepEqual(calls[0].body.reply_to, ADMINS);
+    assert.equal(createEmailer({}).enabled, false);
   });
 });
 

@@ -4,8 +4,11 @@ import { describe, it } from "node:test";
 import { safeEqual } from "../src/auth.mjs";
 import { initialState } from "../src/store/initial-state.mjs";
 import {
+  acceptInvite,
   addDistributor,
   addPeople,
+  issueInvite,
+  personForInvite,
   applyReadableDistributorCodes,
   distributorForCode,
   generateCode,
@@ -132,6 +135,28 @@ describe("team list", () => {
     const taken = new Set();
     for (let i = 0; i < 500; i += 1) taken.add(generateCode(taken));
     assert.equal(taken.size, 500);
+  });
+});
+
+describe("invites", () => {
+  it("keep only a hash, expire, work once, and replace the code with the password", async () => {
+    const db = initialState();
+    const [jane] = addPeople(db, "Jane Rep, jane@tropicaldistillery.com", { by: "Allie", at: AT }).added;
+    const { token } = issueInvite(db, jane.id, { by: "Allie", at: AT });
+    assert.ok(!JSON.stringify(db).includes(token));
+    assert.equal(personForInvite(db.team, token, new Date("2026-10-18T12:00:00Z")), jane);
+    assert.equal(personForInvite(db.team, token, new Date("2026-10-20T12:00:00Z")), null, "14 days, then it's gone");
+    assert.equal(personForInvite(db.team, "short", new Date(AT)), null);
+
+    const second = issueInvite(db, jane.id, { by: "Allie", at: AT }).token;
+    assert.equal(personForInvite(db.team, token, new Date(AT)), null, "a new invite replaces the old");
+    const hash = await hashPassword("mango sunset 77");
+    acceptInvite(db, second, { hash, now: new Date("2026-10-06T12:00:00Z") });
+    assert.equal(jane.code, null);
+    assert.equal(credentialOf(jane), hash);
+    assert.equal(jane.invite, undefined);
+    assert.throws(() => acceptInvite(db, second, { hash, now: new Date("2026-10-06T12:00:00Z") }), (e) => e.status === 410);
+    assert.ok(await personForSignIn(db.team, "jane@tropicaldistillery.com", "mango sunset 77", safeEqual));
   });
 });
 

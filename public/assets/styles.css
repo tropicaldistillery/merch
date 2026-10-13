@@ -2339,7 +2339,8 @@ table.table {
   display: none;
 }
 
-.signin-card > * + * {
+.signin-card > * + *,
+#welcome-fields > * + * {
   margin-top: 16px;
 }
 

@@ -229,17 +229,17 @@ function changePasswordDialog(user) {
   const form = el(
     "form",
     { novalidate: true },
-    el("h2", { id: "password-title", text: "Change your code" }),
+    el("h2", { id: "password-title", text: "Change your password" }),
     el("p", {
       class: "muted",
-      text: "Choose your own code to sign in with, in place of the one you were sent. You'll stay signed in here; anywhere else you're signed in will ask for the new code.",
+      text: "Choose a new password to sign in with. You'll stay signed in here; anywhere else you're signed in will ask for the new one.",
     }),
     alertBox,
     // For password managers, so they save the new password against the right email.
     el("input", { type: "email", name: "username", autocomplete: "username", value: user.email, readonly: true, hidden: true }),
-    secret("pw-current", "current", "Current code", "current-password"),
-    secret("pw-new", "password", "New code", "new-password", "At least 8 characters. A short phrase is easy to remember and hard to guess."),
-    secret("pw-confirm", "confirm", "New code again", "new-password"),
+    secret("pw-current", "current", "Current password or code", "current-password"),
+    secret("pw-new", "password", "New password", "new-password", "At least 8 characters. A short phrase is easy to remember and hard to guess."),
+    secret("pw-confirm", "confirm", "New password again", "new-password"),
     el(
       "label",
       { class: "check show-secret" },
@@ -249,13 +249,13 @@ function changePasswordDialog(user) {
           for (const input of form.querySelectorAll("input[autocomplete$='password']")) input.type = event.target.checked ? "text" : "password";
         },
       }),
-      " Show codes"
+      " Show passwords"
     ),
     el(
       "div",
       { class: "dialog-actions" },
       el("button", { type: "button", class: "btn btn-secondary", text: "Cancel", onclick: () => dialog.close() }),
-      el("button", { type: "submit", class: "btn", text: "Save new code" })
+      el("button", { type: "submit", class: "btn", text: "Save new password" })
     )
   );
   const dialog = el("dialog", { class: "confirm password-dialog", "aria-labelledby": "password-title" }, form);
@@ -266,7 +266,7 @@ function changePasswordDialog(user) {
     setAlert(alertBox, "");
     const value = (name) => form.elements.namedItem(name).value;
     if (value("password") !== value("confirm")) {
-      showFieldErrors(form, { confirm: "The two new codes don't match." });
+      showFieldErrors(form, { confirm: "The two new passwords don't match." });
       return;
     }
     const submit = form.querySelector("button[type=submit]");
@@ -274,7 +274,7 @@ function changePasswordDialog(user) {
     try {
       await api("/api/me/password", { method: "POST", body: { current: value("current"), password: value("password") } });
       dialog.close();
-      toast("Code changed. Use it with your email next time you sign in.");
+      toast("Password changed. Use it with your email next time you sign in.");
     } catch (error) {
       if (error.status === 401) return goToSignIn();
       setAlert(alertBox, error.message);

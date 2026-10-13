@@ -33,11 +33,12 @@ const ACCOUNT_ORDER = {
   lines: [{ itemId: "jfh-bar-mat", variantId: "default", quantity: 2 }],
 };
 
-async function start(dir, overrides = {}) {
+async function start(dir, overrides = {}, { mailer = null } = {}) {
   const store = await openStore({ dataDir: dir });
   const notifications = [];
   const handler = await createApp({
     store,
+    mailer,
     notify: (event, order) => notifications.push({ event, number: order.number }),
     config: {
       teamAccessCode: TEAM_CODE,
@@ -582,6 +583,111 @@ describe("personal codes", () => {
       assert.match(newSam.code, /^tropical-sam-\d{4}$/);
       assert.equal((await attempt("sam@tropicaldistillery.com", sam.code)).status, 401);
       assert.equal((await attempt("sam@tropicaldistillery.com", newSam.code)).status, 200);
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("invites", () => {
+  function fakeMailer() {
+    const sent = [];
+    const invite = (person, { link, by }) => {
+      sent.push({ email: person.email, link, by });
+      return Promise.resolve();
+    };
+    return { sent, mailer: { enabled: true, invite } };
+  }
+  const tokenOf = (link) => new URL(link).searchParams.get("invite");
+
+  it("emails a link to create a password, which signs them in and works once", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const { sent, mailer } = fakeMailer();
+    const app = await start(dir, { publicUrl: "https://merch.tropicaldistillery.com/" }, { mailer });
+    try {
+      const admin = await signedInAdmin(app);
+      assert.equal((await admin("/api/admin/team")).data.inviteEmail, true);
+      const added = await admin("/api/admin/team", {
+        method: "POST",
+        body: { entries: "Jane Rep, jane@tropicaldistillery.com\nMarco <marco.ambassador@gmail.com>", invite: true },
+      });
+      assert.equal(added.data.emailed, true);
+      assert.equal(added.data.invites.length, 2);
+      assert.deepEqual(sent.map((m) => m.email), ["jane@tropicaldistillery.com", "marco.ambassador@gmail.com"]);
+      assert.match(sent[0].link, /^https:\/\/merch\.tropicaldistillery\.com\/welcome\?invite=[\w-]{32}$/);
+      assert.equal(sent[0].by, "Allie");
+      const stored = JSON.stringify(await app.store.read());
+      assert.ok(!stored.includes(tokenOf(sent[0].link)), "only a hash of the token is kept");
+
+      const anon = app.client();
+      const token = tokenOf(sent[0].link);
+      const who = await anon(`/api/invite?invite=${token}`);
+      assert.deepEqual([who.data.name, who.data.email, who.data.reset], ["Jane Rep", "jane@tropicaldistillery.com", false]);
+      assert.equal((await anon("/api/invite?invite=not-a-real-invite-token-at-all")).status, 410);
+
+      const weak = await anon("/api/invite", { method: "POST", body: { token, password: "password1" } });
+      assert.equal(weak.status, 400);
+      assert.ok(weak.data.fieldErrors.password);
+      const created = await anon("/api/invite", { method: "POST", body: { token, password: "mango sunset 77" } });
+      assert.equal(created.status, 200, JSON.stringify(created.data));
+      assert.equal(created.data.user.name, "Jane Rep");
+      assert.equal((await anon("/api/session")).data.user.personId, added.data.invites[0].id, "signed in straight away");
+      assert.equal((await app.client()("/api/invite", { method: "POST", body: { token, password: "another phrase 8" } })).status, 410, "works once");
+
+      // Her password works in shared mode (no name needed) and in personal mode.
+      const janeAgain = app.client();
+      const signIn = await janeAgain("/api/session", { method: "POST", body: { email: "jane@tropicaldistillery.com", code: "mango sunset 77" } });
+      assert.equal(signIn.status, 200, JSON.stringify(signIn.data));
+      const lee = await signedInTeam(app, "lee@tropicaldistillery.com", "Lee");
+      assert.equal((await lee("/api/catalog")).status, 200, "the shared code still works alongside");
+      await admin("/api/admin/team/mode", { method: "PUT", body: { mode: "personal" } });
+      assert.equal((await janeAgain("/api/catalog")).status, 200, "her session carries on");
+      assert.equal((await lee("/api/catalog")).status, 401, "shared-code sessions end");
+      const personal = await app.client()("/api/session", { method: "POST", body: { email: "jane@tropicaldistillery.com", code: "mango sunset 77" } });
+      assert.equal(personal.status, 200);
+
+      const report = (await admin("/api/admin/team")).data.people;
+      const jane = report.find((p) => p.email === "jane@tropicaldistillery.com");
+      const marco = report.find((p) => p.email === "marco.ambassador@gmail.com");
+      assert.ok(jane.ownPasswordSetAt);
+      assert.equal(jane.invitedAt, null, "an accepted invite is gone");
+      assert.ok(marco.invitedAt);
+
+      // Inviting everyone not set up skips Jane; a new invite replaces Marco's old link.
+      const again = await admin("/api/admin/team/invite", { method: "POST", body: { notSetUp: true } });
+      assert.deepEqual(again.data.invites.map((i) => i.email), ["marco.ambassador@gmail.com"]);
+      assert.equal((await anon(`/api/invite?invite=${tokenOf(sent[1].link)}`)).status, 410, "the earlier link stops working");
+      assert.equal((await anon(`/api/invite?invite=${tokenOf(sent.at(-1).link)}`)).status, 200);
+
+      // For Jane, an invite is a reset link: her password works until she uses it.
+      const reset = await admin("/api/admin/team/invite", { method: "POST", body: { ids: [jane.id] } });
+      const resetToken = tokenOf(reset.data.invites[0].link);
+      assert.equal((await anon(`/api/invite?invite=${resetToken}`)).data.reset, true);
+      assert.equal((await janeAgain("/api/catalog")).status, 200);
+      await anon("/api/invite", { method: "POST", body: { token: resetToken, password: "new phrase 2026" } });
+      assert.equal((await janeAgain("/api/catalog")).status, 401, "a new password signs her other sessions out");
+      const fresh = await app.client()("/api/session", { method: "POST", body: { email: "jane@tropicaldistillery.com", code: "new phrase 2026" } });
+      assert.equal(fresh.status, 200);
+      assert.equal((await anon("/api/admin/team/invite", { method: "POST", body: { notSetUp: true } })).status, 401);
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("hands the admin the links when email is off, and serves the welcome page", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const app = await start(dir, {}, { mailer: null });
+    try {
+      const admin = await signedInAdmin(app);
+      await admin("/api/admin/team", { method: "POST", body: { entries: "Sam, sam@tropicaldistillery.com" } });
+      const res = await admin("/api/admin/team/invite", { method: "POST", body: { notSetUp: true } });
+      assert.equal(res.data.emailed, false);
+      assert.match(res.data.invites[0].link, /^http:\/\/127\.0\.0\.1:\d+\/welcome\?invite=/, "from the admin's own address without PUBLIC_URL");
+      const page = await app.client()(new URL(res.data.invites[0].link).pathname);
+      assert.equal(page.status, 200);
+      assert.match(page.data, /Create your password/);
     } finally {
       await app.close();
       await fs.rm(dir, { recursive: true, force: true });

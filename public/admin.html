@@ -149,12 +149,12 @@
               <legend class="sr-only">Sign-in method</legend>
               <label class="choice compact">
                 <input type="radio" name="team-mode" value="personal">
-                <span><span class="choice-title">Personal codes</span><span class="choice-text">Everyone on the team list signs in with their own code, so every order is tied to a real person. Remove someone or reset their code and only they are signed out.</span></span>
+                <span><span class="choice-title">Personal sign-in only</span><span class="choice-text">Only people on the team list can sign in, with their email and their own password (or the code you sent them), so every order is tied to a real person. The shared team code stops working.</span></span>
                 <span class="choice-tick" aria-hidden="true"></span>
               </label>
               <label class="choice compact">
                 <input type="radio" name="team-mode" value="shared">
-                <span><span class="choice-title">One shared team code</span><span class="choice-text">Everyone types their name and email with the same code. Simple, but anyone with the code can order under any name.</span></span>
+                <span><span class="choice-title">Shared team code too</span><span class="choice-text">Anyone with the team code can also sign in, typing their own name and email. People who've created a password can use it either way.</span></span>
                 <span class="choice-tick" aria-hidden="true"></span>
               </label>
             </fieldset>
@@ -167,9 +167,10 @@
             <div class="field">
               <label for="team-entries">One person per line: name and email</label>
               <textarea id="team-entries" name="entries" rows="5" placeholder="Jane Rep, jane@tropicaldistillery.com&#10;Marco Diaz &lt;marco.ambassador@gmail.com&gt;&#10;sam@tropicaldistillery.com"></textarea>
-              <p class="hint">Paste straight from a spreadsheet if you like. Each new person gets their own code; any email works, personal ones included.</p>
+              <p class="hint">Paste straight from a spreadsheet if you like. Any email works, personal ones included.</p>
             </div>
-            <button type="submit" class="btn">Add &amp; create codes</button>
+            <label class="check"><input id="team-invite" type="checkbox" checked> <span id="team-invite-label">Email each new person an invite to create their password</span></label>
+            <button type="submit" class="btn">Add people</button>
           </form>
         </div>
 
@@ -181,6 +182,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
             <input id="team-search" type="search" placeholder="Name or email" autocomplete="off">
           </label>
+          <button type="button" class="btn btn-secondary" id="team-invite-all">Invite everyone not set up</button>
           <a class="btn btn-secondary" id="team-csv" href="/api/admin/team.csv">Download codes</a>
           <button type="button" class="btn btn-secondary" id="team-reset-all">New codes for everyone</button>
         </div>

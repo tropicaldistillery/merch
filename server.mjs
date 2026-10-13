@@ -122,7 +122,7 @@ function notify(event, order, context) {
   webhook(event, order);
   email(event, order, context);
 }
-const handler = await createApp({ store, config, notify });
+const handler = await createApp({ store, config, notify, mailer: email });
 
 const server = http.createServer(handler);
 server.listen(port, () => {

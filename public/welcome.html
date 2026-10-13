@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Welcome · Tropical Distillery Team Merch</title>
+  <link rel="icon" href="/assets/brand/td-palm.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@700&family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <main class="signin">
+    <section class="signin-brand" aria-labelledby="signin-headline">
+      <div class="sun" aria-hidden="true"></div>
+      <a class="brand" href="/">
+        <img class="brand-mark" src="/assets/brand/td-palm.png" alt="" width="50" height="36">
+        <span class="brand-name">Tropical Distillery<span class="brand-sub">Team merch store</span></span>
+      </a>
+      <p class="eyebrow">For the Tropical Distillery team</p>
+      <h1 id="signin-headline">Gear, POS &amp; event kits, <em>shipped where you need them.</em></h1>
+      <ul class="signin-points">
+        <li><span class="dot" aria-hidden="true">1</span><span><strong>Ship to yourself</strong>Uniforms, sales-kit refills and tasting supplies.</span></li>
+        <li><span class="dot" aria-hidden="true">2</span><span><strong>Ship straight to an account</strong>Shelf talkers, bar mats and signage go directly to the bar or store.</span></li>
+        <li><span class="dot" aria-hidden="true">3</span><span><strong>Follow every order</strong>See when it's approved and shipped, with tracking.</span></li>
+      </ul>
+      <p class="signin-foot">Miami in a Bottle&trade; · J.F. Haden's · Twin P Whiskey</p>
+    </section>
+
+    <section class="signin-panel">
+      <form class="card signin-card" id="welcome-form" novalidate>
+        <div>
+          <p class="eyebrow" id="welcome-eyebrow">Welcome to the team store</p>
+          <h2 id="welcome-title">Create your password</h2>
+        </div>
+        <p class="muted" id="welcome-intro">Checking your invite…</p>
+        <div class="form-alert" role="alert" hidden></div>
+
+        <div id="welcome-fields" hidden>
+          <!-- for password managers, so they save the password against the right email -->
+          <input type="email" id="welcome-email" name="username" autocomplete="username" readonly hidden>
+          <div class="field">
+            <label for="password">New password</label>
+            <input id="password" name="password" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" maxlength="128" required>
+            <p class="hint">At least 8 characters. A short phrase is easy to remember and hard to guess.</p>
+          </div>
+          <div class="field">
+            <label for="confirm">New password again</label>
+            <input id="confirm" name="confirm" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" maxlength="128" required>
+            <label class="check show-secret"><input id="password-show" type="checkbox"> Show</label>
+          </div>
+          <button class="btn btn-block" type="submit" id="welcome-submit">Create password &amp; sign in</button>
+        </div>
+        <p class="fine">Already set up? <a href="/">Sign in</a>.</p>
+      </form>
+    </section>
+  </main>
+  <script type="module" src="/assets/welcome.js"></script>
+</body>
+</html>

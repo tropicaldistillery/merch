@@ -63,15 +63,20 @@ import {
   updateOrder,
 } from "./orders.mjs";
 import {
+  INVITE_GONE,
+  MAX_PEOPLE,
+  acceptInvite,
   addDistributor,
   addPeople,
   applyReadableDistributorCodes,
   credentialOf,
   distributorForCode,
+  issueInvite,
   needsReadableDistributorCodes,
   normalizeCode,
   hashPassword,
   passwordProblem,
+  personForInvite,
   personForSignIn,
   removeDistributor,
   removePerson,
@@ -131,6 +136,7 @@ const PAGES = {
   "/checkout": { file: "checkout.html", team: true },
   "/orders": { file: "orders.html", team: true },
   "/admin": { file: "admin.html" },
+  "/welcome": { file: "welcome.html" },
   "/packing-slip": { file: "packing-slip.html" },
 };
 
@@ -246,7 +252,7 @@ function byName(a, b) {
  * @param {(event: string, order: object) => void} [options.notify]
  * @param {() => Date} [options.clock]
  */
-export async function createApp({ store, config, notify = () => {}, clock = () => new Date() }) {
+export async function createApp({ store, config, notify = () => {}, mailer = null, clock = () => new Date() }) {
   let initial = await store.read();
   if (needsSeedTextFixes(initial)) {
     const changed = await store.mutate((db) => applySeedTextFixes(db));
@@ -397,12 +403,12 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     return (await teamAccess()).distributors.get(user.distributorId)?.categories ?? [];
   }
 
-  // Personal-code sessions carry the person and a fingerprint of their
-  // current code or own password, so a reset, a new password or removal ends
-  // them; shared-code sessions carry the team code's fingerprint. Switching
-  // modes ends the other kind. Distributor sessions carry the distributor and
-  // its code's fingerprint, whichever mode the team is in: a new code, turning
-  // it off or removing the distributor ends them.
+  // Personal sessions carry the person and a fingerprint of their current
+  // code or own password, so a reset, a new password or removal ends them,
+  // in either mode. Shared-code sessions carry the team code's fingerprint
+  // and end when personal codes are switched on. Distributor sessions carry
+  // the distributor and its code's fingerprint, whichever mode the team is
+  // in: a new code, turning it off or removing the distributor ends them.
   async function teamUser(req) {
     const payload = verifySession(secret, parseCookies(req.headers.cookie)[TEAM_COOKIE]);
     if (!payload || payload.role !== "team") return null;
@@ -412,12 +418,12 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       if (!distributor?.active || payload.fp !== distributorFingerprint(distributor)) return null;
       return { name: payload.name, email: payload.email, distributorId: distributor.id, distributor: distributor.name };
     }
-    if (mode === "personal") {
-      const person = payload.pid ? byId.get(payload.pid) : null;
+    if (payload.pid) {
+      const person = byId.get(payload.pid);
       if (!person || payload.fp !== personFingerprint(person)) return null;
       return { name: person.name || person.email, email: person.email, personId: person.id };
     }
-    if (!teamFingerprint || payload.pid || payload.fp !== teamFingerprint) return null;
+    if (mode === "personal" || !teamFingerprint || payload.fp !== teamFingerprint) return null;
     return { name: payload.name, email: payload.email };
   }
 
@@ -432,7 +438,7 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
 
   async function teamSignIn({ req, res }) {
     const { mode, team } = await teamAccess({ fresh: true });
-    if (mode === "shared" && !teamCode && !team.distributors.some((d) => d.active)) {
+    if (mode === "shared" && !teamCode && !team.distributors.some((d) => d.active) && !team.people.length) {
       throw new ValidationError("The store isn't set up yet — TEAM_ACCESS_CODE has not been configured.", {}, 503);
     }
     const address = clientAddress(req);
@@ -456,36 +462,40 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
         throw new ValidationError(message, errors);
       }
       session = { did: distributor.id, name, email, distributor: distributor.name, fp: distributorFingerprint(distributor) };
-    } else if (mode === "personal") {
-      if (!String(body.code ?? "").trim()) errors.code = "Enter your personal code or password.";
-      if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+    } else {
+      if (!String(body.code ?? "").trim()) {
+        errors.code = mode === "personal" ? "Enter your password or code." : "Enter the team code.";
+      }
+      if (errors.email || errors.code) throw new ValidationError("Some details need attention.", errors);
       if (emailThrottle.blocked(email)) {
         throw new ValidationError("Too many wrong tries for this email. Wait 15 minutes and try again.", {}, 429);
       }
-      const person = await personForSignIn(team, email, body.code, safeEqual);
-      if (!person) {
+      const failed = async (message, field = "code") => {
         signInFailed(address);
         emailThrottle.fail(email);
         await delay(config.failureDelayMs ?? 400);
-        const message =
-          "That email and code or password don't match. Check the code you were sent, or ask the merch admin for a new one.";
-        throw new ValidationError(message, { code: message }, 401);
+        return new ValidationError(message, { [field]: message }, 401);
+      };
+      // Anyone on the team list signs in with their own password or code,
+      // whichever mode; the shared code works too until personal codes are on.
+      const person = await personForSignIn(team, email, body.code, safeEqual);
+      if (person) {
+        session = personSession(person);
+      } else if (mode === "personal") {
+        throw await failed("That email and password or code don't match. Check them, or ask the merch admin for a new invite.");
+      } else {
+        const name = cleanLine(body.name, 80);
+        if (!name) errors.name = "Enter your name.";
+        if (!errors.email && domains.length && !domains.some((domain) => email.endsWith(`@${domain}`))) {
+          errors.email = `Use your ${domains.map((d) => `@${d}`).join(" or ")} email address.`;
+        }
+        const code = String(body.code ?? "").trim().toLowerCase();
+        if (!teamCode || !safeEqual(code, teamCode.toLowerCase())) {
+          throw await failed(team.people.length ? "That isn't the team code or your password." : "That team code isn't right.");
+        }
+        if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+        session = { name, email, fp: teamFingerprint };
       }
-      session = personSession(person);
-    } else {
-      const name = cleanLine(body.name, 80);
-      if (!name) errors.name = "Enter your name.";
-      if (!errors.email && domains.length && !domains.some((domain) => email.endsWith(`@${domain}`))) {
-        errors.email = `Use your ${domains.map((d) => `@${d}`).join(" or ")} email address.`;
-      }
-      if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
-      const code = String(body.code ?? "").trim().toLowerCase();
-      if (!safeEqual(code, teamCode.toLowerCase())) {
-        signInFailed(address);
-        await delay(config.failureDelayMs ?? 400);
-        throw new ValidationError("That team code isn't right.", { code: "That team code isn't right." }, 401);
-      }
-      session = { name, email, fp: teamFingerprint };
     }
 
     // Remember the sign-in, for the admin's team report. Reps are kept apart,
@@ -556,6 +566,66 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     sendJson(res, 200, { ok: true }, { "Set-Cookie": teamSessionCookie(req, personSession(updated)) });
   }
 
+  /* -------------------------------------------------------------- invites */
+
+  // Where invite links point: PUBLIC_URL, or else the site the admin is on.
+  function siteUrl(req) {
+    if (config.publicUrl) return config.publicUrl.replace(/\/$/, "");
+    return `${secureCookies(req) ? "https" : "http"}://${req.headers.host}`;
+  }
+
+  /** New invite links for these people, emailed to them when email is on. */
+  async function sendInvites(req, ids, by) {
+    const at = clock().toISOString();
+    const wanted = new Set(ids);
+    const issued = await store.mutate((db) =>
+      teamState(db).people.filter((p) => wanted.has(p.id)).map((p) => issueInvite(db, p.id, { by, at }))
+    );
+    const site = siteUrl(req);
+    return issued.map(({ person, token }) => {
+      const link = `${site}/welcome?invite=${token}`;
+      // keyed by the token's hash, so the token itself goes nowhere but the email
+      if (mailer?.enabled) mailer.invite(person, { link, by, key: person.invite.tokenHash.slice(0, 16) });
+      return { id: person.id, name: person.name, email: person.email, link };
+    });
+  }
+
+  async function invitee(token) {
+    const person = personForInvite((await teamAccess({ fresh: true })).team, token, clock());
+    if (!person) throw new ValidationError(INVITE_GONE, {}, 410);
+    return person;
+  }
+
+  // From an invite link: choose a password and be signed in.
+  async function acceptOwnInvite({ req, res }) {
+    const address = clientAddress(req);
+    if (signInBlocked(address)) {
+      throw new ValidationError("Too many tries. Wait 15 minutes and try again.", {}, 429);
+    }
+    const body = await readJson(req);
+    let person;
+    try {
+      person = await invitee(body.token);
+    } catch (error) {
+      signInFailed(address);
+      throw error;
+    }
+    const problem = passwordProblem(body.password, person);
+    if (problem) throw new ValidationError("Choose a different password.", { password: problem });
+    const hash = await hashPassword(body.password);
+    const now = clock();
+    const updated = await store.mutate((db) => {
+      const accepted = acceptInvite(db, body.token, { hash, now });
+      db.members[accepted.email] = { ...db.members[accepted.email], name: accepted.name, lastSignInAt: now.toISOString() };
+      return accepted;
+    });
+    accessChanged();
+    const session = personSession(updated);
+    sendJson(res, 200, { ok: true, user: { name: session.name, email: session.email } }, {
+      "Set-Cookie": teamSessionCookie(req, session),
+    });
+  }
+
   async function adminSignIn({ req, res }) {
     const address = clientAddress(req);
     if (signInBlocked(address)) {
@@ -599,12 +669,21 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       sendJson(res, 200, {
         ok: true,
         signInMode: mode,
-        teamSignIn: mode === "personal" || Boolean(teamCode) || distributorSignIn,
+        teamSignIn: mode === "personal" || Boolean(teamCode) || distributorSignIn || team.people.length > 0,
         distributorSignIn,
+        // People on the team list can use a password of their own in either mode.
+        accounts: team.people.length > 0,
         adminSignIn: Boolean(adminPassword),
         emailDomains: mode === "personal" ? [] : domains,
       });
     }],
+
+    // Invites: who a link is for, and choosing a password from it
+    ["GET", "/api/invite", "public", async ({ res, url }) => {
+      const person = await invitee(url.searchParams.get("invite"));
+      sendJson(res, 200, { ok: true, name: person.name, email: person.email, reset: Boolean(person.passwordSetAt) });
+    }],
+    ["POST", "/api/invite", "public", acceptOwnInvite],
 
     // Team session
     ["POST", "/api/session", "public", teamSignIn],
@@ -794,21 +873,42 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     // Admin: team list and personal codes
     ["GET", "/api/admin/team", "admin", async ({ res }) => {
       const db = await store.read();
-      sendJson(res, 200, { ok: true, ...teamReport(db, { now: clock() }) });
+      sendJson(res, 200, { ok: true, ...teamReport(db, { now: clock() }), inviteEmail: Boolean(mailer?.enabled) });
     }],
 
+    // invite: true also sends each new person an invite to create a password.
     ["POST", "/api/admin/team", "admin", async ({ req, res, admin }) => {
       const body = await readJson(req);
       const result = await store.mutate((db) =>
         addPeople(db, body.entries, { by: admin.name, at: clock().toISOString() })
       );
       accessChanged();
+      const invites = body.invite === true ? await sendInvites(req, result.added.map((p) => p.id), admin.name) : [];
       sendJson(res, 200, {
         ok: true,
         added: result.added.map(({ id, name, email, code }) => ({ id, name, email, code })),
         already: result.already,
         invalid: result.invalid,
+        invites,
+        emailed: Boolean(mailer?.enabled),
       });
+    }],
+
+    // Invites for these people ({ ids }), or everyone without a password yet
+    // ({ notSetUp: true }). A new invite replaces any earlier link.
+    ["POST", "/api/admin/team/invite", "admin", async ({ req, res, admin }) => {
+      const body = await readJson(req);
+      const { people } = teamState(await store.read());
+      const ids =
+        body.notSetUp === true
+          ? people.filter((p) => !p.passwordSetAt).map((p) => p.id)
+          : Array.isArray(body.ids)
+            ? body.ids.slice(0, MAX_PEOPLE).map(String)
+            : [];
+      if (!ids.length) throw new ValidationError(body.notSetUp ? "Everyone on the list has a password already." : "Choose who to invite.", {});
+      const invites = await sendInvites(req, ids, admin.name);
+      if (!invites.length) throw new ValidationError("Those people aren't on the team list.", {}, 404);
+      sendJson(res, 200, { ok: true, invites, emailed: Boolean(mailer?.enabled) });
     }],
 
     // Everyone gets a new code at once; their old codes stop working.

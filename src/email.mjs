@@ -6,6 +6,7 @@
 //   - every status change: an update to that person (approved, shipped with
 //     the tracking link, delivered, declined with the reason, cancelled)
 //   - a requester cancelling their own order: a note to the admins
+//   - an invite from the admin: a link to create (or reset) a password
 //
 // Everything typed by someone else is escaped before it goes into the HTML.
 // Sending never holds up or undoes an order: emails go out one after another
@@ -326,12 +327,43 @@ export function renderEmail({ subject, blocks }) {
   return { html, text };
 }
 
+/* ---------------------------------------------------------------- invites */
+
+/**
+ * An invite to create a password, or to choose a new one for someone who has
+ * one already. Replies go to the admins.
+ */
+export function inviteEmail(person, { link, by = "", days = 14, replyTo = [] } = {}) {
+  const reset = Boolean(person.passwordSetAt);
+  const who = by && by !== "Admin" ? by : "The merch admin";
+  return {
+    role: "invite",
+    to: [person.email],
+    replyTo,
+    subject: reset ? "Choose a new password for the Tropical Distillery merch store" : "Create your Tropical Distillery merch store password",
+    blocks: [
+      block.p(`Hi ${firstName(person.name)},`),
+      reset
+        ? block.p(`${who} sent you a link to choose a new password for the Tropical Distillery team merch store.`)
+        : block.p(
+            `${who} invited you to the Tropical Distillery team merch store, where you can order team gear, point-of-sale and event supplies for yourself or straight to your accounts. It's all covered by the marketing budget.`
+          ),
+      block.button(reset ? "Choose a new password" : "Create your password", link),
+      block.p(
+        `You'll sign in with ${person.email} and the password you choose. The link works once and expires in ${days} days; if it runs out, ask for a new one.`
+      ),
+    ],
+  };
+}
+
 /* ---------------------------------------------------------------- sending */
 
 /**
  * notify(event, order, { byRequester }) for the app, or a no-op without an
  * API key and a from address. Emails are sent one at a time, a little apart,
  * well inside Resend's rate limit; a 429 or a server error is retried twice.
+ * notify.invite(person, { link, by, key }) sends an invite the same way, and
+ * notify.enabled says whether anything is sent at all.
  */
 export function createEmailer({
   apiKey,
@@ -344,7 +376,12 @@ export function createEmailer({
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   gapMs = 250,
 } = {}) {
-  if (!apiKey || !from) return () => Promise.resolve();
+  if (!apiKey || !from) {
+    const off = () => Promise.resolve();
+    off.enabled = false;
+    off.invite = () => Promise.resolve();
+    return off;
+  }
 
   let queue = Promise.resolve();
   let last = 0;
@@ -383,14 +420,22 @@ export function createEmailer({
     }
   }
 
-  return function notify(event, order, { byRequester = false } = {}) {
-    const emails = orderEmails(event, order, { adminTo, routes, baseUrl, byRequester });
-    for (const email of emails) {
-      // The same event on the same order is only ever emailed once, even if a
-      // request is retried.
-      const key = `${order.id}:${event}:${order.history.length}:${email.role}`;
-      queue = queue.then(() => send(email, key)).catch((error) => log.error(`[email] ${error.message}`));
-    }
+  function enqueue(email, key) {
+    queue = queue.then(() => send(email, key)).catch((error) => log.error(`[email] ${error.message}`));
     return queue;
-  };
+  }
+
+  function notify(event, order, { byRequester = false } = {}) {
+    const emails = orderEmails(event, order, { adminTo, routes, baseUrl, byRequester });
+    // The same event on the same order is only ever emailed once, even if a
+    // request is retried.
+    for (const email of emails) enqueue(email, `${order.id}:${event}:${order.history.length}:${email.role}`);
+    return queue;
+  }
+
+  notify.enabled = true;
+  // Each invite has its own key, so a new one is always sent.
+  notify.invite = (person, { link, by, key }) =>
+    enqueue(inviteEmail(person, { link, by, replyTo: adminTo.length ? adminTo : routes.pos ?? [] }), `invite:${person.id}:${key}`);
+  return notify;
 }

@@ -2925,10 +2925,13 @@ function renderTeam() {
   for (const radio of $$("input[name=team-mode]")) radio.checked = radio.value === team.mode;
   const note =
     team.mode === "personal"
-      ? `Personal codes are on: ${plural(team.people.length, "person", "people")} can sign in. The shared team code no longer works.`
+      ? `Personal sign-in only: ${plural(team.people.length, "person", "people")} can sign in. The shared team code no longer works.`
       : team.people.length
-        ? "The shared team code is still in use. Once everyone has their personal code, switch to personal codes."
-        : "Add your team, send them their codes, then switch to personal codes.";
+        ? "The shared team code still works, and people on the list can already sign in with their own password. Once everyone has one, switch to personal sign-in only."
+        : "Add your team and invite them to create a password, then switch to personal sign-in only.";
+  $("#team-invite-label").textContent = team.inviteEmail
+    ? "Email each new person an invite to create their password"
+    : "Make each new person an invite link to create their password (email isn't set up, so you'll send it)";
   const live = team.distributors.filter((d) => d.active).length;
   $("#team-mode-note").textContent = live ? `${note} ${plural(live, "distributor code")} work${live === 1 ? "s" : ""} either way.` : note;
   renderDistributors();
@@ -2948,24 +2951,32 @@ function renderTeam() {
   } else {
     clear(
       table,
-      el("thead", {}, el("tr", {}, ["Person", "Personal code", "Orders", "Order value", "Last active", ""].map((h) =>
+      el("thead", {}, el("tr", {}, ["Person", "Sign-in", "Orders", "Order value", "Last active", ""].map((h) =>
         el("th", { scope: "col", class: h === "Orders" || h === "Order value" ? "num" : "", text: h })
       ))),
       el(
         "tbody",
         {},
         visible.map((p) => {
-          // Someone who chose their own password has no code to show; a new
-          // code is how they get back in if they forget it.
+          // Someone who chose their own password has no code to show; a
+          // reset link (or a new code) is how they get back in if they forget it.
+          const expired = p.inviteExpiresAt && p.inviteExpiresAt < new Date().toISOString();
+          const invited = p.invitedAt
+            ? [
+                el("span", { class: `tag${expired ? "" : " self"}`, text: expired ? "Invite expired" : "Invited" }),
+                el("div", { class: "cell-sub", text: `Sent ${formatDate(p.invitedAt)}` }),
+              ]
+            : null;
           const codeCell = p.ownPasswordSetAt
-            ? el("td", {}, el("span", { class: "tag", text: "Own password" }), el("div", { class: "cell-sub", text: `Set ${formatDate(p.ownPasswordSetAt)}` }))
+            ? el("td", {}, el("span", { class: "tag account", text: "Password set" }), el("div", { class: "cell-sub", text: `${formatDate(p.ownPasswordSetAt)}` }))
             : el(
             "td",
             {},
+            invited,
             el("button", {
               type: "button",
               class: "btn btn-secondary btn-sm",
-              text: "Show",
+              text: "Show code",
               "aria-label": `Show ${p.name || p.email}'s code`,
               onclick: async () => {
                 try {
@@ -2997,6 +3008,13 @@ function renderTeam() {
                 "div",
                 { class: "action-row" },
                 el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Edit", "aria-label": `Edit ${p.name || p.email}`, onclick: () => openPerson(p) }),
+                el("button", {
+                  type: "button",
+                  class: "btn btn-secondary btn-sm",
+                  text: p.ownPasswordSetAt ? "Reset link" : p.invitedAt ? "Resend invite" : "Invite",
+                  "aria-label": `${p.ownPasswordSetAt ? "Send a reset link to" : "Invite"} ${p.name || p.email}`,
+                  onclick: () => invitePerson(p),
+                }),
                 el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "New code", "aria-label": `New code for ${p.name || p.email}`, onclick: () => resetCode(p) })
               )
             )
@@ -3024,7 +3042,7 @@ function renderTeam() {
             ? el("button", { type: "button", class: "btn btn-sm", text: "Add all", onclick: () => add(team.suggestions) })
             : null
         ),
-        el("p", { class: "muted", text: "These people have signed in or ordered with the shared team code. Add them before switching to personal codes, or they won't be able to sign in." }),
+        el("p", { class: "muted", text: "These people have signed in or ordered with the shared team code. Add and invite them before switching to personal sign-in only, or they won't be able to sign in." }),
         el(
           "ul",
           { class: "code-list" },
@@ -3043,21 +3061,116 @@ function renderTeam() {
   }
 }
 
-async function addPeopleText(entries) {
+async function addPeopleText(entries, { invite = $("#team-invite").checked } = {}) {
   const form = $("#team-add-form");
   const alertBox = $(".form-alert", form);
   clearFieldErrors(form);
   setAlert(alertBox, "");
-  const { added, already, invalid } = await adminApi("/api/admin/team", { method: "POST", body: { entries } });
+  const { added, already, invalid, invites, emailed } = await adminApi("/api/admin/team", { method: "POST", body: { entries, invite } });
   const notes = [];
   if (already.length) notes.push(`Already on the list: ${already.join(", ")}.`);
   if (invalid.length) notes.push(`Not an email address, so skipped: ${invalid.join("; ")}.`);
   setAlert(alertBox, notes.join("\n"));
   await reloadTeam();
-  showNewCodes(added, added.length === 1 ? "New code" : `${added.length} new codes`);
+  if (invites.length) showInvites(invites, emailed);
+  else showNewCodes(added, added.length === 1 ? "New code" : `${added.length} new codes`);
   if (added.length) toast(`Added ${plural(added.length, "person", "people")} to the team list.`);
   return added;
 }
+
+/* --------------------------------------------------------------- invites */
+
+const inviteMessage = (i) =>
+  `You're invited to the Tropical Distillery team merch store. Create your password here (the link works once and expires in 14 days):\n${i.link}\nYou'll sign in with ${i.email}.`;
+
+// Invites just sent: a reminder of who got one, and their links in case email
+// isn't set up or one goes astray.
+function showInvites(invites, emailed) {
+  const box = $("#team-new-codes");
+  clear(
+    box,
+    el(
+      "section",
+      { class: "card card-pad new-codes", "aria-labelledby": "new-invites-title" },
+      el(
+        "div",
+        { class: "section-title" },
+        el("h2", { id: "new-invites-title", text: emailed ? `Invites sent to ${plural(invites.length, "person", "people")}` : "Invite links" }),
+        el("button", { type: "button", class: "icon-btn", "aria-label": "Dismiss", text: "×", onclick: () => clear(box) })
+      ),
+      el("p", {
+        class: "muted",
+        text: emailed
+          ? "Each person got an email with a link to create their password and sign in. The links work once and expire in 14 days. If someone can't find theirs, copy it from here or send a new invite."
+          : "Email isn't set up, so send each person their link yourself. Each link works once and expires in 14 days.",
+      }),
+      el(
+        "ul",
+        { class: "code-list" },
+        invites.map((i) =>
+          el(
+            "li",
+            {},
+            el("div", {}, el("div", { class: "cell-main", text: i.name || i.email }), el("div", { class: "cell-sub", text: i.email })),
+            el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Copy link", onclick: () => copyText(i.link, "Link") }),
+            el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Copy message", onclick: () => copyText(inviteMessage(i), "Message") })
+          )
+        )
+      )
+    )
+  );
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function invitePeople(body, confirmText) {
+  if (confirmText) {
+    const ok = await confirmDialog(confirmText);
+    if (!ok) return;
+  }
+  try {
+    const { invites, emailed } = await adminApi("/api/admin/team/invite", { method: "POST", body });
+    await reloadTeam();
+    showInvites(invites, emailed);
+    toast(emailed ? `Invite sent to ${plural(invites.length, "person", "people")}.` : "Invite links ready to copy.");
+  } catch (error) {
+    toast(error.message, { tone: "error" });
+  }
+}
+
+function invitePerson(p) {
+  const who = p.name || p.email;
+  return invitePeople(
+    { ids: [p.id] },
+    p.ownPasswordSetAt
+      ? {
+          title: `Send ${who} a link to choose a new password?`,
+          body: "Their current password keeps working until they use the link. Use this when someone has forgotten theirs.",
+          confirmLabel: "Send the link",
+          cancelLabel: "Not now",
+        }
+      : p.invitedAt
+        ? {
+            title: `Send ${who} a new invite?`,
+            body: "The link in their earlier invite stops working; the new one works for 14 days.",
+            confirmLabel: "Send a new invite",
+            cancelLabel: "Not now",
+          }
+        : null
+  );
+}
+
+$("#team-invite-all").addEventListener("click", () => {
+  const waiting = team.people.filter((p) => !p.ownPasswordSetAt);
+  if (!waiting.length) return toast("Everyone on the list has created a password.");
+  invitePeople({ notSetUp: true }, {
+    title: `Invite ${plural(waiting.length, "person", "people")}?`,
+    body: `Everyone on the list who hasn't created a password yet gets an email with a link to create one${
+      waiting.some((p) => p.invitedAt) ? "; anyone invited before gets a fresh link, and their old one stops working" : ""
+    }.`,
+    confirmLabel: "Send invites",
+    cancelLabel: "Not now",
+  });
+});
 
 $("#team-add-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -3086,23 +3199,23 @@ for (const radio of $$("input[name=team-mode]")) {
     const ok = await confirmDialog(
       mode === "personal"
         ? {
-            title: "Switch to personal codes?",
-            body: "From now on everyone signs in with their own email and code. The shared team code stops working, and everyone signed in with it will need to sign in again. Send people their codes first.",
-            confirmLabel: "Use personal codes",
+            title: "Switch to personal sign-in only?",
+            body: "From now on only people on the team list can sign in, with their own password or code. The shared team code stops working, and everyone signed in with it will need to sign in again. Invite people first.",
+            confirmLabel: "Personal sign-in only",
             cancelLabel: "Not yet",
           }
         : {
-            title: "Go back to the shared code?",
-            body: "Personal codes stop working and everyone is signed out. They'll sign in again with the shared team code and their own name and email.",
-            confirmLabel: "Use the shared code",
-            cancelLabel: "Keep personal codes",
+            title: "Let the shared code work again?",
+            body: "Anyone with the team code can sign in again with their own name and email. People on the list keep signing in with their own password or code.",
+            confirmLabel: "Allow the shared code",
+            cancelLabel: "Keep personal only",
           }
     );
     if (!ok) return renderTeam();
     try {
       await adminApi("/api/admin/team/mode", { method: "PUT", body: { mode } });
       await reloadTeam();
-      toast(mode === "personal" ? "Personal codes are on." : "Back to the shared team code.");
+      toast(mode === "personal" ? "Personal sign-in only is on." : "The shared team code works again.");
     } catch (error) {
       toast(error.message, { tone: "error" });
       renderTeam();

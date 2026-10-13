@@ -13,9 +13,11 @@ shares nothing with SipScale.
 
 **For team members**
 
-- Sign in with their email and **personal code** (or, until personal codes are
-  switched on, their name, work email and the shared team code). A session
-  lasts 30 days on that device.
+- Create their own password from an **invite email** (a one-time link) and
+  sign in with their email and that password. A personal code from the admin
+  works too, and so does the shared team code (with their name and work
+  email) until the admin switches to personal sign-in only. A session lasts
+  30 days on that device.
 - Browse the catalog by category, brand or search, with live stock, sizes and a
   per-order limit on each item. Every item shows what it costs Tropical
   Distillery and that it's **free to them**; the cart and checkout show the
@@ -39,10 +41,10 @@ shares nothing with SipScale.
 - Under **My orders**, follow each order through Submitted → Approved →
   Shipped → Delivered, open the carrier's tracking page, cancel an order that
   hasn't been approved yet, or reorder in one click.
-- Once personal codes are on, swap their code for **one of their own**
-  (**Change code** at the top of the store). It is kept only as a salted
-  hash, so not even the admin can see it. Their other devices are signed out;
-  if they forget it, the admin issues a new code.
+- Change their password (**Change password** at the top of the store). It is
+  kept only as a salted hash, so not even the admin can see it. Their other
+  devices are signed out; if they forget it, the admin sends them a reset
+  link (a new invite) or a new code.
 
 **For the admin** (`/admin`)
 
@@ -146,25 +148,37 @@ bought to order can be left untracked and never run out.
 Costs are shown so the team knows what they're ordering is worth, but nobody
 is charged and there is no payment step.
 
+### Invites and passwords
+
+1. In **Team**, add everyone (name and email, one per line). With **Email each
+   new person an invite** ticked, each of them gets an email from the store
+   with a link to create their password. Already on the list? **Invite** on
+   their row, or **Invite everyone not set up** for all who haven't made one.
+2. The link opens a page where they choose a password and are signed in
+   straight away. It works once and expires in 14 days; only a hash of it is
+   stored. A new invite replaces the old link.
+3. For someone who already has a password, **Reset link** sends the same kind
+   of email to choose a new one (their current password works until they use
+   it). The Team tab shows who is invited, whose invite has expired, and who
+   has set a password.
+
+Without order emails set up, the invites are links for you to copy and send
+(**Copy link** or **Copy message**).
+
+People on the list can sign in with their own password (or their personal
+code) whichever way **How people sign in** is set; that switch only decides
+whether the shared team code works too. Switch to **Personal sign-in only**
+once everyone has a password.
+
 ### Personal codes
 
-1. In **Team**, add everyone (name and email, one per line). Each person gets a
-   code.
-2. Send people their codes: **Copy all**, or **Download codes** for a
-   spreadsheet with each person's sign-in link.
-3. Switch **How people sign in** to **Personal codes**. The shared team code
-   stops working and anyone signed in with it signs in again with their own
-   code.
-
-From then on every order is tied to a person on the list. Removing someone or
-giving them a new code signs them out everywhere. Anyone can then replace
-their code with a password of their own; the Team tab shows "Own password"
-instead of a code for them, and **New code** (or **New codes for everyone**)
-replaces that password with a fresh code, which is how someone who forgot
-theirs gets back in. The email-domain rule
-(`TEAM_EMAIL_DOMAINS`) only applies to the shared code; anyone you put on the
-list can sign in, personal email included. Switching back to the shared code
-is one click.
+Every person on the list also has a personal code (like `tropical-jane-4821`)
+for anyone who'd rather not wait for an email: **Show code** on their row,
+**Copy all**, or **Download codes** for a spreadsheet. A code stops working once
+they create a password. Removing someone, giving them a new code or a new
+password signs them out everywhere; **New code** also replaces a forgotten
+password. The email-domain rule (`TEAM_EMAIL_DOMAINS`) only applies to the
+shared code; anyone you put on the list can sign in, personal email included.
 
 ### Distributor codes
 
@@ -362,6 +376,10 @@ sales team's order volume — thousands of orders. If the store ever outgrows
 that, the next step is real tables.
 
 ## Security model
+
+- An **invite link** carries a random token that works once, for 14 days. Only
+  its SHA-256 hash is stored, a new invite cancels the earlier link, and
+  choosing a password from one signs the person out everywhere else.
 
 - A **distributor code** is shared and works with any email, and the
   `td-initials` style is easy to remember, which also makes it easy to guess

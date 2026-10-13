@@ -85,16 +85,22 @@ async function init() {
   try {
     const config = await api("/api/config");
     if (config.signInMode === "personal") {
-      // Everyone has their own code; the name comes from the team list.
+      // Everyone has their own password or code; the name comes from the team list.
       personal = true;
       $("#name-field").hidden = true;
       $("#email-label").textContent = "Email";
-      $("#code-label").textContent = "Your personal code or password";
+      $("#code-label").textContent = "Password";
       const hint = $("#code-hint");
       hint.textContent =
-        "Your code looks like tropical-jane-4821, with your first name. If you've chosen your own password, use that. Ask the merch admin if you don't have either.";
+        "The one you created from your invite email. If you were sent a code like tropical-jane-4821 instead, that works too. No password yet? Ask the merch admin for an invite.";
       hint.hidden = false;
-      $("#signin-intro").textContent = "Use your email and the personal code from your merch admin. You'll stay signed in on this device for 30 days.";
+      $("#signin-intro").textContent = "Use your email and your password. You'll stay signed in on this device for 30 days.";
+    } else if (config.accounts) {
+      // The shared code still works, and so does a password of their own.
+      $("#code-label").textContent = "Team code or your password";
+      const hint = $("#code-hint");
+      hint.textContent = "Created your own password from an invite? Use it with your email; your name is already on file.";
+      hint.hidden = false;
     }
     if (!config.teamSignIn) {
       setAlert(alertBox, "The store isn't open yet: the team code hasn't been set up. Ask the merch admin.");
