@@ -783,6 +783,28 @@ describe("starter items added to existing stores", () => {
     assert.equal(needsAddedItems(db), false);
   });
 
+  it("adds the 2026 shelf talkers and strips once, after the Key Lime Pie Colada talkers, each with its photos", () => {
+    const NEW = [
+      "jfh-lychee-recipe-talkers", "jfh-espresso-martini-talkers", "jfh-recipe-shelf-strip", "jfh-shelf-strip",
+      "twinp-talker-logo", "twinp-talker-legacy", "twinp-talker-game-day",
+    ];
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => !NEW.includes(i.id));
+    const db = { meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1, leatherCoasters: 1, twinpLeatherCoasters: 1, banners2026: 1 }, catalog };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), NEW);
+    const ids = db.catalog.map((i) => i.id);
+    const at = ids.indexOf("jfh-key-lime-colada-talkers");
+    assert.deepEqual(ids.slice(at + 1, at + 8), NEW);
+    const item = (id) => db.catalog.find((i) => i.id === id);
+    assert.ok(NEW.every((id) => item(id).category === "Print" && item(id).variants[0].stock === 0 && item(id).images.length));
+    assert.deepEqual(item("jfh-lychee-recipe-talkers").images.map((p) => p.url), [
+      "/assets/merch/jfh-lychee-recipe-talkers.jpg",
+      "/assets/merch/jfh-lychee-recipe-talkers-shelf.jpg",
+    ]);
+    assert.deepEqual(NEW.map((id) => item(id).sku.replace(/\d+$/, "")), ["JFH-PRI-", "JFH-PRI-", "JFH-PRI-", "JFH-PRI-", "TWI-PRI-", "TWI-PRI-", "TWI-PRI-"]);
+    assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
+    assert.equal(needsAddedItems(db), false);
+  });
+
   it("gives the booklet its photo when it has none, leaving an admin's own photo alone", () => {
     const db = { meta: { seedPhotos: 2 }, catalog: structuredClone(SEED_CATALOG) };
     const booklet = db.catalog.find((i) => i.id === "td-booklet");
