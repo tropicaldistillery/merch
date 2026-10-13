@@ -155,6 +155,8 @@ describe("starter catalog corrections", () => {
     assert.equal(applySeedTextFixes(db), SEED_TEXT_FIXES.length);
     assert.equal(db.catalog.find((i) => i.id === "jfh-key-lime-table-tents").name, "Key Lime Pie Liqueur Table Tents");
     assert.match(db.catalog.find((i) => i.id === "td-sell-sheets").description, /all six/);
+    assert.equal(db.catalog.find((i) => i.id === "jfh-lychee-recipe-talkers").name, "Lychee Martini Shelf Talkers");
+    assert.match(db.catalog.find((i) => i.id === "jfh-recipe-shelf-strip").description, /\(Lychee Martini, Espresso Martini/);
     assert.equal(needsSeedTextFixes(db), false);
     assert.equal(applySeedTextFixes(db), 0);
   });

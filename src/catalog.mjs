@@ -512,9 +512,9 @@ export const SEED_CATALOG = [
   },
   // From the 2026 shelf talker sheet; added after the 7 Oct 2026 stock reset.
   {
-    id: "jfh-lychee-recipe-talkers", name: "Lychee Liqueur Recipe Shelf Talkers",
+    id: "jfh-lychee-recipe-talkers", name: "Lychee Martini Shelf Talkers",
     brand: "jf-hadens", category: "Print", tone: "lychee", art: "shelf-talker", unit: "Pack of 25",
-    description: "Clip-on shelf talkers in pink with the Lychee Liqueur bottle, a lychee cocktail (Lychee Liqueur, vodka, fresh lemon and simple syrup), the twins and a QR code to the recipe video.",
+    description: "Clip-on shelf talkers in pink with the Lychee Liqueur bottle, the Lychee Martini recipe, the twins and a QR code to the recipe video.",
     costCents: 1500, maxPerOrder: 10, variants: single(0),
   },
   {
@@ -526,7 +526,7 @@ export const SEED_CATALOG = [
   {
     id: "jfh-recipe-shelf-strip", name: "J.F. Haden's Three-Cocktail Shelf Strip",
     brand: "jf-hadens", category: "Print", tone: "mango", art: "shelf-talker", unit: "Pack of 10",
-    description: "Long shelf-edge strip on a mango-to-pink sunset with three recipes side by side (lychee, Espresso Martini and Key Lime Pie Colada), each with its bottle and a QR code to the recipe video, and the twins at the end.",
+    description: "Long shelf-edge strip on a mango-to-pink sunset with three recipes side by side (Lychee Martini, Espresso Martini and Key Lime Pie Colada), each with its bottle and a QR code to the recipe video, and the twins at the end.",
     costCents: 1500, maxPerOrder: 10, variants: single(0),
   },
   {
@@ -719,6 +719,19 @@ export const SEED_TEXT_FIXES = [
     id: "jfh-recipe-cards",
     field: "description",
     from: "Pocket recipe cards for the Mango Mule, Espresso Martini and Key Lime Pie Martini. Printed to order.",
+  },
+
+  // The lychee talker's headline now reads Lychee Martini (it said Key Lime Pie Colada).
+  { id: "jfh-lychee-recipe-talkers", field: "name", from: "Lychee Liqueur Recipe Shelf Talkers" },
+  {
+    id: "jfh-lychee-recipe-talkers",
+    field: "description",
+    from: "Clip-on shelf talkers in pink with the Lychee Liqueur bottle, a lychee cocktail (Lychee Liqueur, vodka, fresh lemon and simple syrup), the twins and a QR code to the recipe video.",
+  },
+  {
+    id: "jfh-recipe-shelf-strip",
+    field: "description",
+    from: "Long shelf-edge strip on a mango-to-pink sunset with three recipes side by side (lychee, Espresso Martini and Key Lime Pie Colada), each with its bottle and a QR code to the recipe video, and the twins at the end.",
   },
 
   // Good Spirits Only moved to the back of the tee and dropped Red and Royal.
