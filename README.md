@@ -38,6 +38,10 @@ shares nothing with SipScale.
   delivery notes.
 - Say what the order is for, when it's needed, and whether it's a rush (with a
   reason).
+- **Request** an item that's out of stock (or doesn't have enough left): pick
+  the size or color, say how many they need and why, and they're emailed
+  when it's back. Their requests show under **My orders**, where an open one
+  can be withdrawn.
 - Under **My orders**, follow each order through Submitted → Approved →
   Shipped → Delivered, open the carrier's tracking page, cancel an order that
   hasn't been approved yet, or reorder in one click.
@@ -139,6 +143,13 @@ shares nothing with SipScale.
   be added in one click.
 - Give each **distributor** its own code for its reps (Team tab, Distributor
   codes), and pick which categories its reps can order from.
+- See what people are waiting for (**Requests** tab, with a count of open
+  ones): each out-of-stock item and option with how many are wanted, by whom
+  and why, and the stock it has now. New requests are also emailed to the
+  point-of-sale or samples inbox, like orders. Once it's restocked, **Tell
+  them it's back** emails everyone waiting for it; **Close** tells someone it
+  won't be restocked, with a note. Requests reserve nothing: people order as
+  usual once it's back.
 - Tidy the shared account directory.
 
 Stock is reserved when an order is placed and returned if it is cancelled or

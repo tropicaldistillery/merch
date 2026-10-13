@@ -23,11 +23,13 @@ const STEPS = [
 ];
 
 const list = $("#order-list");
+const requestList = $("#request-list");
 
 const { user } = await teamApi("/api/session");
 const cart = wireHeader(user);
 
 let orders = [];
+let requests = [];
 let catalog = [];
 
 /* ---------------------------------------------------------------- banner */
@@ -205,6 +207,62 @@ function render() {
   clear(list, orders.map(orderCard));
 }
 
+/* -------------------------------------------------------------- requests */
+
+const REQUEST_STATUS = {
+  open: { label: "Waiting for stock", tone: "submitted" },
+  notified: { label: "Back in stock", tone: "approved" },
+  closed: { label: "Closed", tone: "declined" },
+  withdrawn: { label: "Withdrawn", tone: "cancelled" },
+};
+
+function requestCard(request) {
+  const status = REQUEST_STATUS[request.status] ?? REQUEST_STATUS.open;
+  const detail = optionText(request);
+  const latest = request.history[request.history.length - 1] ?? {};
+  return el(
+    "article",
+    { class: "card request-card" },
+    el(
+      "div",
+      { class: "request-main" },
+      el("div", { class: "cell-main", text: `${request.quantity} × ${request.name}` }),
+      el("div", { class: "cell-sub", text: [detail, `requested ${formatDate(request.createdAt)}`].filter(Boolean).join(" · ") }),
+      request.note ? el("p", { class: "request-note", text: request.note }) : null,
+      request.status === "closed" && latest.note ? el("p", { class: "request-note", text: `From the merch team: ${latest.note}` }) : null
+    ),
+    el("span", { class: `badge status-${status.tone}`, text: status.label }),
+    request.status === "open"
+      ? el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Withdraw", onclick: () => withdraw(request) })
+      : request.status === "notified"
+        ? el("a", { class: "btn btn-sm", href: "/shop", text: "Order it" })
+        : null
+  );
+}
+
+function renderRequests() {
+  $("#requests").hidden = !requests.length;
+  clear(requestList, requests.map(requestCard));
+}
+
+async function withdraw(request) {
+  const ok = await confirmDialog({
+    title: `Withdraw your request for ${request.name}?`,
+    body: "The merch team will no longer see it, and you won't be emailed when it's back.",
+    confirmLabel: "Withdraw it",
+    cancelLabel: "Keep it",
+  });
+  if (!ok) return;
+  try {
+    const { request: updated } = await teamApi(`/api/requests/${encodeURIComponent(request.id)}/withdraw`, { method: "POST" });
+    requests = requests.map((r) => (r.id === updated.id ? updated : r));
+    renderRequests();
+    toast("Request withdrawn.");
+  } catch (error) {
+    toast(error.message, { tone: "error" });
+  }
+}
+
 /* --------------------------------------------------------------- actions */
 
 async function cancel(order) {
@@ -270,8 +328,10 @@ async function reorder(order) {
 
 async function load() {
   try {
-    ({ orders } = await teamApi("/api/orders"));
+    [{ orders }, { requests }] = await Promise.all([teamApi("/api/orders"), teamApi("/api/requests")]);
     render();
+    renderRequests();
+    if (location.hash === "#requests" && requests.length) $("#requests").scrollIntoView({ block: "start" });
   } catch (error) {
     list.removeAttribute("aria-busy");
     clear(

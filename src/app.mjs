@@ -49,6 +49,7 @@ import {
   updateStock,
 } from "./catalog.mjs";
 import { IMAGE_PATH_RE, MAX_IMAGE_BYTES, acceptProductImage } from "./images.mjs";
+import { placeRequest, requestsWithStock, settleRequests, withdrawRequest } from "./requests.mjs";
 import {
   MAX_BULK_ORDERS,
   accountsFor,
@@ -742,6 +743,25 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
       sendJson(res, 200, { ok: true, order });
     }],
 
+    // Requests for out-of-stock items
+    ["GET", "/api/requests", "team", async ({ res, user }) => {
+      const db = await store.read();
+      sendJson(res, 200, { ok: true, requests: (db.requests ?? []).filter((r) => ownsOrder(r, user)).reverse() });
+    }],
+
+    ["POST", "/api/requests", "team", async ({ req, res, user }) => {
+      const body = await readJson(req);
+      const categories = await categoriesFor(user);
+      const { request, updated } = await store.mutate((db) => placeRequest(db, body, { requester: user, categories, now: clock() }));
+      if (!updated) mailer?.request?.("request.created", request);
+      sendJson(res, updated ? 200 : 201, { ok: true, request, updated });
+    }],
+
+    ["POST", /^\/api\/requests\/([\w-]+)\/withdraw$/, "team", async ({ res, user, params }) => {
+      const request = await store.mutate((db) => withdrawRequest(db, params[0], { requester: user, now: clock() }));
+      sendJson(res, 200, { ok: true, request });
+    }],
+
     // Admin session
     ["POST", "/api/admin/session", "admin-signin", adminSignIn],
     ["GET", "/api/admin/session", "admin", async ({ res, admin }) => sendJson(res, 200, { ok: true, admin })],
@@ -816,6 +836,19 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
       );
       if (statusChanged) notify(`order.${order.status}`, order);
       sendJson(res, 200, { ok: true, order });
+    }],
+
+    // Admin: requests for out-of-stock items, with the stock each has now
+    ["GET", "/api/admin/requests", "admin", async ({ res }) => {
+      sendJson(res, 200, { ok: true, requests: requestsWithStock(await store.read()) });
+    }],
+
+    // Back in stock (each requester is emailed) or closed, for one or many.
+    ["POST", "/api/admin/requests/settle", "admin", async ({ req, res, admin }) => {
+      const body = await readJson(req);
+      const updated = await store.mutate((db) => settleRequests(db, body, { actor: admin.name, now: clock() }));
+      for (const request of updated) mailer?.request?.(`request.${request.status}`, request);
+      sendJson(res, 200, { ok: true, requests: updated });
     }],
 
     // Admin: catalog

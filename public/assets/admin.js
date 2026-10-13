@@ -39,6 +39,7 @@ import {
   generateSku,
   itemImages,
   labelFor,
+  optionText,
   quantityRuleText,
   suggestedMaxPerOrder,
   suggestedMinPerOrder,
@@ -84,11 +85,13 @@ const ui = {
   selected: new Set(),
   trackerPeriod: "all",
   trackerQuery: "",
+  requestStatus: "open",
 };
 
 let orders = [];
 let catalog = [];
 let accounts = [];
+let requests = [];
 let team = { mode: "shared", people: [], suggestions: [], distributors: [] };
 
 /* ------------------------------------------------------------ api + auth */
@@ -163,16 +166,18 @@ $("[data-admin-sign-out]").addEventListener("click", async () => {
 /* ------------------------------------------------------------------ data */
 
 async function loadAll() {
-  const [o, c, a, t] = await Promise.all([
+  const [o, c, a, t, r] = await Promise.all([
     adminApi("/api/admin/orders"),
     adminApi("/api/admin/catalog"),
     adminApi("/api/admin/accounts"),
     adminApi("/api/admin/team"),
+    adminApi("/api/admin/requests"),
   ]);
   orders = o.orders;
   catalog = c.items;
   accounts = a.accounts;
   team = t;
+  requests = r.requests;
 }
 
 function renderAll() {
@@ -182,6 +187,7 @@ function renderAll() {
   renderCatalog();
   renderAccounts();
   renderTeam();
+  renderRequests();
 }
 
 async function showApp() {
@@ -223,7 +229,7 @@ setInterval(async () => {
 /* ------------------------------------------------------------------ tabs */
 
 function setTab(tab, { focus = true } = {}) {
-  if (!["orders", "tracker", "catalog", "accounts", "team"].includes(tab)) tab = "orders";
+  if (!["orders", "tracker", "catalog", "requests", "accounts", "team"].includes(tab)) tab = "orders";
   ui.tab = tab;
   for (const button of $$("[role=tab]")) {
     const selected = button.dataset.tab === tab;
@@ -2722,6 +2728,195 @@ async function deleteItem(item) {
   } catch (error) {
     toast(error.message, { tone: "error" });
   }
+}
+
+/* -------------------------------------------------------------- requests */
+
+const REQUEST_FILTERS = [
+  { id: "open", label: "Waiting", statuses: ["open"] },
+  { id: "notified", label: "Told it's back", statuses: ["notified"] },
+  { id: "closed", label: "Closed", statuses: ["closed", "withdrawn"] },
+  { id: "all", label: "All", statuses: null },
+];
+
+const REQUEST_STATUS = {
+  open: { label: "Waiting", tone: "submitted" },
+  notified: { label: "Told it's back", tone: "approved" },
+  closed: { label: "Closed", tone: "declined" },
+  withdrawn: { label: "Withdrawn", tone: "cancelled" },
+};
+
+function stockNowText(r) {
+  if (!r.itemActive) return "Item hidden or removed";
+  if (r.stockNow === null) return "Made to order";
+  return r.stockNow ? `${r.stockNow} in stock now` : "Out of stock";
+}
+
+async function reloadRequests() {
+  ({ requests } = await adminApi("/api/admin/requests"));
+  renderRequests();
+}
+
+async function settle(ids, action, note = "") {
+  const { requests: updated } = await adminApi("/api/admin/requests/settle", { method: "POST", body: { ids, action, note } });
+  await reloadRequests();
+  toast(
+    action === "notified"
+      ? `Emailed ${plural(updated.length, "person", "people")} that it's back in stock.`
+      : `Closed ${plural(updated.length, "request")}${updated.length ? "; they've been emailed" : ""}.`
+  );
+}
+
+async function tellItsBack(group) {
+  const open = group.filter((r) => r.status === "open");
+  const r = open[0];
+  const stillOut = r.stockNow !== null && r.stockNow < Math.min(...open.map((x) => x.quantity));
+  const ok = await confirmDialog({
+    title: `Tell ${plural(open.length, "person", "people")} ${r.name} is back?`,
+    body: `${stillOut ? `It shows ${r.stockNow ? `only ${r.stockNow}` : "none"} in stock right now: update the stock in Catalog & stock first if it has come in. ` : ""}Each of them gets an email saying it's back in stock, with a link to the shop.`,
+    confirmLabel: "Send the emails",
+    cancelLabel: "Not yet",
+  });
+  if (!ok) return;
+  try {
+    await settle(open.map((x) => x.id), "notified");
+  } catch (error) {
+    toast(error.message, { tone: "error" });
+  }
+}
+
+function closeRequest(r) {
+  const form = el("form", { id: "close-request-form", novalidate: true });
+  const detail = optionText(r);
+  form.append(
+    el("p", { class: "muted", text: `${r.requester.name} asked for ${r.quantity} × ${r.name}${detail ? ` (${detail})` : ""}.` }),
+    field("Note to them (optional)", el("textarea", { id: "close-note", name: "note", rows: "4", maxlength: "500", placeholder: "e.g. We're not reordering this one; try the new tote instead." }), {
+      hint: "They get an email saying the request is closed, with your note.",
+    })
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await settle([r.id], "closed", form.elements.namedItem("note").value);
+      drawer.close();
+    } catch (error) {
+      toast(error.message, { tone: "error" });
+    }
+  });
+  detailTitle.textContent = "Close request";
+  clear(detailBody, form);
+  clear(
+    detailFoot,
+    el(
+      "div",
+      { class: "inline-actions" },
+      el("button", { type: "submit", form: "close-request-form", class: "btn", text: "Close request" }),
+      el("button", { type: "button", class: "btn btn-secondary", "data-close": "", text: "Cancel" })
+    )
+  );
+  drawer.open();
+}
+
+function renderRequests() {
+  const open = requests.filter((r) => r.status === "open");
+  const tabCount = $("#requests-count");
+  tabCount.hidden = !open.length;
+  tabCount.textContent = String(open.length);
+
+  clear(
+    $("#request-chips"),
+    REQUEST_FILTERS.map((filter) =>
+      el(
+        "button",
+        {
+          type: "button",
+          class: "chip",
+          "aria-pressed": String(ui.requestStatus === filter.id),
+          onclick: () => {
+            ui.requestStatus = filter.id;
+            renderRequests();
+          },
+        },
+        filter.label,
+        el("span", { class: "chip-count", text: String(filter.statuses ? requests.filter((r) => filter.statuses.includes(r.status)).length : requests.length) })
+      )
+    )
+  );
+
+  const filter = REQUEST_FILTERS.find((f) => f.id === ui.requestStatus);
+  const shown = requests.filter((r) => !filter.statuses || filter.statuses.includes(r.status));
+  // One group per item, option and color, the most wanted first.
+  const groups = new Map();
+  for (const r of shown) {
+    const key = `${r.itemId}::${r.variantId}::${r.color ?? ""}`;
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  const wanted = (group) => group.reduce((sum, r) => sum + r.quantity, 0);
+  const sorted = [...groups.values()].sort((a, b) => wanted(b) - wanted(a));
+  const openItems = new Set(open.map((r) => `${r.itemId}::${r.variantId}::${r.color ?? ""}`)).size;
+  $("#request-summary").textContent = open.length
+    ? `${plural(open.length, "open request")} for ${plural(openItems, "item")}, ${plural(open.reduce((sum, r) => sum + r.quantity, 0), "unit")} wanted in all`
+    : "No open requests.";
+
+  const table = $("#requests-table");
+  if (!sorted.length) {
+    return clear(table, el("tbody", {}, el("tr", {}, el("td", { class: "empty", colspan: "6", text: ui.requestStatus === "open" ? "Nobody is waiting on an item right now." : "No requests here." }))));
+  }
+  clear(
+    table,
+    el("thead", {}, el("tr", {}, ["Requested by", "How many", "Requested", "Note", "Status", ""].map((h) =>
+      el("th", { scope: "col", class: h === "How many" ? "num" : "", text: h })
+    ))),
+    sorted.map((group) => {
+      const first = group[0];
+      const detail = optionText(first);
+      const openCount = group.filter((r) => r.status === "open").length;
+      return el(
+        "tbody",
+        { class: "request-group" },
+        el(
+          "tr",
+          { class: "group-row" },
+          el(
+            "td",
+            { colspan: "6" },
+            el(
+              "div",
+              { class: "group-head" },
+              el(
+                "div",
+                {},
+                el("div", { class: "cell-main", text: `${first.name}${detail ? ` · ${detail}` : ""}` }),
+                el("div", { class: "cell-sub", text: `${first.sku} · ${plural(wanted(group), "unit")} wanted by ${plural(new Set(group.map((r) => r.requester.email)).size, "person", "people")} · ${stockNowText(first)}` })
+              ),
+              openCount
+                ? el("button", { type: "button", class: "btn btn-sm", text: `Tell them it's back (${openCount})`, onclick: () => tellItsBack(group) })
+                : null
+            )
+          )
+        ),
+        group.map((r) => {
+          const status = REQUEST_STATUS[r.status] ?? REQUEST_STATUS.open;
+          return el(
+            "tr",
+            {},
+            el("td", {}, el("div", { class: "cell-main", text: r.requester.name }), el("a", { class: "cell-sub", href: `mailto:${r.requester.email}`, text: r.requester.email }), distributorTag(r.requester)),
+            el("td", { class: "num", text: String(r.quantity) }),
+            el("td", { text: formatDate(r.createdAt) }),
+            el("td", { class: "request-note-cell", text: r.note || "—" }),
+            el("td", {}, el("span", { class: `badge status-${status.tone}`, text: status.label })),
+            el(
+              "td",
+              {},
+              r.status === "open"
+                ? el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Close", "aria-label": `Close ${r.requester.name}'s request`, onclick: () => closeRequest(r) })
+                : null
+            )
+          );
+        })
+      );
+    })
+  );
 }
 
 /* -------------------------------------------------------------- accounts */

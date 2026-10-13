@@ -2,11 +2,14 @@ import { artwork } from "./art.js";
 import {
   $,
   clear,
+  clearFieldErrors,
   createDrawer,
   el,
   options,
   plural,
   quantityStepper,
+  setAlert,
+  showFieldErrors,
   teamApi,
   toast,
   wireHeader,
@@ -99,6 +102,99 @@ function optionLabel(variant) {
   if (variant.stock === 0) return `${variant.label} — out of stock`;
   if (tracked(variant) && variant.stock <= 5) return `${variant.label} — ${variant.stock} left`;
   return variant.label;
+}
+
+/* --------------------------------------------------------------- requests */
+
+// Asking for an item that's out of stock: which option, how many, and why.
+function requestDialog(item, { variantId = "", color = "" } = {}) {
+  const withOptions = hasOptions(item);
+  const colorList = item.colors ?? [];
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  const field = (label, control, hint) =>
+    el("div", { class: "field" }, el("label", { for: control.id, text: label }), control, hint ? el("p", { class: "hint", text: hint }) : null);
+  const variantSelect = withOptions
+    ? el(
+        "select",
+        { id: "request-variant", name: "variantId" },
+        el("option", { value: "", text: item.category === "Apparel" ? "Choose a size" : "Choose an option" }),
+        item.variants.map((v) => el("option", { value: v.id, text: optionLabel(v), selected: v.id === variantId }))
+      )
+    : null;
+  const colorSelect = colorList.length
+    ? el(
+        "select",
+        { id: "request-color", name: "color" },
+        el("option", { value: "", text: "Choose a color" }),
+        colorList.map((c) => el("option", { value: c, text: c, selected: c === color }))
+      )
+    : null;
+  const quantity = el("input", {
+    id: "request-quantity",
+    name: "quantity",
+    type: "number",
+    min: "1",
+    max: "999",
+    step: "1",
+    inputmode: "numeric",
+    value: String(orderRule(item).min),
+    required: true,
+  });
+  const note = el("textarea", { id: "request-note", name: "note", rows: "3", maxlength: "500", placeholder: "What it's for, and when you need it" });
+  const form = el(
+    "form",
+    { novalidate: true },
+    el("h2", { id: "request-title", text: `Request ${item.name}` }),
+    el("p", {
+      class: "muted",
+      text: "It's out of stock right now. Tell the merch team how many you need: they'll see your request and email you when it's back.",
+    }),
+    alertBox,
+    variantSelect ? field(item.category === "Apparel" ? "Size" : "Option", variantSelect) : null,
+    colorSelect ? field("Color", colorSelect) : null,
+    field(`How many do you need?${item.unit && item.unit !== "Each" ? ` (${item.unit.toLowerCase()}s)` : ""}`, quantity),
+    field("Note (optional)", note),
+    el(
+      "div",
+      { class: "dialog-actions" },
+      el("button", { type: "button", class: "btn btn-secondary", text: "Cancel", onclick: () => dialog.close() }),
+      el("button", { type: "submit", class: "btn", text: "Send request" })
+    )
+  );
+  const dialog = el("dialog", { class: "confirm password-dialog", "aria-labelledby": "request-title" }, form);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    const submit = form.querySelector("button[type=submit]");
+    submit.disabled = true;
+    try {
+      const { updated } = await teamApi("/api/requests", {
+        method: "POST",
+        body: {
+          itemId: item.id,
+          variantId: variantSelect ? variantSelect.value : item.variants[0].id,
+          color: colorSelect ? colorSelect.value : "",
+          quantity: Number(quantity.value),
+          note: note.value,
+        },
+      });
+      dialog.close();
+      toast(updated ? "Your request is updated." : "Request sent. We'll email you when it's back in stock.", {
+        action: { label: "My requests", onClick: () => (location.href = "/orders#requests") },
+      });
+    } catch (error) {
+      setAlert(alertBox, error.message);
+      showFieldErrors(form, error.fieldErrors);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  (variantSelect && !variantSelect.value ? variantSelect : quantity).focus();
 }
 
 /* --------------------------------------------------------------- catalog */
@@ -230,12 +326,16 @@ function productCard(item) {
         "select",
         { "aria-label": `Size or option for ${item.name}` },
         el("option", { value: "", text: item.category === "Apparel" ? "Choose a size" : "Choose an option" }),
-        item.variants.map((v) => el("option", { value: v.id, text: optionLabel(v), disabled: v.stock === 0 }))
+        // Out-of-stock options can still be picked, to request them.
+        item.variants.map((v) => el("option", { value: v.id, text: optionLabel(v) }))
       )
     : null;
 
   const stepper = quantityStepper({ value: stillNeeded(item), min: stillNeeded(item), max: orderRule(item).max, step: orderRule(item).step, label: `Quantity of ${item.name}` });
   const addButton = el("button", { type: "button", class: "btn", text: "Add" });
+  // Out of stock, or too few left for even the smallest order: the button
+  // asks for it instead.
+  let requesting = false;
 
   function selectedVariant() {
     return withOptions ? item.variants.find((v) => v.id === select.value) ?? null : item.variants[0];
@@ -247,13 +347,21 @@ function productCard(item) {
       ? roomFor(item, variant)
       : Math.max(0, orderRule(item).max - cart.quantityOf(item.id));
     const need = stillNeeded(item);
+    const left = variant ? variantStock(variant) - cart.quantityOf(item.id, variant.id) : Infinity;
+    requesting = availability.available === 0 || left < need;
+    stepper.element.hidden = requesting;
+    addButton.classList.toggle("btn-secondary", requesting);
+    if (requesting) {
+      addButton.disabled = false;
+      addButton.textContent = "Request it";
+      return;
+    }
     stepper.setMin(need);
     stepper.setMax(Math.max(need, room));
-    // Too few left to make up the minimum counts as unavailable.
+    // Too few allowed per order to make up the minimum counts as unavailable.
     const short = room > 0 && room < need;
-    addButton.disabled = availability.available === 0 || room === 0 || short;
-    addButton.textContent =
-      availability.available === 0 ? "Out of stock" : short ? "Not enough left" : room === 0 && variant ? "Limit reached" : "Add";
+    addButton.disabled = room === 0 || short;
+    addButton.textContent = short ? "Not enough left" : room === 0 && variant ? "Limit reached" : "Add";
   }
 
   select?.addEventListener("change", () => {
@@ -262,6 +370,7 @@ function productCard(item) {
   });
 
   addButton.addEventListener("click", () => {
+    if (requesting) return requestDialog(item, { variantId: selectedVariant()?.id ?? "", color: colors?.value ?? "" });
     const variant = selectedVariant();
     const color = colors ? colors.value : "";
     if (colors && !color) {

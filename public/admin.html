@@ -66,6 +66,7 @@
         <button type="button" class="tab" role="tab" id="tab-orders" aria-controls="panel-orders" data-tab="orders">Orders</button>
         <button type="button" class="tab" role="tab" id="tab-tracker" aria-controls="panel-tracker" data-tab="tracker">Tracker</button>
         <button type="button" class="tab" role="tab" id="tab-catalog" aria-controls="panel-catalog" data-tab="catalog">Catalog &amp; stock</button>
+        <button type="button" class="tab" role="tab" id="tab-requests" aria-controls="panel-requests" data-tab="requests">Requests <span class="tab-count" id="requests-count" hidden></span></button>
         <button type="button" class="tab" role="tab" id="tab-accounts" aria-controls="panel-accounts" data-tab="accounts">Accounts</button>
         <button type="button" class="tab" role="tab" id="tab-team" aria-controls="panel-team" data-tab="team">Team</button>
       </div>
@@ -126,6 +127,13 @@
         <div class="card table-wrap" id="catalog-list"><table class="table" id="catalog-table"></table></div>
         <form class="card table-wrap" id="bulk-editor" novalidate hidden></form>
         <p class="fine panel-note">“Available” is what's left to promise: submitted and approved orders already count against it, and cancelling or declining an order puts its units back.</p>
+      </section>
+
+      <section role="tabpanel" id="panel-requests" aria-labelledby="tab-requests" hidden>
+        <div class="chips" id="request-chips" role="group" aria-label="Request status"></div>
+        <p class="result-count" id="request-summary" aria-live="polite"></p>
+        <div class="card table-wrap"><table class="table requests-table" id="requests-table"></table></div>
+        <p class="fine panel-note">People ask for items that are out of stock (or don't have enough left) from the shop. Requests don't reserve or order anything. When an item is back, <strong>Tell them it's back</strong> emails everyone waiting for it, and they order it as usual. <strong>Close</strong> lets someone know it won't be restocked, with a note if you like.</p>
       </section>
 
       <section role="tabpanel" id="panel-accounts" aria-labelledby="tab-accounts" hidden>

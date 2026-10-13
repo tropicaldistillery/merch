@@ -695,6 +695,54 @@ describe("invites", () => {
   });
 });
 
+describe("out-of-stock requests over HTTP", () => {
+  it("lets people ask for what's out of stock, and the admin tell them it's back", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const events = [];
+    const mailer = { enabled: true, invite: () => Promise.resolve(), request: (event, r) => events.push([event, r.requester.email, r.quantity]) };
+    const app = await start(dir, {}, { mailer });
+    try {
+      await app.store.mutate((db) => {
+        db.catalog.find((i) => i.id === "jfh-bar-mat").variants[0].stock = 0;
+      });
+      const jane = await signedInTeam(app);
+      const catalog = (await jane("/api/catalog")).data.items;
+      assert.equal(catalog.find((i) => i.id === "jfh-bar-mat").variants[0].stock, 0);
+
+      const asked = await jane("/api/requests", { method: "POST", body: { itemId: "jfh-bar-mat", quantity: 10, note: "Two new accounts" } });
+      assert.equal(asked.status, 201, JSON.stringify(asked.data));
+      assert.deepEqual(events.shift(), ["request.created", "jane@tropicaldistillery.com", 10]);
+      const more = await jane("/api/requests", { method: "POST", body: { itemId: "jfh-bar-mat", quantity: 12 } });
+      assert.equal(more.status, 200);
+      assert.equal(more.data.updated, true);
+      assert.equal(events.length, 0, "an update doesn't alert the admins again");
+      assert.equal((await jane("/api/requests", { method: "POST", body: { itemId: "jfh-logo-tee", variantId: "m", quantity: 1 } })).status, 409, "in stock");
+
+      const sam = await signedInTeam(app, "sam@tropicaldistillery.com", "Sam Rep");
+      await sam("/api/requests", { method: "POST", body: { itemId: "jfh-bar-mat", quantity: 4 } });
+      assert.equal((await sam("/api/requests")).data.requests.length, 1, "each sees only their own");
+      assert.equal((await sam(`/api/requests/${asked.data.request.id}/withdraw`, { method: "POST" })).status, 404);
+
+      const admin = await signedInAdmin(app);
+      const list = (await admin("/api/admin/requests")).data.requests;
+      assert.equal(list.length, 2);
+      assert.equal(list[0].stockNow, 0);
+      await app.store.mutate((db) => {
+        db.catalog.find((i) => i.id === "jfh-bar-mat").variants[0].stock = 30;
+      });
+      events.length = 0;
+      const settled = await admin("/api/admin/requests/settle", { method: "POST", body: { ids: list.map((r) => r.id), action: "notified" } });
+      assert.equal(settled.status, 200);
+      assert.deepEqual(events.map((e) => e[0]).sort(), ["request.notified", "request.notified"]);
+      assert.equal((await jane("/api/requests")).data.requests[0].status, "notified");
+      assert.equal((await jane("/api/admin/requests")).status, 401);
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("distributor codes", () => {
   const TEE_ORDER = { ...ACCOUNT_ORDER, lines: [{ itemId: "jfh-logo-tee", variantId: "m", quantity: 1 }] };
 

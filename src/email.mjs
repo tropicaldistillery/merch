@@ -7,6 +7,8 @@
 //     the tracking link, delivered, declined with the reason, cancelled)
 //   - a requester cancelling their own order: a note to the admins
 //   - an invite from the admin: a link to create (or reset) a password
+//   - a request for an out-of-stock item: an alert to the admins, then to the
+//     requester when it's back in stock or the request is closed
 //
 // Everything typed by someone else is escaped before it goes into the HTML.
 // Sending never holds up or undoes an order: emails go out one after another
@@ -327,6 +329,65 @@ export function renderEmail({ subject, blocks }) {
   return { html, text };
 }
 
+/* -------------------------------------------------------------- requests */
+
+/** Emails about a request for an out-of-stock item, as [{ role, to, cc, replyTo, subject, blocks }]. */
+export function requestEmails(event, request, { adminTo = [], routes = {}, baseUrl = "" } = {}) {
+  const base = baseUrl.replace(/\/$/, "");
+  const who = request.requester;
+  const detail = optionText({ color: request.color, variantLabel: request.variantLabel });
+  const what = `${request.name}${detail ? ` (${detail})` : ""}`;
+  // Routed like an order with this one line: samples to the samples inbox,
+  // everything else to point of sale.
+  const groups = adminRoutes({ lines: [{ category: request.category, sku: request.sku, quantity: request.quantity, lineTotalCents: 0 }] }, { adminTo, routes });
+  const replyTo = [...new Set(groups.flatMap((g) => g.to))];
+  const latest = request.history[request.history.length - 1] ?? {};
+  const toRequester = (subject, blocks) => ({ role: "requester", to: [who.email], replyTo, subject, blocks });
+
+  switch (event) {
+    case "request.created":
+      return groups.map((g) => ({
+        role: g.kind ? `admin-${g.kind}` : "admin",
+        to: g.to,
+        cc: g.cc,
+        replyTo: [who.email],
+        subject: `Item request: ${request.quantity} × ${what} from ${who.name}${who.distributor ? ` (${who.distributor})` : ""}`,
+        blocks: [
+          block.p(`${who.name} asked for an item that's out of stock.`),
+          block.details([
+            ["Item", `${request.name} (${request.sku})`],
+            detail ? ["Option", detail] : null,
+            ["How many", `${request.quantity}${request.unit && request.unit !== "Each" ? ` × ${request.unit.toLowerCase()}` : ""}`],
+            ["Requested by", `${who.name} <${who.email}>`],
+            who.distributor ? ["Distributor", who.distributor] : null,
+          ]),
+          request.note ? block.note("Their note", request.note) : null,
+          block.button("See requests in the admin console", base ? `${base}/admin#requests` : ""),
+        ].filter(Boolean),
+      }));
+    case "request.notified":
+      return [
+        toRequester(`${request.name} is back in stock`, [
+          block.p(`Hi ${firstName(who.name)},`),
+          block.p(`Good news: ${what}, which you asked for, is back in stock. Order it while it lasts.`),
+          block.button("Order it now", base ? `${base}/shop` : ""),
+          latest.note ? block.note("From the merch team", latest.note) : null,
+        ].filter(Boolean)),
+      ];
+    case "request.closed":
+      return [
+        toRequester(`About your request for ${request.name}`, [
+          block.p(`Hi ${firstName(who.name)},`),
+          block.p(`Your request for ${request.quantity} × ${what} has been closed by the merch team.`),
+          latest.note ? block.note("Why", latest.note) : null,
+          block.p("Reply to this email if you have questions."),
+        ].filter(Boolean)),
+      ];
+    default:
+      return [];
+  }
+}
+
 /* ---------------------------------------------------------------- invites */
 
 /**
@@ -380,6 +441,7 @@ export function createEmailer({
     const off = () => Promise.resolve();
     off.enabled = false;
     off.invite = () => Promise.resolve();
+    off.request = () => Promise.resolve();
     return off;
   }
 
@@ -434,6 +496,12 @@ export function createEmailer({
   }
 
   notify.enabled = true;
+  notify.request = (event, request) => {
+    for (const email of requestEmails(event, request, { adminTo, routes, baseUrl })) {
+      enqueue(email, `request:${request.id}:${event}:${request.history.length}:${email.role}`);
+    }
+    return queue;
+  };
   // Each invite has its own key, so a new one is always sent.
   notify.invite = (person, { link, by, key }) =>
     enqueue(inviteEmail(person, { link, by, replyTo: adminTo.length ? adminTo : routes.pos ?? [] }), `invite:${person.id}:${key}`);

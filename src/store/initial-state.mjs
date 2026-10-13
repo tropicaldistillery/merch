@@ -23,6 +23,7 @@ export function initialState() {
     },
     catalog: structuredClone(SEED_CATALOG),
     orders: [],
+    requests: [],
     accounts: [],
     members: {},
     reps: {},

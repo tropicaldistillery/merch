@@ -2802,6 +2802,75 @@ dialog.confirm .dialog-actions .btn {
   font-size: 13.5px;
 }
 
+.requests-section {
+  margin-top: 40px;
+}
+
+.requests-section > .muted {
+  margin: 6px 0 14px;
+}
+
+.request-list {
+  display: grid;
+  gap: 10px;
+}
+
+.request-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 16px 20px;
+}
+
+.request-main {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.request-note {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.tab-count {
+  display: inline-block;
+  min-width: 20px;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--action);
+  color: #fff;
+  font-family: var(--font-body, inherit);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.tab-count[hidden] {
+  display: none;
+}
+
+.requests-table .group-row td {
+  background: var(--surface-alt);
+  border-top: 2px solid var(--line);
+}
+
+.requests-table .group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.request-note-cell {
+  max-width: 280px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
 .sign-in-log {
   list-style: none;
   margin: 0;
