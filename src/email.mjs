@@ -122,6 +122,7 @@ function shipToLines(order) {
 function orderDetails(order, { forAdmin }) {
   return block.details([
     forAdmin ? ["Requested by", `${order.requester.name} <${order.requester.email}>`] : null,
+    forAdmin && order.requester.distributor ? ["Distributor", order.requester.distributor] : null,
     ["Ships to", shipToLines(order).join("\n")],
     order.shipTo.deliveryNotes ? ["Delivery notes", order.shipTo.deliveryNotes] : null,
     ["For", labelFor(PURPOSES, order.purpose)],
@@ -159,7 +160,7 @@ export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl =
       const rush = order.shippingSpeed === "rush";
       emails.push(
         ...toAdmins((part, kind) => ({
-          subject: `${rush ? "RUSH: " : ""}New ${kind.request} ${order.number} from ${requester.name}`,
+          subject: `${rush ? "RUSH: " : ""}New ${kind.request} ${order.number} from ${requester.name}${requester.distributor ? ` (${requester.distributor})` : ""}`,
           blocks: [
             block.p(`${requester.name} placed order ${order.number}. It's waiting for your approval.`),
             block.items(part),

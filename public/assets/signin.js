@@ -6,7 +6,12 @@ const emailInput = $("#email");
 const codeInput = $("#code");
 const alertBox = $(".form-alert", form);
 const params = new URLSearchParams(location.search);
+const repToggle = $("#rep-toggle");
 let personal = false;
+let rep = false;
+// What the page says for the team, kept so switching back restores it.
+const teamText = {};
+const TEXT_IDS = ["signin-eyebrow", "signin-intro", "email-label", "code-label"];
 
 // Resolve against this site and keep only the path, so nothing in `next`
 // (protocol-relative URLs, stray tabs or backslashes) can leave the site.
@@ -25,8 +30,9 @@ $("#code-show").addEventListener("change", (event) => {
 });
 
 // Remember who signed in last on this device, never the code.
+let last = null;
 try {
-  const last = JSON.parse(localStorage.getItem("tdmerch:last-user") || "null");
+  last = JSON.parse(localStorage.getItem("tdmerch:last-user") || "null");
   if (last) {
     nameInput.value = last.name || "";
     emailInput.value = last.email || "";
@@ -34,6 +40,37 @@ try {
 } catch {
   // ignore
 }
+
+// Distributor reps sign in with their distributor's shared code, their own
+// name and any email, whichever way the team signs in.
+function setRep(on) {
+  rep = on;
+  for (const id of TEXT_IDS) $(`#${id}`).textContent = on ? REP_TEXT[id] : teamText[id];
+  $("#name-field").hidden = personal && !on;
+  $("#email-hint").hidden = on || !$("#email-hint").textContent;
+  const hint = $("#code-hint");
+  if (on) {
+    hint.dataset.team ??= hint.hidden ? "" : hint.textContent;
+    hint.textContent = "It looks like tropical-southern-4821-7730. Ask your distributor or your Tropical Distillery contact if you don't have it.";
+    hint.hidden = false;
+  } else if (hint.dataset.team !== undefined) {
+    hint.textContent = hint.dataset.team;
+    hint.hidden = !hint.dataset.team;
+  }
+  repToggle.textContent = on ? "On the Tropical Distillery team? Sign in with your team code" : "Distributor rep? Sign in with your distributor's code";
+}
+
+const REP_TEXT = {
+  "signin-eyebrow": "Distributor reps",
+  "signin-intro": "Use the code your distributor shared, with your own name and email. You'll stay signed in on this device for 30 days.",
+  "email-label": "Email",
+  "code-label": "Distributor code",
+};
+
+repToggle.addEventListener("click", () => {
+  setRep(!rep);
+  (rep && !nameInput.value ? nameInput : codeInput).focus();
+});
 
 async function init() {
   // A link from Slack or email can land here while a session is still valid.
@@ -68,11 +105,16 @@ async function init() {
       hint.textContent = `Use your ${config.emailDomains.map((d) => `@${d}`).join(" or ")} address.`;
       hint.hidden = false;
     }
+    for (const id of TEXT_IDS) teamText[id] = $(`#${id}`).textContent;
+    if (config.distributorSignIn) {
+      repToggle.hidden = false;
+      if (last?.distributor) setRep(true);
+    }
   } catch {
     // The form still works; the server enforces everything.
   }
 
-  const firstEmpty = [personal ? null : nameInput, emailInput, codeInput].find((input) => input && !input.value);
+  const firstEmpty = [personal && !rep ? null : nameInput, emailInput, codeInput].find((input) => input && !input.value);
   (firstEmpty ?? codeInput).focus();
 }
 
@@ -96,9 +138,12 @@ form.addEventListener("submit", async (event) => {
     }
     location.replace(nextPath());
   } catch (error) {
+    // A distributor's code typed on the team form: ask for their name too.
+    if (error.fieldErrors?.name && !rep) setRep(true);
     setAlert(alertBox, error.message);
     showFieldErrors(form, error.fieldErrors);
-    if (error.fieldErrors?.code) codeInput.select();
+    if (error.fieldErrors?.name && !nameInput.value) nameInput.focus();
+    else if (error.fieldErrors?.code) codeInput.select();
     button.disabled = false;
     button.textContent = "Sign in";
   }

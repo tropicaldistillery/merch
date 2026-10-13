@@ -88,7 +88,7 @@ const ui = {
 let orders = [];
 let catalog = [];
 let accounts = [];
-let team = { mode: "shared", people: [], suggestions: [] };
+let team = { mode: "shared", people: [], suggestions: [], distributors: [] };
 
 /* ------------------------------------------------------------ api + auth */
 
@@ -286,6 +286,7 @@ function orderMatches(order) {
     order.number,
     order.requester.name,
     order.requester.email,
+    order.requester.distributor,
     order.shipTo.accountName,
     order.shipTo.attention,
     order.shipTo.city,
@@ -321,6 +322,11 @@ function neededByCell(order) {
     el("div", { class: overdue ? "low-text" : "", text: formatCalendarDate(order.neededBy) }),
     overdue ? el("div", { class: "cell-sub", text: "Past due" }) : null
   );
+}
+
+// Which distributor a rep ordered for; nothing for the team.
+function distributorTag(requester) {
+  return requester.distributor ? el("span", { class: "tag distributor", text: requester.distributor }) : null;
 }
 
 function shipToCell(order) {
@@ -429,7 +435,7 @@ function renderOrders() {
             order.shippingSpeed === "rush" ? el("div", {}, el("span", { class: "tag rush", text: "Rush" })) : null
           ),
           el("td", { text: formatDate(order.createdAt) }),
-          el("td", {}, el("div", { class: "cell-main", text: order.requester.name }), el("div", { class: "cell-sub", text: order.requester.email })),
+          el("td", {}, el("div", { class: "cell-main", text: order.requester.name }), el("div", { class: "cell-sub", text: order.requester.email }), distributorTag(order.requester)),
           el("td", {}, shipToCell(order)),
           el("td", { class: "num" }, el("div", { text: String(order.totalUnits) }), el("div", { class: "cell-sub", text: formatMoney(order.totalCents) })),
           el("td", {}, neededByCell(order)),
@@ -879,7 +885,8 @@ function renderOrderDetail(order) {
         "span",
         { class: "muted" },
         `Placed ${formatDateTime(order.createdAt)} by `,
-        el("a", { href: `mailto:${order.requester.email}?subject=${encodeURIComponent(`Merch order ${order.number}`)}`, text: order.requester.name })
+        el("a", { href: `mailto:${order.requester.email}?subject=${encodeURIComponent(`Merch order ${order.number}`)}`, text: order.requester.name }),
+        order.requester.distributor ? ` for ${order.requester.distributor}` : ""
       )
     ),
 
@@ -1147,7 +1154,9 @@ function renderTracker() {
             {},
             el("button", { type: "button", class: "row-button", text: row.name || row.email, onclick: () => openTrackerPerson(row.key) }),
             el("div", { class: "cell-sub", text: row.email }),
-            row.onList || team.mode !== "personal" ? null : el("span", { class: "tag", text: "Not on the team list" })
+            row.distributor
+              ? el("span", { class: "tag distributor", text: row.distributor })
+              : row.onList || team.mode !== "personal" ? null : el("span", { class: "tag", text: "Not on the team list" })
           ),
           el("td", { class: "num" }, el("div", { text: String(row.orders) }), row.openOrders ? el("div", { class: "cell-sub", text: `${row.openOrders} open` }) : null),
           el("td", { class: "num", text: String(row.units) }),
@@ -2913,12 +2922,15 @@ function lastActive(p) {
 
 function renderTeam() {
   for (const radio of $$("input[name=team-mode]")) radio.checked = radio.value === team.mode;
-  $("#team-mode-note").textContent =
+  const note =
     team.mode === "personal"
       ? `Personal codes are on: ${plural(team.people.length, "person", "people")} can sign in. The shared team code no longer works.`
       : team.people.length
         ? "The shared team code is still in use. Once everyone has their personal code, switch to personal codes."
         : "Add your team, send them their codes, then switch to personal codes.";
+  const live = team.distributors.filter((d) => d.active).length;
+  $("#team-mode-note").textContent = live ? `${note} ${plural(live, "distributor code")} work${live === 1 ? "s" : ""} either way.` : note;
+  renderDistributors();
 
   const query = ui.teamQuery.toLowerCase();
   const visible = team.people
@@ -3201,6 +3213,240 @@ function openPerson(p) {
             await reloadTeam();
             drawer.close();
             toast(`${p.name || p.email} removed.`);
+          } catch (error) {
+            toast(error.message, { tone: "error" });
+          }
+        },
+      })
+    )
+  );
+  drawer.open();
+}
+
+/* ---------------------------------------------------------- distributors */
+
+// What reps of a new distributor see unless unticked: point of sale, not
+// apparel, samples or VIP gifts.
+const REP_DEFAULT_CATEGORIES = ["Giveaways", "Print", "Bar Tools", "Sampling & Events"];
+
+function categoryChoices(selected) {
+  const boxes = CATEGORIES.map((category) =>
+    el(
+      "label",
+      { class: "color-choice" },
+      el("input", { type: "checkbox", name: "categories", value: category, checked: selected.includes(category) }),
+      el("span", { text: category })
+    )
+  );
+  return {
+    boxes,
+    get value() {
+      return boxes.map((label) => label.querySelector("input")).filter((i) => i.checked).map((i) => i.value);
+    },
+  };
+}
+
+let newDistributorCategories = categoryChoices(REP_DEFAULT_CATEGORIES);
+clear($("#distributor-categories"), newDistributorCategories.boxes);
+
+const repMessage = (d) =>
+  `Tropical Distillery merch store for ${d.name} reps\nSign in at ${location.origin} with your name, your email and this code: ${d.code}`;
+
+function renderDistributors() {
+  const table = $("#distributor-table");
+  const list = team.distributors.slice().sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
+  if (!list.length) {
+    return clear(table, el("tbody", {}, el("tr", {}, el("td", { class: "empty", colspan: "6", text: "No distributors yet. Add one above to give its reps a code." }))));
+  }
+  clear(
+    table,
+    el("thead", {}, el("tr", {}, ["Distributor", "Code", "Reps", "Orders", "Last active", ""].map((h) =>
+      el("th", { scope: "col", class: h === "Reps" || h === "Orders" ? "num" : "", text: h })
+    ))),
+    el(
+      "tbody",
+      {},
+      list.map((d) => {
+        const active = [d.lastSignInAt, d.lastOrderAt].filter(Boolean).sort().pop();
+        return el(
+          "tr",
+          {},
+          el("td", {}, el("div", { class: "cell-main", text: d.name }), el("div", { class: "cell-sub", text: d.categories.join(" · ") })),
+          el(
+            "td",
+            {},
+            d.active
+              ? [
+                  el("span", { class: "code-chip", text: d.code }),
+                  el("button", { type: "button", class: "link-button", text: "Copy message", onclick: () => copyText(repMessage(d), "Message") }),
+                ]
+              : el("span", { class: "tag", text: "Turned off" })
+          ),
+          el("td", { class: "num", text: String(d.reps) }),
+          el("td", { class: "num" }, el("div", { text: String(d.orders) }), el("div", { class: "cell-sub", text: formatMoney(d.valueCents) })),
+          el("td", { text: active ? formatDate(active) : "Not yet" }),
+          el(
+            "td",
+            {},
+            el(
+              "div",
+              { class: "action-row" },
+              el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Edit", "aria-label": `Edit ${d.name}`, onclick: () => openDistributor(d) }),
+              d.active
+                ? el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "New code", "aria-label": `New code for ${d.name}`, onclick: () => resetDistributorCode(d) })
+                : null,
+              el("button", {
+                type: "button",
+                class: "btn btn-secondary btn-sm",
+                text: d.active ? "Turn off" : "Turn on",
+                "aria-label": `${d.active ? "Turn off" : "Turn on"} ${d.name}'s code`,
+                onclick: () => setDistributorActive(d, !d.active),
+              })
+            )
+          )
+        );
+      })
+    )
+  );
+}
+
+async function patchDistributor(d, body) {
+  const { distributor } = await adminApi(`/api/admin/distributors/${encodeURIComponent(d.id)}`, { method: "PATCH", body });
+  await reloadTeam();
+  return distributor;
+}
+
+async function resetDistributorCode(d) {
+  const ok = await confirmDialog({
+    title: `New code for ${d.name}?`,
+    body: "The current code stops working and all of its reps are signed out. Send the new code to the distributor so its reps can sign in again.",
+    confirmLabel: "Make a new code",
+    cancelLabel: "Keep the current code",
+  });
+  if (!ok) return;
+  try {
+    const distributor = await patchDistributor(d, { resetCode: true });
+    toast(`New code for ${distributor.name}: ${distributor.code}`, { action: { label: "Copy message", onClick: () => copyText(repMessage(distributor), "Message") }, timeout: 10000 });
+  } catch (error) {
+    toast(error.message, { tone: "error" });
+  }
+}
+
+async function setDistributorActive(d, active) {
+  if (!active) {
+    const ok = await confirmDialog({
+      title: `Turn off ${d.name}'s code?`,
+      body: "Its reps are signed out and can't sign in until you turn it back on. Their past orders stay as they are.",
+      confirmLabel: "Turn it off",
+      cancelLabel: "Leave it on",
+      danger: true,
+    });
+    if (!ok) return;
+  }
+  try {
+    await patchDistributor(d, { active });
+    toast(active ? `${d.name}'s code works again.` : `${d.name}'s code is off.`);
+  } catch (error) {
+    toast(error.message, { tone: "error" });
+  }
+}
+
+$("#distributor-add-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const alertBox = $(".form-alert", form);
+  clearFieldErrors(form);
+  setAlert(alertBox, "");
+  const button = form.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    const { distributor } = await adminApi("/api/admin/distributors", {
+      method: "POST",
+      body: { name: $("#distributor-name").value, categories: newDistributorCategories.value },
+    });
+    $("#distributor-name").value = "";
+    newDistributorCategories = categoryChoices(REP_DEFAULT_CATEGORIES);
+    clear($("#distributor-categories"), newDistributorCategories.boxes);
+    await reloadTeam();
+    toast(`${distributor.name} added. Copy the message to send its reps the code.`, {
+      action: { label: "Copy message", onClick: () => copyText(repMessage(distributor), "Message") },
+      timeout: 10000,
+    });
+  } catch (error) {
+    setAlert(alertBox, error.message);
+    showFieldErrors(form, error.fieldErrors);
+    if (error.fieldErrors?.categories) setAlert(alertBox, error.fieldErrors.categories);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+function openDistributor(d) {
+  const form = el("form", { id: "distributor-form", novalidate: true });
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  const choices = categoryChoices(d.categories);
+  form.append(
+    alertBox,
+    el(
+      "div",
+      { class: "form-grid" },
+      field("Distributor", el("input", { id: "distributor-edit-name", name: "name", type: "text", maxlength: "80", value: d.name, autofocus: true }), {
+        hint: "Shown on its reps' orders. Past orders keep the name they were placed under.",
+      }),
+      el(
+        "fieldset",
+        { class: "field span-6" },
+        el("legend", { class: "label", text: "What its reps can order" }),
+        el("div", { class: "color-grid" }, choices.boxes),
+        el("p", { class: "hint", text: "Reps see the change the next time they load the store." })
+      )
+    )
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    try {
+      await patchDistributor(d, { name: form.elements.namedItem("name").value, categories: choices.value });
+      drawer.close();
+      toast("Saved.");
+    } catch (error) {
+      setAlert(alertBox, error.fieldErrors?.categories || error.message);
+      showFieldErrors(form, error.fieldErrors);
+    }
+  });
+
+  detailTitle.textContent = d.name;
+  clear(detailBody, form);
+  clear(
+    detailFoot,
+    el(
+      "div",
+      { class: "inline-actions" },
+      el(
+        "div",
+        { class: "inline-actions" },
+        el("button", { type: "submit", form: "distributor-form", class: "btn", text: "Save" }),
+        el("button", { type: "button", class: "btn btn-secondary", "data-close": "", text: "Cancel" })
+      ),
+      el("button", {
+        type: "button",
+        class: "btn btn-danger",
+        text: "Remove distributor",
+        onclick: async () => {
+          const ok = await confirmDialog({
+            title: `Remove ${d.name}?`,
+            body: "Its code stops working and its reps are signed out straight away. Their past orders stay in the order history under its name.",
+            confirmLabel: "Remove",
+            cancelLabel: "Keep it",
+            danger: true,
+          });
+          if (!ok) return;
+          try {
+            await adminApi(`/api/admin/distributors/${encodeURIComponent(d.id)}`, { method: "DELETE" });
+            await reloadTeam();
+            drawer.close();
+            toast(`${d.name} removed.`);
           } catch (error) {
             toast(error.message, { tone: "error" });
           }

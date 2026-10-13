@@ -135,6 +135,8 @@ shares nothing with SipScale.
   person's orders, units and order value this month and overall. People who
   have used the shared code but aren't on the list yet are listed so they can
   be added in one click.
+- Give each **distributor** its own code for its reps (Team tab, Distributor
+  codes), and pick which categories its reps can order from.
 - Tidy the shared account directory.
 
 Stock is reserved when an order is placed and returned if it is cancelled or
@@ -163,6 +165,30 @@ theirs gets back in. The email-domain rule
 (`TEAM_EMAIL_DOMAINS`) only applies to the shared code; anyone you put on the
 list can sign in, personal email included. Switching back to the shared code
 is one click.
+
+### Distributor codes
+
+Distributor reps don't go on the team list. Instead, in **Team → Distributor
+codes**, add each distributor and tick what its reps can order (point of sale
+is ticked to start with; apparel, samples and VIP aren't). It gets one code,
+like `tropical-southern-4821-7730`, to share with all of its reps: **Copy
+message** gives you a ready-to-send note with the store's address.
+
+- Reps sign in with that code, their own name and any email. On the sign-in
+  page they pick **Distributor rep?**; typing a distributor code on the team
+  form also works, and asks for their name.
+- They see only their distributor's categories, and only their own orders,
+  saved address and the accounts their distributor has shipped to: never
+  anything of the team's, even if they type a team member's email.
+- Their orders are tagged with the distributor in the order list, the order
+  alert email ("from Dee Rep (Southern Glazer's)"), the CSV export and the
+  tracker, and they go through the same approval and inboxes as everyone else.
+- **New code** signs all of a distributor's reps out; send them the new one.
+  **Turn off** does the same until you turn it back on. Removing a distributor
+  keeps its name on past orders.
+
+Distributor codes work the same whether your team is on personal codes or the
+shared team code, and a distributor code alone is enough to open the store.
 
 ## Where orders go
 
@@ -332,6 +358,13 @@ that, the next step is real tables.
 
 ## Security model
 
+- A **distributor code** is shared and works with any email, so it is longer
+  than a personal code (eight digits). Each rep's details are kept per
+  distributor, apart from the team's, so typing someone else's email shows
+  them nothing of that person's. A rep only ever sees their own distributor's
+  categories, orders and accounts, and the server enforces the categories on
+  every order, not just in the shop.
+
 - With **personal codes** on, each order is tied to the person whose code was
   used, and one person can be locked out without affecting anyone else. Codes
   are meant to be easy ("tropical", first name and a four-digit number: 9,000
@@ -382,7 +415,7 @@ server.mjs              entry point: reads settings, opens the store, starts HTT
 src/app.mjs             routes, sign-in, security headers, static pages
 src/orders.mjs          order validation, stock, account directory, status changes, CSV
 src/catalog.mjs         starter catalog and item editing rules
-src/team.mjs            team list, personal codes, per-person tracking
+src/team.mjs            team list, personal and distributor codes, per-person tracking
 src/images.mjs          photo checks for uploads
 src/auth.mjs            signed sessions and sign-in throttling
 src/notify.mjs          webhook messages

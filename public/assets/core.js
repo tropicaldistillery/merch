@@ -177,8 +177,11 @@ export function createCart(email) {
  * Returns the cart so the page can use it.
  */
 export function wireHeader(user) {
-  const cart = createCart(user.email);
-  for (const node of $$("[data-user-name]")) node.textContent = user.name;
+  // A rep's cart is kept apart from a team member's on the same email.
+  const cart = createCart(user.distributorId ? `${user.distributorId}:${user.email}` : user.email);
+  for (const node of $$("[data-user-name]")) node.textContent = user.distributor ? `${user.name} (${user.distributor})` : user.name;
+  // Reps have no use for the admin console.
+  if (user.distributorId) for (const link of $$(".site-nav a[href='/admin']")) link.hidden = true;
 
   const countNode = $("[data-cart-count]");
   const renderCount = () => {

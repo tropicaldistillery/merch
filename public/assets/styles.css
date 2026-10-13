@@ -2327,6 +2327,18 @@ table.table {
   border-radius: 22px;
 }
 
+.signin-card .rep-toggle {
+  display: block;
+  margin: 0 auto;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pink-text);
+}
+
+.signin-card .rep-toggle[hidden] {
+  display: none;
+}
+
 .signin-card > * + * {
   margin-top: 16px;
 }
@@ -2766,6 +2778,32 @@ dialog.confirm .dialog-actions .btn {
   .team-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.distributors {
+  margin-top: 36px;
+}
+
+.distributors > .muted {
+  max-width: 760px;
+  margin: 6px 0 16px;
+}
+
+.distributors form {
+  margin-bottom: 18px;
+}
+
+.distributors form > * + * {
+  margin-top: 14px;
+}
+
+.distributors .code-chip {
+  font-size: 13.5px;
+}
+
+.tag.distributor {
+  background: #efe6fb;
+  color: #5b2a91;
 }
 
 /* ------------------------------------------------------- free to you */

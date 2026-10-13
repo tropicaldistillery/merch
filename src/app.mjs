@@ -51,27 +51,34 @@ import {
 import { IMAGE_PATH_RE, MAX_IMAGE_BYTES, acceptProductImage } from "./images.mjs";
 import {
   MAX_BULK_ORDERS,
+  accountsFor,
   bulkUpdateOrders,
   cancelOwnOrder,
   csvCell,
   normalizeAccountEdit,
   ordersToCsv,
+  ownsOrder,
   placeOrder,
   trackerToCsv,
   updateOrder,
 } from "./orders.mjs";
 import {
+  addDistributor,
   addPeople,
   credentialOf,
+  distributorForCode,
   hashPassword,
   passwordProblem,
   personForSignIn,
+  removeDistributor,
   removePerson,
+  repKey,
   resetAllCodes,
   setMode,
   setOwnPassword,
   teamReport,
   teamState,
+  updateDistributor,
   updatePerson,
 } from "./team.mjs";
 import { OPEN_STATUSES, STATUSES, byCategory, trackByPerson } from "../public/assets/shared.js";
@@ -350,7 +357,13 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     const ttl = config.accessCacheMs ?? 5000;
     if (!fresh && access && Date.now() - access.at < ttl) return access;
     const team = teamState(await store.read());
-    access = { at: Date.now(), mode: team.mode, team, byId: new Map(team.people.map((p) => [p.id, p])) };
+    access = {
+      at: Date.now(),
+      mode: team.mode,
+      team,
+      byId: new Map(team.people.map((p) => [p.id, p])),
+      distributors: new Map(team.distributors.map((d) => [d.id, d])),
+    };
     return access;
   }
 
@@ -362,14 +375,31 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     return credentialFingerprint(secret, `person:${person.id}:${credentialOf(person)}`);
   }
 
+  function distributorFingerprint(distributor) {
+    return credentialFingerprint(secret, `distributor:${distributor.id}:${distributor.code}`);
+  }
+
+  /** The categories a rep may see and order from; null for the team (everything). */
+  async function categoriesFor(user) {
+    if (!user.distributorId) return null;
+    return (await teamAccess()).distributors.get(user.distributorId)?.categories ?? [];
+  }
+
   // Personal-code sessions carry the person and a fingerprint of their
   // current code or own password, so a reset, a new password or removal ends
   // them; shared-code sessions carry the team code's fingerprint. Switching
-  // modes ends the other kind.
+  // modes ends the other kind. Distributor sessions carry the distributor and
+  // its code's fingerprint, whichever mode the team is in: a new code, turning
+  // it off or removing the distributor ends them.
   async function teamUser(req) {
     const payload = verifySession(secret, parseCookies(req.headers.cookie)[TEAM_COOKIE]);
     if (!payload || payload.role !== "team") return null;
-    const { mode, byId } = await teamAccess();
+    const { mode, byId, distributors } = await teamAccess();
+    if (payload.did) {
+      const distributor = distributors.get(payload.did);
+      if (!distributor?.active || payload.fp !== distributorFingerprint(distributor)) return null;
+      return { name: payload.name, email: payload.email, distributorId: distributor.id, distributor: distributor.name };
+    }
     if (mode === "personal") {
       const person = payload.pid ? byId.get(payload.pid) : null;
       if (!person || payload.fp !== personFingerprint(person)) return null;
@@ -390,7 +420,7 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
 
   async function teamSignIn({ req, res }) {
     const { mode, team } = await teamAccess({ fresh: true });
-    if (mode === "shared" && !teamCode) {
+    if (mode === "shared" && !teamCode && !team.distributors.some((d) => d.active)) {
       throw new ValidationError("The store isn't set up yet — TEAM_ACCESS_CODE has not been configured.", {}, 503);
     }
     const address = clientAddress(req);
@@ -403,7 +433,18 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     if (!isValidEmail(email)) errors.email = "Enter your email address.";
 
     let session;
-    if (mode === "personal") {
+    // A distributor's code works in either mode, with the rep's own name and
+    // any email.
+    const distributor = distributorForCode(team, body.code, safeEqual);
+    if (distributor) {
+      const name = cleanLine(body.name, 80);
+      if (!name) errors.name = "Enter your name so the merch team knows who's ordering.";
+      if (Object.keys(errors).length) {
+        const message = errors.email ? "Some details need attention." : "That's a distributor code: add your name too.";
+        throw new ValidationError(message, errors);
+      }
+      session = { did: distributor.id, name, email, distributor: distributor.name, fp: distributorFingerprint(distributor) };
+    } else if (mode === "personal") {
       if (!String(body.code ?? "").trim()) errors.code = "Enter your personal code or password.";
       if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
       if (emailThrottle.blocked(email)) {
@@ -435,15 +476,17 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       session = { name, email, fp: teamFingerprint };
     }
 
-    // Remember the sign-in, for the admin's team report.
+    // Remember the sign-in, for the admin's team report. Reps are kept apart,
+    // per distributor.
     const at = clock().toISOString();
     await store.mutate((db) => {
-      db.members[session.email] = { ...db.members[session.email], name: session.name, lastSignInAt: at };
+      const people = session.did ? (db.reps ??= {}) : db.members;
+      const key = session.did ? repKey(session.did, session.email) : session.email;
+      people[key] = { ...people[key], name: session.name, lastSignInAt: at };
     });
 
-    sendJson(res, 200, { ok: true, user: { name: session.name, email: session.email } }, {
-      "Set-Cookie": teamSessionCookie(req, session),
-    });
+    const user = { name: session.name, email: session.email, ...(session.did ? { distributor: session.distributor } : {}) };
+    sendJson(res, 200, { ok: true, user }, { "Set-Cookie": teamSessionCookie(req, session) });
   }
 
   function personSession(person) {
@@ -459,6 +502,9 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
   // Someone signed in with a personal code choosing their own password. Their
   // other devices are signed out; this one gets a fresh session.
   async function changeOwnPassword({ req, res, user }) {
+    if (user.distributorId) {
+      throw new ValidationError("You sign in with your distributor's code, so there's no code of your own to change.", {}, 409);
+    }
     if (!user.personId) {
       throw new ValidationError(
         "Everyone signs in with the shared team code for now, so there's no password of your own to change. The merch admin can switch on personal codes.",
@@ -536,11 +582,13 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
     ["GET", "/api/health", "public", async ({ res }) => sendJson(res, 200, { ok: true, store: store.kind })],
 
     ["GET", "/api/config", "public", async ({ res }) => {
-      const { mode } = await teamAccess();
+      const { mode, team } = await teamAccess();
+      const distributorSignIn = team.distributors.some((d) => d.active);
       sendJson(res, 200, {
         ok: true,
         signInMode: mode,
-        teamSignIn: mode === "personal" || Boolean(teamCode),
+        teamSignIn: mode === "personal" || Boolean(teamCode) || distributorSignIn,
+        distributorSignIn,
         adminSignIn: Boolean(adminPassword),
         emailDomains: mode === "personal" ? [] : domains,
       });
@@ -553,35 +601,36 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       sendJson(res, 200, { ok: true }, { "Set-Cookie": clearedCookie(TEAM_COOKIE, { secure: secureCookies(req) }) })],
 
     // Store
-    ["GET", "/api/catalog", "team", async ({ res }) => {
+    ["GET", "/api/catalog", "team", async ({ res, user }) => {
       const db = await store.read();
-      sendJson(res, 200, { ok: true, items: byCategory(db.catalog.filter((item) => item.active)).map(publicItem) });
+      const categories = await categoriesFor(user);
+      const shown = db.catalog.filter((item) => item.active && (!categories || categories.includes(item.category)));
+      sendJson(res, 200, { ok: true, items: byCategory(shown).map(publicItem) });
     }],
 
     ["POST", "/api/me/password", "team", changeOwnPassword],
 
     ["GET", "/api/me", "team", async ({ res, user }) => {
       const db = await store.read();
-      sendJson(res, 200, { ok: true, user, address: db.members[user.email]?.address ?? null });
+      const saved = user.distributorId ? db.reps?.[repKey(user.distributorId, user.email)] : db.members[user.email];
+      sendJson(res, 200, { ok: true, user, address: saved?.address ?? null });
     }],
 
-    ["GET", "/api/accounts", "team", async ({ res }) => {
+    ["GET", "/api/accounts", "team", async ({ res, user }) => {
       const db = await store.read();
-      sendJson(res, 200, { ok: true, accounts: db.accounts.map(publicAccount).sort(byName) });
+      sendJson(res, 200, { ok: true, accounts: accountsFor(db, user.distributorId).map(publicAccount).sort(byName) });
     }],
 
     ["GET", "/api/orders", "team", async ({ res, user }) => {
       const db = await store.read();
-      const orders = db.orders
-        .filter((o) => o.requester.email === user.email || (user.personId && o.requester.personId === user.personId))
-        .reverse();
-      sendJson(res, 200, { ok: true, orders });
+      sendJson(res, 200, { ok: true, orders: db.orders.filter((o) => ownsOrder(o, user)).reverse() });
     }],
 
     ["POST", "/api/orders", "team", async ({ req, res, user }) => {
       const body = await readJson(req);
+      const categories = await categoriesFor(user);
       const order = await store.mutate((db) =>
-        placeOrder(db, body, { requester: user, now: clock(), timeZone, prefix: orderPrefix })
+        placeOrder(db, body, { requester: user, categories, now: clock(), timeZone, prefix: orderPrefix })
       );
       notify("order.created", order);
       sendJson(res, 201, { ok: true, order });
@@ -589,7 +638,13 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
 
     ["POST", /^\/api\/orders\/([\w-]+)\/cancel$/, "team", async ({ res, user, params }) => {
       const order = await store.mutate((db) =>
-        cancelOwnOrder(db, params[0], { email: user.email, name: user.name, now: clock() })
+        cancelOwnOrder(db, params[0], {
+          email: user.email,
+          name: user.name,
+          personId: user.personId,
+          distributorId: user.distributorId,
+          now: clock(),
+        })
       );
       notify("order.cancelled", order, { byRequester: true });
       sendJson(res, 200, { ok: true, order });
@@ -756,6 +811,27 @@ export async function createApp({ store, config, notify = () => {}, clock = () =
       const team = await store.mutate((db) => setMode(db, cleanLine(body.mode, 20)));
       accessChanged();
       sendJson(res, 200, { ok: true, mode: team.mode });
+    }],
+
+    // Admin: distributor codes, shared by each distributor's reps
+    ["POST", "/api/admin/distributors", "admin", async ({ req, res, admin }) => {
+      const body = await readJson(req);
+      const distributor = await store.mutate((db) => addDistributor(db, body, { by: admin.name, at: clock().toISOString() }));
+      accessChanged();
+      sendJson(res, 201, { ok: true, distributor });
+    }],
+
+    ["PATCH", /^\/api\/admin\/distributors\/([\w-]+)$/, "admin", async ({ req, res, params }) => {
+      const body = await readJson(req);
+      const distributor = await store.mutate((db) => updateDistributor(db, params[0], body, { at: clock().toISOString() }));
+      accessChanged();
+      sendJson(res, 200, { ok: true, distributor });
+    }],
+
+    ["DELETE", /^\/api\/admin\/distributors\/([\w-]+)$/, "admin", async ({ res, params }) => {
+      await store.mutate((db) => removeDistributor(db, params[0]));
+      accessChanged();
+      sendJson(res, 200, { ok: true });
     }],
 
     ["GET", "/api/admin/team.csv", "admin", async ({ res }) => {

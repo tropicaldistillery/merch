@@ -479,10 +479,10 @@ describe("bulk order edits and the per-person tracker", () => {
       const tracker = await admin("/api/admin/tracker.csv");
       assert.match(tracker.headers.get("content-disposition"), /tropical-merch-by-person-/);
       const [header, ...rows] = tracker.data.trim().split("\r\n");
-      assert.match(header, /^name,email,on_team_list,orders,units,order_value,last_order,sku,item,color,option,quantity/);
+      assert.match(header, /^name,email,distributor,on_team_list,orders,units,order_value,last_order,sku,item,color,option,quantity/);
       assert.equal(rows.length, 2);
-      assert.match(rows[0], /^Jane Rep,jane@tropicaldistillery.com,no,2,4,88.00,/);
-      assert.match(rows[1], /^Sam Rep,sam@tropicaldistillery.com,no,1,2,44.00,/);
+      assert.match(rows[0], /^Jane Rep,jane@tropicaldistillery.com,,no,2,4,88.00,/);
+      assert.match(rows[1], /^Sam Rep,sam@tropicaldistillery.com,,no,1,2,44.00,/);
 
       const later = await admin(`/api/admin/tracker.csv?from=${encodeURIComponent("2999-01-01T00:00:00Z")}`);
       assert.equal(later.data.trim().split("\r\n").length, 1, "nobody ordered in the future");
@@ -582,6 +582,123 @@ describe("personal codes", () => {
       assert.match(newSam.code, /^tropical-sam-\d{4}$/);
       assert.equal((await attempt("sam@tropicaldistillery.com", sam.code)).status, 401);
       assert.equal((await attempt("sam@tropicaldistillery.com", newSam.code)).status, 200);
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("distributor codes", () => {
+  const TEE_ORDER = { ...ACCOUNT_ORDER, lines: [{ itemId: "jfh-logo-tee", variantId: "m", quantity: 1 }] };
+
+  it("lets reps sign in with their distributor's code next to personal codes, and keeps them apart", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const app = await start(dir);
+    try {
+      const admin = await signedInAdmin(app);
+      const missing = await admin("/api/admin/distributors", { method: "POST", body: { name: "Southern Glazer's FL", categories: [] } });
+      assert.equal(missing.status, 400);
+      assert.ok(missing.data.fieldErrors.categories);
+      const created = await admin("/api/admin/distributors", {
+        method: "POST",
+        body: { name: "Southern Glazer's FL", categories: ["Bar Tools", "Print", "Not a category"] },
+      });
+      assert.equal(created.status, 201);
+      const sgws = created.data.distributor;
+      assert.match(sgws.code, /^tropical-southern-\d{4}-\d{4}$/);
+      assert.deepEqual(sgws.categories, ["Print", "Bar Tools"]);
+      const dupe = await admin("/api/admin/distributors", { method: "POST", body: { name: "southern glazer's fl", categories: ["Print"] } });
+      assert.equal(dupe.status, 400);
+
+      // The team on personal codes; Jane ships to an account.
+      const { added } = (await admin("/api/admin/team", { method: "POST", body: { entries: "Jane Rep, jane@tropicaldistillery.com" } })).data;
+      await admin("/api/admin/team/mode", { method: "PUT", body: { mode: "personal" } });
+      const jane = app.client();
+      await jane("/api/session", { method: "POST", body: { email: "jane@tropicaldistillery.com", code: added[0].code } });
+      const janeOrder = (await jane("/api/orders", { method: "POST", body: ACCOUNT_ORDER })).data.order;
+      assert.equal((await app.client()("/api/config")).data.distributorSignIn, true);
+
+      // A rep needs their name; any email will do, even one already on the team.
+      const rep = app.client();
+      const noName = await rep("/api/session", { method: "POST", body: { email: "jane@tropicaldistillery.com", code: sgws.code } });
+      assert.equal(noName.status, 400);
+      assert.ok(noName.data.fieldErrors.name);
+      const repIn = await rep("/api/session", {
+        method: "POST",
+        body: { name: "Dee Rep", email: "jane@tropicaldistillery.com", code: ` ${sgws.code.toUpperCase()} ` },
+      });
+      assert.equal(repIn.status, 200, JSON.stringify(repIn.data));
+      assert.equal(repIn.data.user.distributor, "Southern Glazer's FL");
+      const session = (await rep("/api/session")).data.user;
+      assert.equal(session.distributorId, sgws.id);
+      assert.equal(session.personId, undefined);
+
+      // Only their distributor's categories, and nothing of Jane's.
+      const categories = new Set((await rep("/api/catalog")).data.items.map((i) => i.category));
+      assert.deepEqual([...categories].sort(), ["Bar Tools", "Print"]);
+      assert.deepEqual((await rep("/api/orders")).data.orders, []);
+      assert.deepEqual((await rep("/api/accounts")).data.accounts, [], "Jane's accounts aren't offered");
+      assert.equal((await rep(`/api/orders/${janeOrder.id}/cancel`, { method: "POST" })).status, 404);
+      assert.equal((await rep("/api/me/password", { method: "POST", body: { current: sgws.code, password: "a new phrase" } })).status, 409);
+
+      const tee = await rep("/api/orders", { method: "POST", body: TEE_ORDER });
+      assert.equal(tee.status, 400, "apparel isn't one of its categories");
+      const placed = await rep("/api/orders", { method: "POST", body: ACCOUNT_ORDER });
+      assert.equal(placed.status, 201, JSON.stringify(placed.data));
+      assert.equal(placed.data.order.requester.distributorId, sgws.id);
+      assert.equal(placed.data.order.requester.distributor, "Southern Glazer's FL");
+      assert.deepEqual((await rep("/api/orders")).data.orders.map((o) => o.id), [placed.data.order.id]);
+      assert.equal((await rep("/api/accounts")).data.accounts.length, 1, "now its own account is offered");
+      assert.deepEqual((await jane("/api/orders")).data.orders.map((o) => o.id), [janeOrder.id], "Jane sees only hers");
+
+      const report = (await admin("/api/admin/team")).data;
+      const row = report.distributors.find((d) => d.id === sgws.id);
+      assert.equal(row.orders, 1);
+      assert.equal(row.reps, 1);
+      assert.ok(row.lastSignInAt);
+      assert.equal(report.people[0].orders, 1, "the rep's order isn't counted as Jane's");
+      assert.match((await admin("/api/admin/orders.csv")).data, /,jane@tropicaldistillery.com,Southern Glazer's FL,/);
+      assert.match((await admin("/api/admin/tracker.csv")).data, /\r\nDee Rep,jane@tropicaldistillery.com,Southern Glazer's FL,no,1,/);
+
+      // Turned off, its reps are signed out; on again with a new code, only that works.
+      await admin(`/api/admin/distributors/${sgws.id}`, { method: "PATCH", body: { active: false } });
+      assert.equal((await rep("/api/catalog")).status, 401);
+      assert.equal((await app.client()("/api/session", { method: "POST", body: { name: "Dee", email: "dee@sgws.com", code: sgws.code } })).status, 401);
+      const renewed = (await admin(`/api/admin/distributors/${sgws.id}`, { method: "PATCH", body: { active: true, resetCode: true, categories: ["Print"] } })).data.distributor;
+      assert.notEqual(renewed.code, sgws.code);
+      assert.equal((await app.client()("/api/session", { method: "POST", body: { name: "Dee", email: "dee@sgws.com", code: sgws.code } })).status, 401);
+      const again = app.client();
+      assert.equal((await again("/api/session", { method: "POST", body: { name: "Dee", email: "dee@sgws.com", code: renewed.code } })).status, 200);
+      assert.deepEqual([...new Set((await again("/api/catalog")).data.items.map((i) => i.category))], ["Print"]);
+
+      // Removed: signed out, and past orders keep its name.
+      assert.equal((await admin(`/api/admin/distributors/${sgws.id}`, { method: "DELETE" })).status, 200);
+      assert.equal((await again("/api/catalog")).status, 401);
+      const kept = (await admin(`/api/admin/orders/${placed.data.order.id}`)).data.order;
+      assert.equal(kept.requester.distributor, "Southern Glazer's FL");
+      assert.equal((await jane("/api/catalog")).status, 200, "the team is unaffected throughout");
+      assert.equal((await rep("/api/admin/team")).status, 401);
+    } finally {
+      await app.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("works without a shared team code too, with any email", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tropical-merch-"));
+    const app = await start(dir, { teamAccessCode: "" });
+    try {
+      const anon = app.client();
+      assert.equal((await anon("/api/config")).data.teamSignIn, false);
+      const admin = await signedInAdmin(app);
+      const { distributor } = (await admin("/api/admin/distributors", { method: "POST", body: { name: "RNDC", categories: ["Bar Tools"] } })).data;
+      assert.equal((await anon("/api/config")).data.teamSignIn, true, "a distributor code opens the store");
+      const res = await anon("/api/session", { method: "POST", body: { name: "Ray", email: "ray@rndc-usa.com", code: distributor.code } });
+      assert.equal(res.status, 200, JSON.stringify(res.data));
+      const placed = await anon("/api/orders", { method: "POST", body: ACCOUNT_ORDER });
+      assert.equal(placed.status, 201);
+      assert.equal(app.notifications.at(-1).number, placed.data.order.number);
     } finally {
       await app.close();
       await fs.rm(dir, { recursive: true, force: true });

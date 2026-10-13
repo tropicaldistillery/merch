@@ -452,6 +452,6 @@ describe("the per-person tracker", () => {
 
     const csv = trackerToCsv(rows).trim().split("\r\n");
     assert.equal(csv.length, 4, "a header, Jane's tee, Sam's cap, Lee's empty row");
-    assert.match(csv[3], /^Lee,lee@tropicaldistillery.com,yes,0,0,0.00,,,,,,0,0.00,0$/);
+    assert.match(csv[3], /^Lee,lee@tropicaldistillery.com,,yes,0,0,0.00,,,,,,0,0.00,0$/);
   });
 });

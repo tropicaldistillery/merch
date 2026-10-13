@@ -295,6 +295,7 @@ export function trackByPerson(orders, { from = "", to = "", people = [] } = {}) 
         personId: person?.id ?? null,
         name: person?.name || requester?.name || person?.email || requester?.email || "",
         email: person?.email ?? requester?.email ?? "",
+        distributor: requester?.distributor ?? "",
         onList: Boolean(person),
         orders: 0,
         openOrders: 0,
@@ -316,8 +317,11 @@ export function trackByPerson(orders, { from = "", to = "", people = [] } = {}) 
     if (RELEASED_STATUSES.includes(order.status)) continue;
     if (from && order.createdAt < from) continue;
     if (to && order.createdAt >= to) continue;
-    const person = byId.get(order.requester.personId) ?? byEmail.get(order.requester.email) ?? null;
-    const row = rowFor(person ? `person:${person.id}` : `email:${order.requester.email}`, person, order.requester);
+    // A distributor's reps are their own rows, even with a team member's email.
+    const rep = order.requester.distributorId;
+    const person = rep ? null : byId.get(order.requester.personId) ?? byEmail.get(order.requester.email) ?? null;
+    const key = rep ? `rep:${rep}:${order.requester.email}` : person ? `person:${person.id}` : `email:${order.requester.email}`;
+    const row = rowFor(key, person, order.requester);
     // Off the list, the most recent name they typed wins.
     if (!person && order.requester.name && (!row.lastOrderAt || order.createdAt >= row.lastOrderAt)) {
       row.name = order.requester.name;

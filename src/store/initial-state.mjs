@@ -25,6 +25,7 @@ export function initialState() {
     orders: [],
     accounts: [],
     members: {},
-    team: { mode: "shared", people: [] },
+    reps: {},
+    team: { mode: "shared", people: [], distributors: [] },
   };
 }

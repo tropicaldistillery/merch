@@ -188,6 +188,26 @@
         <div class="card table-wrap"><table class="table" id="team-table"></table></div>
         <div id="team-suggestions"></div>
         <p class="fine panel-note">Order value is what the items cost Tropical Distillery. Team members are never charged. Cancelled and declined orders don't count.</p>
+
+        <section class="distributors" aria-labelledby="distributors-title">
+          <div class="section-title"><h2 id="distributors-title">Distributor codes</h2></div>
+          <p class="muted">Give each distributor one code to share with its reps. Reps sign in with that code, their own name and any email. They see only the categories you pick, and only their own orders and accounts. Distributor codes work alongside your team's codes, personal or shared.</p>
+          <form class="card card-pad" id="distributor-add-form" novalidate aria-labelledby="distributor-add-title">
+            <h3 id="distributor-add-title">Add a distributor</h3>
+            <div class="form-alert" role="alert" hidden></div>
+            <div class="field">
+              <label for="distributor-name">Distributor</label>
+              <input id="distributor-name" name="name" type="text" maxlength="80" placeholder="Southern Glazer's — Florida" autocomplete="off">
+            </div>
+            <fieldset class="field" id="distributor-categories-field">
+              <legend class="label">What its reps can order</legend>
+              <div class="color-grid" id="distributor-categories"></div>
+              <p class="hint">You can change this any time; reps see the change straight away.</p>
+            </fieldset>
+            <button type="submit" class="btn">Add &amp; create code</button>
+          </form>
+          <div class="card table-wrap"><table class="table" id="distributor-table"></table></div>
+        </section>
       </section>
     </section>
   </main>

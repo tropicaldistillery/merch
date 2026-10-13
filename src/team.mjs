@@ -16,14 +16,20 @@
 // That one is chosen by them and may well be used elsewhere, so it is kept
 // only as a slow salted hash: nobody, the admin included, can read it back.
 // If they forget it, the admin issues a new code, which replaces it.
+//
+// Distributor codes work alongside either: each distributor the admin sets up
+// has one code its reps share, typed with their own name and any email. Reps
+// see only the categories chosen for their distributor, and only their own
+// orders, saved address and the accounts their distributor has shipped to.
 
 import { randomBytes, randomInt, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
 
-import { RELEASED_STATUSES } from "../public/assets/shared.js";
+import { CATEGORIES, RELEASED_STATUSES } from "../public/assets/shared.js";
 import { ValidationError, cleanLine, isValidEmail, normalizeEmail } from "./validation.mjs";
 
 export const MODES = ["shared", "personal"];
 export const MAX_PEOPLE = 1000;
+export const MAX_DISTRIBUTORS = 200;
 
 // Codes are easy to remember: "tropical", the person's first name and a
 // four-digit number, like tropical-jane-4821. That leaves 9,000 possible codes
@@ -50,6 +56,16 @@ export function generateCode(taken = new Set(), { name = "", email = "" } = {}) 
   }
 }
 
+// A distributor's code is shared by its reps and works with any email, so it
+// is longer: eight digits, like tropical-southern-4821-7730.
+export function generateDistributorCode(taken = new Set(), name = "") {
+  const who = codeName(name, "");
+  for (;;) {
+    const code = `tropical-${who}-${randomInt(1000, 10000)}-${randomInt(1000, 10000)}`;
+    if (!taken.has(code)) return code;
+  }
+}
+
 /** Forgive capitals, spaces or underscores for hyphens, and stray punctuation. */
 export function normalizeCode(value) {
   return String(value ?? "")
@@ -62,11 +78,13 @@ export function normalizeCode(value) {
 }
 
 export function teamState(db) {
-  return db.team ?? { mode: "shared", people: [] };
+  const team = db.team ?? { mode: "shared", people: [] };
+  return { ...team, distributors: team.distributors ?? [] };
 }
 
 function ensureTeam(db) {
   db.team ??= { mode: "shared", people: [] };
+  db.team.distributors ??= [];
   return db.team;
 }
 
@@ -292,6 +310,103 @@ export function setMode(db, mode) {
   return team;
 }
 
+/* --------------------------------------------------------- distributors */
+
+function readCategories(value, errors) {
+  const picked = Array.isArray(value) ? CATEGORIES.filter((c) => value.includes(c)) : [];
+  if (!picked.length) errors.categories = "Choose at least one category its reps can order from.";
+  return picked;
+}
+
+function readDistributorName(team, value, errors, id = null) {
+  const name = cleanLine(value, 80);
+  const taken = (n) => team.distributors.some((d) => d.id !== id && d.name.toLowerCase() === n.toLowerCase());
+  if (!name) errors.name = "Enter the distributor's name.";
+  else if (taken(name)) errors.name = "There's already a distributor with that name.";
+  return name;
+}
+
+function codesInUse(team) {
+  return new Set([...team.people.map((p) => p.code), ...team.distributors.map((d) => d.code)].filter(Boolean));
+}
+
+/** A new distributor with its own code, and the categories its reps see. */
+export function addDistributor(db, input, { by, at }) {
+  const team = ensureTeam(db);
+  const src = input && typeof input === "object" ? input : {};
+  const errors = {};
+  const name = readDistributorName(team, src.name, errors);
+  const categories = readCategories(src.categories, errors);
+  if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+  if (team.distributors.length >= MAX_DISTRIBUTORS) {
+    throw new ValidationError(`The store holds at most ${MAX_DISTRIBUTORS} distributors.`, {});
+  }
+  const distributor = {
+    id: randomUUID(),
+    name,
+    code: generateDistributorCode(codesInUse(team), name),
+    categories,
+    active: true,
+    createdAt: at,
+    createdBy: by,
+    codeSetAt: at,
+  };
+  team.distributors.push(distributor);
+  return distributor;
+}
+
+function findDistributor(team, id) {
+  const distributor = team.distributors.find((d) => d.id === id);
+  if (!distributor) throw new ValidationError("That distributor could not be found.", {}, 404);
+  return distributor;
+}
+
+/**
+ * Rename, change categories, turn the code off or on, or issue a new code.
+ * Turning it off or a new code signs every one of its reps out.
+ */
+export function updateDistributor(db, id, patch, { at }) {
+  const team = ensureTeam(db);
+  const distributor = findDistributor(team, id);
+  const src = patch && typeof patch === "object" ? patch : {};
+  const errors = {};
+  const name = "name" in src ? readDistributorName(team, src.name, errors, id) : distributor.name;
+  const categories = "categories" in src ? readCategories(src.categories, errors) : distributor.categories;
+  if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+  distributor.name = name;
+  distributor.categories = categories;
+  if (typeof src.active === "boolean") distributor.active = src.active;
+  if (src.resetCode === true) {
+    distributor.code = generateDistributorCode(codesInUse(team), distributor.name);
+    distributor.codeSetAt = at;
+  }
+  return distributor;
+}
+
+/** Past orders keep the distributor's name; its reps are signed out. */
+export function removeDistributor(db, id) {
+  const team = ensureTeam(db);
+  const distributor = findDistributor(team, id);
+  team.distributors.splice(team.distributors.indexOf(distributor), 1);
+  return distributor;
+}
+
+/** The active distributor whose code this is, or null. */
+export function distributorForCode(team, code, safeEqual) {
+  const supplied = normalizeCode(code);
+  let found = null;
+  // Every code is compared, so the time taken doesn't hint at which matched.
+  for (const d of team.distributors ?? []) {
+    if (safeEqual(supplied, d.code) && d.active) found = d;
+  }
+  return found;
+}
+
+/** Where a rep's name, sign-ins and saved address are kept: per distributor. */
+export function repKey(distributorId, email) {
+  return `${distributorId}:${email}`;
+}
+
 /* ------------------------------------------------------------- sign-in */
 
 /**
@@ -312,6 +427,7 @@ export async function personForSignIn(team, email, secret, safeEqual) {
 /* ------------------------------------------------------------- tracking */
 
 function belongsTo(order, person) {
+  if (order.requester.distributorId) return false;
   return order.requester.personId === person.id || order.requester.email === person.email;
 }
 
@@ -348,5 +464,26 @@ export function teamReport(db, { now = new Date() } = {}) {
     .map(([email, m]) => ({ email, name: m.name ?? "", lastSeenAt: m.lastSignInAt ?? m.lastOrderAt ?? null }))
     .sort((a, b) => (b.lastSeenAt ?? "").localeCompare(a.lastSeenAt ?? ""));
 
-  return { mode: team.mode, people, suggestions };
+  const distributors = team.distributors.map((d) => {
+    const orders = db.orders.filter((o) => o.requester.distributorId === d.id);
+    const counted = orders.filter((o) => !RELEASED_STATUSES.includes(o.status));
+    const reps = Object.entries(db.reps ?? {}).filter(([key]) => key.startsWith(`${d.id}:`));
+    return {
+      id: d.id,
+      name: d.name,
+      code: d.code,
+      categories: d.categories,
+      active: d.active,
+      createdAt: d.createdAt,
+      codeSetAt: d.codeSetAt,
+      reps: reps.length,
+      lastSignInAt: reps.map(([, r]) => r.lastSignInAt).filter(Boolean).sort().pop() ?? null,
+      orders: counted.length,
+      units: counted.reduce((sum, o) => sum + o.totalUnits, 0),
+      valueCents: counted.reduce((sum, o) => sum + o.totalCents, 0),
+      lastOrderAt: orders.length ? orders[orders.length - 1].createdAt : null,
+    };
+  });
+
+  return { mode: team.mode, people, suggestions, distributors };
 }

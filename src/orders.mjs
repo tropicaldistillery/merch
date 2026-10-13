@@ -256,7 +256,7 @@ function accountDetails(shipTo) {
  * (the match ignores case and punctuation) and a blank field does not erase a
  * saved one.
  */
-export function upsertAccount(db, shipTo, { by, at }) {
+export function upsertAccount(db, shipTo, { by, at, distributorId = null }) {
   const picked = shipTo.accountId ? db.accounts.find((a) => a.id === shipTo.accountId) : null;
   const key = accountKey(shipTo.accountName, shipTo.postalCode);
   let account = picked || db.accounts.find((a) => accountKey(a.name, a.postalCode) === key);
@@ -285,6 +285,10 @@ export function upsertAccount(db, shipTo, { by, at }) {
       orderCount: 1,
     };
     db.accounts.push(account);
+  }
+  // A distributor's reps are offered only the accounts it has shipped to.
+  if (distributorId && !account.distributorIds?.includes(distributorId)) {
+    account.distributorIds = [...(account.distributorIds ?? []), distributorId];
   }
   return account;
 }
@@ -343,10 +347,30 @@ export function releaseStock(db, order) {
  * Validate and place an order inside a store mutation: reserves stock, numbers
  * the order, saves the account and (if asked) the requester's own address.
  */
-export function placeOrder(db, input, { requester, now = new Date(), timeZone = "America/New_York", prefix = "TD" }) {
+/** The accounts someone may pick at checkout: all of them, or a distributor's own. */
+export function accountsFor(db, distributorId) {
+  return distributorId ? db.accounts.filter((a) => a.distributorIds?.includes(distributorId)) : db.accounts;
+}
+
+/** Whether this order is one the signed-in team member or rep placed. */
+export function ownsOrder(order, user) {
+  if ((order.requester.distributorId ?? null) !== (user.distributorId ?? null)) return false;
+  return order.requester.email === user.email || Boolean(user.personId && order.requester.personId === user.personId);
+}
+
+/**
+ * `categories`, for a distributor's rep, limits the order to the categories
+ * chosen for that distributor; anything else reads as unavailable.
+ */
+export function placeOrder(
+  db,
+  input,
+  { requester, categories = null, now = new Date(), timeZone = "America/New_York", prefix = "TD" }
+) {
+  const distributorId = requester.distributorId ?? null;
   const { value, errors } = validateOrderInput(input, {
-    catalog: db.catalog,
-    accounts: db.accounts,
+    catalog: categories ? db.catalog.filter((item) => categories.includes(item.category)) : db.catalog,
+    accounts: accountsFor(db, distributorId),
     today: todayIn(timeZone, now),
   });
   if (Object.keys(errors).length) failWith(errors);
@@ -357,7 +381,7 @@ export function placeOrder(db, input, { requester, now = new Date(), timeZone = 
 
   const shipTo = { ...value.shipTo };
   if (shipTo.type === "account") {
-    shipTo.accountId = upsertAccount(db, shipTo, { by: requester.email, at }).id;
+    shipTo.accountId = upsertAccount(db, shipTo, { by: requester.email, at, distributorId }).id;
   }
 
   const order = {
@@ -370,6 +394,7 @@ export function placeOrder(db, input, { requester, now = new Date(), timeZone = 
       name: requester.name,
       email: requester.email,
       ...(requester.personId ? { personId: requester.personId } : {}),
+      ...(distributorId ? { distributorId, distributor: requester.distributor } : {}),
     },
     shipTo,
     purpose: value.purpose,
@@ -388,8 +413,12 @@ export function placeOrder(db, input, { requester, now = new Date(), timeZone = 
   reserveStock(db, order);
   db.orders.push(order);
 
-  const member = db.members[requester.email] ?? {};
-  db.members[requester.email] = {
+  // Reps are kept apart, per distributor: anyone with a distributor's code
+  // can type any email, so they never see or change a team member's details.
+  const people = distributorId ? (db.reps ??= {}) : db.members;
+  const key = distributorId ? `${distributorId}:${requester.email}` : requester.email;
+  const member = people[key] ?? {};
+  people[key] = {
     ...member,
     name: requester.name,
     lastOrderAt: at,
@@ -421,8 +450,8 @@ function findOrder(db, orderId) {
 }
 
 /** A team member cancelling their own order before anyone has acted on it. */
-export function cancelOwnOrder(db, orderId, { email, name, now = new Date() }) {
-  const order = db.orders.find((o) => o.id === orderId && o.requester.email === email);
+export function cancelOwnOrder(db, orderId, { email, name, personId = null, distributorId = null, now = new Date() }) {
+  const order = db.orders.find((o) => o.id === orderId && ownsOrder(o, { email, personId, distributorId }));
   if (!order) throw new ValidationError("That order could not be found.", {}, 404);
   if (order.status !== "submitted") {
     throw new ValidationError(
@@ -595,6 +624,7 @@ export const CSV_COLUMNS = [
   ["status", (o) => o.status],
   ["requester_name", (o) => o.requester.name],
   ["requester_email", (o) => o.requester.email],
+  ["distributor", (o) => o.requester.distributor ?? ""],
   ["ship_to", (o) => (o.shipTo.type === "account" ? "account" : "team member")],
   ["account_name", (o) => o.shipTo.accountName ?? ""],
   ["account_type", (o) => (o.shipTo.accountType ? labelFor(ACCOUNT_TYPES, o.shipTo.accountType) : "")],
@@ -648,13 +678,13 @@ export function ordersToCsv(orders) {
  */
 export function trackerToCsv(rows) {
   const header = [
-    "name", "email", "on_team_list", "orders", "units", "order_value", "last_order",
+    "name", "email", "distributor", "on_team_list", "orders", "units", "order_value", "last_order",
     "sku", "item", "color", "option", "quantity", "item_value", "orders_with_item",
   ];
   const out = [header.join(",")];
   for (const row of rows) {
     const person = [
-      row.name, row.email, row.onList ? "yes" : "no", row.orders, row.units,
+      row.name, row.email, row.distributor ?? "", row.onList ? "yes" : "no", row.orders, row.units,
       (row.valueCents / 100).toFixed(2), row.lastOrderAt ?? "",
     ];
     const items = row.items.length ? row.items : [null];

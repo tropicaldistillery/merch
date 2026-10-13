@@ -104,6 +104,15 @@ describe("order emails", () => {
   it("reads admin addresses from a comma-separated list", () => {
     assert.deepEqual(parseAddresses(" Allie@TropicalDistillery.com, nope ,ops@tropicaldistillery.com;"), ADMINS);
   });
+
+  it("names a rep's distributor to the admins", () => {
+    const { order } = placed();
+    order.requester = { ...order.requester, distributorId: "d1", distributor: "Southern Glazer's FL" };
+    const [alert, confirmation] = orderEmails("order.created", order, { adminTo: ADMINS });
+    assert.equal(alert.subject, "New merch order TD-1001 from Jane Rep (Southern Glazer's FL)");
+    assert.match(renderEmail(alert).text, /Distributor: Southern Glazer's FL/);
+    assert.doesNotMatch(renderEmail(confirmation).text, /Distributor/);
+  });
 });
 
 describe("point-of-sale and samples inboxes", () => {
