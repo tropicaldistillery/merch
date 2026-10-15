@@ -26,6 +26,7 @@ import {
   CARRIERS,
   CATEGORIES,
   COLOR_OPTIONS,
+  FORWARD_STATUSES,
   MAX_IMAGES,
   OPEN_STATUSES,
   PURPOSES,
@@ -33,10 +34,14 @@ import {
   TONES,
   TRANSITIONS,
   US_STATES,
+  activeForwards,
   byCategory,
   distributorCodeFor,
   formatMoney,
+  forwardLines,
+  forwardOf,
   generateSku,
+  inHouseLines,
   isDenied,
   itemImages,
   labelFor,
@@ -449,7 +454,7 @@ function renderOrders() {
           el("td", {}, shipToCell(order)),
           el("td", { class: "num" }, el("div", { text: String(order.totalUnits) }), el("div", { class: "cell-sub", text: formatMoney(order.totalCents) })),
           el("td", {}, neededByCell(order)),
-          el("td", {}, statusBadge(order.status), deniedTag(order))
+          el("td", {}, statusBadge(order.status), deniedTag(order), forwardedTag(order))
         )
       )
     )
@@ -898,14 +903,18 @@ function deniedTag(order) {
   return el("div", {}, el("span", { class: "tag partial", text: `${denied} not approved` }));
 }
 
-function decisionCell(line) {
-  if (!line.decision) return el("span", { class: "muted", text: "—" });
+function decisionCell(order, line) {
+  const forward = forwardOf(order, line);
+  if (!line.decision && !forward) return el("span", { class: "muted", text: "—" });
   const denied = isDenied(line);
   return el(
     "div",
     {},
-    el("span", { class: `tag ${denied ? "denied" : "approved"}`, text: denied ? "Not approved" : "Approved" }),
-    denied && line.decision.reason ? el("div", { class: "cell-sub", text: line.decision.reason }) : null
+    line.decision ? el("span", { class: `tag ${denied ? "denied" : "approved"}`, text: denied ? "Not approved" : "Approved" }) : null,
+    denied && line.decision.reason ? el("div", { class: "cell-sub", text: line.decision.reason }) : null,
+    forward
+      ? el("div", { class: "forward-tag" }, el("span", { class: `tag forward-${forward.status}`, text: "Forwarded" }), el("div", { class: "cell-sub", text: `to ${forward.to.name}` }))
+      : null
   );
 }
 
@@ -932,6 +941,7 @@ function reviewForm(order) {
 
   const rows = order.lines.map((line, i) => {
     const current = line.decision?.status ?? "approved";
+    const forward = forwardOf(order, line);
     const reasonWrap = el(
       "div",
       { class: "review-reason", hidden: current !== "denied" },
@@ -948,6 +958,8 @@ function reviewForm(order) {
           name: `decisions.${i}`,
           value: status,
           checked: current === status,
+          // Pulled back first, a forwarded item can be denied.
+          disabled: Boolean(forward) && status === "denied",
           onchange: () => {
             reasonWrap.hidden = status !== "denied";
             row.classList.toggle("is-denied", status === "denied");
@@ -962,7 +974,8 @@ function reviewForm(order) {
         "div",
         { class: "review-item" },
         el("div", { class: "cell-main", text: `${line.quantity} × ${line.name}` }),
-        el("div", { class: "cell-sub", text: [line.sku, line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") })
+        el("div", { class: "cell-sub", text: [line.sku, line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") }),
+        forward ? el("div", { class: "cell-sub", text: `Forwarded to ${forward.to.name}. Pull it back to deny it.` }) : null
       ),
       el("div", { class: "review-choices", role: "radiogroup", "aria-label": `Decision for ${line.name}` }, choice("approved", "Approve"), choice("denied", "Deny")),
       reasonWrap
@@ -1002,7 +1015,7 @@ function reviewForm(order) {
   function setAll(status) {
     order.lines.forEach((_, i) => {
       const input = form.querySelector(`input[name="decisions.${i}"][value="${status}"]`);
-      if (input && !input.checked) {
+      if (input && !input.checked && !input.disabled) {
         input.checked = true;
         input.dispatchEvent(new Event("change"));
       }
@@ -1053,6 +1066,361 @@ async function resendDecision(order) {
   }
 }
 
+/* ------------------------------------------------------------ forwarding */
+
+function forwardedTag(order) {
+  const waiting = activeForwards(order).filter((f) => f.status === "sent");
+  if (!waiting.length || order.status === "cancelled") return null;
+  const count = waiting.reduce((n, f) => n + f.lines.length, 0);
+  return el("div", {}, el("span", { class: "tag forward-sent", text: `${count} forwarded` }));
+}
+
+/** Lines that can still be forwarded: approved and not with someone already. */
+function forwardableLines(order) {
+  return order.lines.map((line, index) => ({ line, index })).filter(({ line }) => !isDenied(line) && !forwardOf(order, line));
+}
+
+function catalogVariant(line) {
+  return catalog.find((i) => i.id === line.itemId)?.variants.find((v) => v.id === line.variantId) ?? null;
+}
+
+// People to forward to in one tap: the suppliers of this order's items, then
+// whoever items were forwarded to before, newest first, then other suppliers.
+function forwardContacts(order) {
+  const found = new Map();
+  const add = (name, email) => {
+    const key = String(email || "").trim().toLowerCase();
+    if (key && !found.has(key)) found.set(key, { name: name || key, email: key });
+  };
+  for (const line of order.lines) {
+    const s = catalog.find((i) => i.id === line.itemId)?.supplier;
+    if (s?.email) add(s.company || s.contact, s.email);
+  }
+  for (const o of orders) for (const f of (o.forwards ?? []).slice().reverse()) add(f.to.name, f.to.email);
+  for (const item of catalog) if (item.supplier?.email) add(item.supplier.company || item.supplier.contact, item.supplier.email);
+  return [...found.values()].slice(0, 8);
+}
+
+async function refreshStock() {
+  ({ items: catalog } = await adminApi("/api/admin/catalog"));
+  renderCatalog();
+  renderKpis();
+}
+
+// Pick the items someone else will ship and who; they're emailed the items
+// and where they go, and replies come back to the merch inbox.
+function forwardForm(order) {
+  const form = el("form", { class: "action-form forward-form", novalidate: true });
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  const candidates = forwardableLines(order);
+  const submit = el("button", { type: "submit", class: "btn", text: "Forward items" });
+  const picked = () => [...form.querySelectorAll('input[name="lines"]:checked')].map((input) => Number(input.value));
+  const updateSubmit = () => {
+    const n = picked().length;
+    submit.textContent = n ? `Forward ${plural(n, "item")}` : "Forward items";
+  };
+
+  const nameInput = el("input", { id: "forward-name", name: "toName", type: "text", maxlength: "120", autocomplete: "off" });
+  const emailInput = el("input", { id: "forward-email", name: "toEmail", type: "email", maxlength: "160", autocomplete: "off" });
+  const contacts = forwardContacts(order);
+  const tracked = candidates.some(({ line }) => Number.isInteger(catalogVariant(line)?.stock));
+
+  form.append(
+    alertBox,
+    el("p", { class: "hint", text: "Pick the items someone else will ship straight to this order's address, such as a supplier or a rep with stock on hand. The rest stays with you." }),
+    el(
+      "fieldset",
+      { class: "field" },
+      el("legend", { text: "Items they'll ship" }),
+      el(
+        "ul",
+        { class: "forward-list" },
+        candidates.map(({ line, index }) =>
+          el(
+            "li",
+            {},
+            el(
+              "label",
+              { class: "check" },
+              el("input", { type: "checkbox", name: "lines", value: String(index), checked: candidates.length === 1, onchange: updateSubmit }),
+              el(
+                "span",
+                {},
+                el("span", { class: "cell-main", text: `${line.quantity} × ${line.name}` }),
+                el("span", { class: "cell-sub", text: [line.sku, optionText(line), line.unit].filter(Boolean).join(" · ") }),
+                supplierLine(catalog.find((i) => i.id === line.itemId))
+              )
+            )
+          )
+        )
+      )
+    ),
+    contacts.length
+      ? el(
+          "div",
+          { class: "field" },
+          el("p", { class: "kv-label", id: "forward-picks", text: "Send to" }),
+          el(
+            "div",
+            { class: "chips", role: "group", "aria-labelledby": "forward-picks" },
+            contacts.map((c) =>
+              el("button", {
+                type: "button",
+                class: "chip",
+                title: c.email,
+                text: c.name,
+                onclick: () => {
+                  nameInput.value = c.name;
+                  emailInput.value = c.email;
+                  for (const input of [nameInput, emailInput]) input.dispatchEvent(new Event("input"));
+                  $("textarea", form)?.focus();
+                },
+              })
+            )
+          )
+        )
+      : "",
+    el(
+      "div",
+      { class: "form-grid" },
+      el("div", { class: "field span-3" }, el("label", { for: "forward-name", text: "Their name or company" }), nameInput),
+      el("div", { class: "field span-3" }, el("label", { for: "forward-email", text: "Their email" }), emailInput)
+    ),
+    el(
+      "div",
+      { class: "field" },
+      el("label", { for: "forward-note" }, "Message to them", el("span", { class: "optional", text: " (optional)" })),
+      el("textarea", { id: "forward-note", name: "note", rows: "2", maxlength: "1000", placeholder: "Anything they should know, like a PO number or a ship-by date." })
+    ),
+    tracked
+      ? el(
+          "label",
+          { class: "check" },
+          el("input", { type: "checkbox", name: "restock" }),
+          el("span", { text: " Put these units back in our stock: they won't come off our shelf" })
+        )
+      : "",
+    el(
+      "label",
+      { class: "check" },
+      el("input", { type: "checkbox", name: "notify", checked: true }),
+      el("span", { text: " Email them the items and the ship-to address" })
+    ),
+    el("div", { class: "inline-actions" }, submit, el("button", { type: "button", class: "btn btn-secondary", text: "Never mind", onclick: () => form.remove() }))
+  );
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    const body = {
+      lines: picked(),
+      toName: nameInput.value,
+      toEmail: emailInput.value,
+      note: form.elements.namedItem("note").value,
+      restock: Boolean(form.elements.namedItem("restock")?.checked),
+      notify: form.elements.namedItem("notify").checked,
+    };
+    submit.disabled = true;
+    try {
+      const { order: updated, forward, emailed } = await adminApi(`/api/admin/orders/${encodeURIComponent(order.id)}/forwards`, { method: "POST", body });
+      replaceOrder(updated);
+      renderOrderDetail(updated);
+      detailTitle.focus();
+      toast(`Forwarded ${plural(forward.lines.length, "item")} to ${forward.to.name}.${emailed ? " They've been emailed." : ""}`);
+      if (forward.restocked) await refreshStock();
+    } catch (error) {
+      submit.disabled = false;
+      setAlert(alertBox, error.message);
+      showFieldErrors(form, error.fieldErrors);
+    }
+  });
+
+  updateSubmit();
+  return form;
+}
+
+// Mark a forward shipped (tracking optional), or add or fix its tracking.
+function forwardShipForm(order, forward) {
+  const shipped = forward.status === "shipped";
+  const adding = shipped && !forward.shipment?.trackingNumber;
+  const id = (name) => `fwd-${forward.id}-${name}`;
+  const form = el("form", { class: "action-form", novalidate: true });
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  const submit = el("button", { type: "submit", class: "btn", text: shipped ? (adding ? "Add tracking" : "Save tracking") : "Mark shipped" });
+  form.append(
+    alertBox,
+    el(
+      "div",
+      { class: "form-grid" },
+      el(
+        "div",
+        { class: "field span-3" },
+        el("label", { for: id("carrier"), text: "Carrier" }),
+        el("select", { id: id("carrier"), name: "carrier" }, options(CARRIERS, { placeholder: shipped ? "Choose…" : "Add later", selected: forward.shipment?.carrier }))
+      ),
+      el(
+        "div",
+        { class: "field span-3" },
+        el("label", { for: id("tracking") }, "Tracking number", shipped ? null : el("span", { class: "optional", text: " (optional)" })),
+        el("input", { id: id("tracking"), name: "trackingNumber", type: "text", maxlength: "60", value: forward.shipment?.trackingNumber ?? "" })
+      )
+    ),
+    el(
+      "label",
+      { class: "check" },
+      el("input", { type: "checkbox", name: "notify", checked: true }),
+      el("span", { text: shipped ? " Email the tracking number to the requester" : " Email the requester that these shipped" })
+    ),
+    el("div", { class: "inline-actions" }, submit, el("button", { type: "button", class: "btn btn-secondary", text: "Never mind", onclick: () => form.remove() }))
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    const trackingNumber = form.elements.namedItem("trackingNumber").value;
+    if (adding && !trackingNumber.trim()) {
+      showFieldErrors(form, { trackingNumber: "Add the tracking number." });
+      return;
+    }
+    const notifyRequester = form.elements.namedItem("notify").checked;
+    submit.disabled = true;
+    try {
+      const { order: updated, emailed } = await adminApi(
+        `/api/admin/orders/${encodeURIComponent(order.id)}/forwards/${encodeURIComponent(forward.id)}/ship`,
+        { method: "POST", body: { carrier: form.elements.namedItem("carrier").value, trackingNumber, notify: notifyRequester } }
+      );
+      replaceOrder(updated);
+      renderOrderDetail(updated);
+      detailTitle.focus();
+      const done = shipped ? "Tracking saved" : `Marked shipped by ${forward.to.name}`;
+      toast(`${done}.${emailed ? " The requester has been emailed." : ""}${updated.status === "shipped" && order.status !== "shipped" ? ` ${updated.number} is now shipped.` : ""}`);
+    } catch (error) {
+      submit.disabled = false;
+      setAlert(alertBox, error.message);
+      showFieldErrors(form, error.fieldErrors);
+    }
+  });
+  return form;
+}
+
+function pullBackForm(order, forward) {
+  const form = el("form", { class: "action-form", novalidate: true });
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  const submit = el("button", { type: "submit", class: "btn btn-danger solid", text: "Pull back" });
+  form.append(
+    alertBox,
+    el("p", { text: `Take these items back from ${forward.to.name} to ship them yourself?${forward.restocked ? " Their units come off the shelf again." : ""}` }),
+    el(
+      "label",
+      { class: "check" },
+      el("input", { type: "checkbox", name: "notify", checked: true }),
+      el("span", { text: ` Email ${forward.to.name} not to ship them` })
+    ),
+    el("div", { class: "inline-actions" }, submit, el("button", { type: "button", class: "btn btn-secondary", text: "Never mind", onclick: () => form.remove() }))
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setAlert(alertBox, "");
+    submit.disabled = true;
+    try {
+      const { order: updated, emailed } = await adminApi(
+        `/api/admin/orders/${encodeURIComponent(order.id)}/forwards/${encodeURIComponent(forward.id)}/pull-back`,
+        { method: "POST", body: { notify: form.elements.namedItem("notify").checked } }
+      );
+      replaceOrder(updated);
+      renderOrderDetail(updated);
+      detailTitle.focus();
+      toast(`Pulled back from ${forward.to.name}.${emailed ? " They've been emailed not to ship." : ""} The items are back on your list.`);
+      if (forward.restocked) await refreshStock();
+    } catch (error) {
+      submit.disabled = false;
+      setAlert(alertBox, error.message);
+    }
+  });
+  return form;
+}
+
+async function resendForward(order, forward) {
+  try {
+    await adminApi(`/api/admin/orders/${encodeURIComponent(order.id)}/forwards/${encodeURIComponent(forward.id)}/notify`, { method: "POST", body: {} });
+    toast(`Emailed ${forward.to.name} again.`);
+  } catch (error) {
+    toast(error.message, { tone: "error" });
+  }
+}
+
+function forwardCard(order, forward) {
+  const area = el("div");
+  const ship = forward.shipment;
+  const url = ship ? trackingUrl(ship.carrier, ship.trackingNumber) : null;
+  const open = (form) => {
+    clear(area, form);
+    $("select, input, textarea, button[type=submit]", area)?.focus();
+  };
+  return el(
+    "div",
+    { class: `forward-card${forward.status === "cancelled" ? " is-cancelled" : ""}` },
+    el(
+      "div",
+      { class: "forward-head" },
+      el("strong", { text: forward.to.name }),
+      el("a", { href: `mailto:${forward.to.email}?subject=${encodeURIComponent(`Merch order ${order.number}`)}`, text: forward.to.email }),
+      el("span", { class: `tag forward-${forward.status}`, text: labelFor(FORWARD_STATUSES, forward.status) })
+    ),
+    el(
+      "ul",
+      { class: "forward-items" },
+      forwardLines(order, forward).map((line) => el("li", { text: `${line.quantity} × ${line.name}${optionText(line) ? ` (${optionText(line)})` : ""}` }))
+    ),
+    el(
+      "div",
+      { class: "cell-sub" },
+      `Forwarded ${formatDateTime(forward.at)} by ${forward.by}`,
+      forward.restocked ? " · units put back in stock" : "",
+      forward.status === "cancelled" && forward.cancelledAt ? ` · pulled back ${formatDateTime(forward.cancelledAt)}` : ""
+    ),
+    forward.note ? el("div", { class: "cell-sub forward-note", text: `“${forward.note}”` }) : null,
+    forward.status === "shipped" && ship
+      ? el(
+          "div",
+          { class: "cell-sub" },
+          `Shipped ${formatDateTime(ship.shippedAt)}`,
+          ship.carrier ? ` · ${labelFor(CARRIERS, ship.carrier)}` : "",
+          ship.trackingNumber ? " · " : ship.carrier === "hand" ? "" : " · no tracking yet",
+          ship.trackingNumber ? (url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: ship.trackingNumber }) : ship.trackingNumber) : ""
+        )
+      : null,
+    forward.status === "cancelled"
+      ? null
+      : el(
+          "div",
+          { class: "action-row" },
+          forward.status === "sent"
+            ? [
+                el("button", { type: "button", class: "btn btn-sm", text: "Mark shipped", onclick: () => open(forwardShipForm(order, forward)) }),
+                el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Email them again", onclick: () => resendForward(order, forward) }),
+                el("button", { type: "button", class: "btn btn-danger btn-sm", text: "Pull back", onclick: () => open(pullBackForm(order, forward)) }),
+              ]
+            : el("button", {
+                type: "button",
+                class: ship?.trackingNumber ? "btn btn-secondary btn-sm" : "btn btn-sm",
+                text: ship?.trackingNumber ? "Edit tracking" : "Add tracking",
+                onclick: () => open(forwardShipForm(order, forward)),
+              })
+        ),
+    area
+  );
+}
+
+function forwardHistoryText(entry) {
+  const { event, to, items } = entry.forward;
+  const what = plural(items, "item");
+  if (event === "sent") return `Forwarded ${what} to ${to}`;
+  if (event === "shipped") return `${to} shipped ${what}`;
+  return `Pulled back ${what} from ${to}`;
+}
+
 function renderOrderDetail(order) {
   const s = order.shipTo;
   const url = order.shipment ? trackingUrl(order.shipment.carrier, order.shipment.trackingNumber) : null;
@@ -1098,9 +1466,22 @@ function renderOrderDetail(order) {
                   },
                 })
               : null,
-            // Approving and declining go through the item review instead.
+            order.status === "approved" && forwardableLines(order).length
+              ? el("button", {
+                  type: "button",
+                  class: "btn btn-secondary btn-sm",
+                  text: "Forward items",
+                  onclick: () => {
+                    clear(actionArea, forwardForm(order));
+                    $("input", actionArea)?.focus();
+                  },
+                })
+              : null,
+            // Approving and declining go through the item review instead,
+            // and with everything forwarded, there's nothing to mark shipped.
             next
               .filter((status) => !reviewable || (status !== "approved" && status !== "declined"))
+              .filter((status) => status !== "shipped" || inHouseLines(order).length)
               .map((status) =>
                 el("button", {
                   type: "button",
@@ -1177,7 +1558,7 @@ function renderOrderDetail(order) {
         el(
           "table",
           { class: "table items-table" },
-          el("thead", {}, el("tr", {}, ["SKU", "Item", "Decision", "Qty", "Cost"].map((h) => el("th", { class: h === "Qty" || h === "Cost" ? "num" : "", text: h })))),
+          el("thead", {}, el("tr", {}, ["SKU", "Item", "Status", "Qty", "Cost"].map((h) => el("th", { class: h === "Qty" || h === "Cost" ? "num" : "", text: h })))),
           el(
             "tbody",
             {},
@@ -1187,7 +1568,7 @@ function renderOrderDetail(order) {
                 { class: isDenied(line) ? "line-denied" : "" },
                 el("td", { text: line.sku }),
                 el("td", {}, el("div", { class: "cell-main", text: line.name }), el("div", { class: "cell-sub", text: [line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") }), supplierLine(catalog.find((i) => i.id === line.itemId))),
-                el("td", {}, decisionCell(line)),
+                el("td", {}, decisionCell(order, line)),
                 el("td", { class: "num", text: String(line.quantity) }),
                 el("td", { class: "num", text: formatMoney(line.lineTotalCents) })
               )
@@ -1204,6 +1585,16 @@ function renderOrderDetail(order) {
         )
       )
     ),
+
+    order.forwards?.length
+      ? section(
+          "Forwarded",
+          order.forwards.some((f) => f.status === "sent")
+            ? el("p", { class: "hint", text: "When they tell you it shipped, mark it shipped here and the requester gets the tracking." })
+            : null,
+          order.forwards.map((forward) => forwardCard(order, forward))
+        )
+      : null,
 
     order.shipment
       ? section(
@@ -1259,7 +1650,7 @@ function renderOrderDetail(order) {
             el(
               "li",
               {},
-              el("strong", { text: labelFor(STATUSES, entry.status) }),
+              el("strong", { text: entry.forward ? forwardHistoryText(entry) : labelFor(STATUSES, entry.status) }),
               entry.review?.denied && entry.status !== "declined" ? ` (${entry.review.approved} approved, ${entry.review.denied} not)` : "",
               ` · ${formatDateTime(entry.at)} · ${entry.by}`,
               entry.note ? el("div", { class: "cell-sub", text: entry.note }) : null

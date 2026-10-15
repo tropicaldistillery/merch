@@ -57,11 +57,15 @@ import {
   cancelOwnOrder,
   csvCell,
   decisionEvent,
+  forwardItems,
   normalizeAccountEdit,
   ordersToCsv,
   ownsOrder,
   placeOrder,
+  pullBackForward,
+  requesterView,
   reviewOrder,
+  shipForward,
   trackerToCsv,
   updateOrder,
 } from "./orders.mjs";
@@ -718,7 +722,7 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
 
     ["GET", "/api/orders", "team", async ({ res, user }) => {
       const db = await store.read();
-      sendJson(res, 200, { ok: true, orders: db.orders.filter((o) => ownsOrder(o, user)).reverse() });
+      sendJson(res, 200, { ok: true, orders: db.orders.filter((o) => ownsOrder(o, user)).reverse().map(requesterView) });
     }],
 
     ["POST", "/api/orders", "team", async ({ req, res, user }) => {
@@ -728,7 +732,7 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
         placeOrder(db, body, { requester: user, categories, now: clock(), timeZone, prefix: orderPrefix })
       );
       notify("order.created", order);
-      sendJson(res, 201, { ok: true, order });
+      sendJson(res, 201, { ok: true, order: requesterView(order) });
     }],
 
     ["POST", /^\/api\/orders\/([\w-]+)\/cancel$/, "team", async ({ res, user, params }) => {
@@ -742,7 +746,7 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
         })
       );
       notify("order.cancelled", order, { byRequester: true });
-      sendJson(res, 200, { ok: true, order });
+      sendJson(res, 200, { ok: true, order: requesterView(order) });
     }],
 
     // Requests for out-of-stock items
@@ -802,10 +806,11 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
     // One status change or internal note for many orders at once.
     ["POST", "/api/admin/orders/bulk", "admin", async ({ req, res, admin }) => {
       const body = await readJson(req);
-      const { updated, skipped } = await store.mutate((db) =>
+      const { updated, skipped, cancelledForwards = [] } = await store.mutate((db) =>
         bulkUpdateOrders(db, body, { actor: admin.name, now: clock() })
       );
       if (body.action !== "note") for (const order of updated) notify(`order.${order.status}`, order);
+      for (const { order, forward } of cancelledForwards) notify("forward.cancelled", order, { forward });
       sendJson(res, 200, { ok: true, orders: updated, skipped });
     }],
 
@@ -835,12 +840,55 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
     // requester is emailed it unless `notify` is false) or the internal note.
     ["PATCH", /^\/api\/admin\/orders\/([\w-]+)$/, "admin", async ({ req, res, admin, params }) => {
       const body = await readJson(req);
-      const { order, statusChanged, trackingAdded } = await store.mutate((db) =>
+      const { order, statusChanged, trackingAdded, cancelledForwards } = await store.mutate((db) =>
         updateOrder(db, params[0], body, { actor: admin.name, now: clock() })
       );
       if (statusChanged) notify(`order.${order.status}`, order);
       else if (trackingAdded && body.notify !== false) notify("order.tracking", order);
+      // Whoever had forwarded items is told not to ship them.
+      for (const forward of cancelledForwards) notify("forward.cancelled", order, { forward });
       sendJson(res, 200, { ok: true, order });
+    }],
+
+    // Forward some items to someone else to ship. They're emailed the items
+    // and the address unless `notify` is false.
+    ["POST", /^\/api\/admin\/orders\/([\w-]+)\/forwards$/, "admin", async ({ req, res, admin, params }) => {
+      const body = await readJson(req);
+      const { order, forward } = await store.mutate((db) => forwardItems(db, params[0], body, { actor: admin.name, now: clock() }));
+      const emailed = body.notify !== false;
+      if (emailed) notify("forward.sent", order, { forward });
+      sendJson(res, 201, { ok: true, order, forward, emailed });
+    }],
+
+    // A forward shipped, or its tracking was added later: the requester is
+    // emailed unless `notify` is false.
+    ["POST", /^\/api\/admin\/orders\/([\w-]+)\/forwards\/([\w-]+)\/ship$/, "admin", async ({ req, res, admin, params }) => {
+      const body = await readJson(req);
+      const { order, forward, event } = await store.mutate((db) =>
+        shipForward(db, params[0], params[1], body, { actor: admin.name, now: clock() })
+      );
+      if (event && body.notify !== false) notify(event, order, { forward });
+      sendJson(res, 200, { ok: true, order, forward, emailed: Boolean(event) && body.notify !== false });
+    }],
+
+    // Take a forward back to ship in-house; whoever had it is told not to
+    // ship it unless `notify` is false.
+    ["POST", /^\/api\/admin\/orders\/([\w-]+)\/forwards\/([\w-]+)\/pull-back$/, "admin", async ({ req, res, admin, params }) => {
+      const body = await readJson(req);
+      const { order, forward } = await store.mutate((db) => pullBackForward(db, params[0], params[1], { actor: admin.name, now: clock() }));
+      if (body.notify !== false) notify("forward.cancelled", order, { forward });
+      sendJson(res, 200, { ok: true, order, forward, emailed: body.notify !== false });
+    }],
+
+    // Email the forward to whoever has it again.
+    ["POST", /^\/api\/admin\/orders\/([\w-]+)\/forwards\/([\w-]+)\/notify$/, "admin", async ({ res, params }) => {
+      const db = await store.read();
+      const order = find(db.orders, params[0], "order");
+      const forward = (order.forwards ?? []).find((f) => f.id === params[1]);
+      if (!forward) throw new ValidationError("That forward could not be found.", {}, 404);
+      if (forward.status !== "sent") throw new ValidationError("Only a forward that hasn't shipped can be sent again.", {}, 409);
+      notify("forward.sent", order, { forward, resend: String(clock().getTime()) });
+      sendJson(res, 200, { ok: true, order, forward });
     }],
 
     // Approve or deny each item. The requester is emailed the outcome unless

@@ -7,6 +7,7 @@ import {
   PURPOSES,
   STATUSES,
   formatMoney,
+  forwardLines,
   isDenied,
   labelFor,
   trackingUrl,
@@ -19,8 +20,23 @@ function shipToLine(order) {
     : `Ship to: ${order.requester.name} (team member) · ${where}`;
 }
 
-export function orderMessage(event, order, { baseUrl = "" } = {}) {
+export function orderMessage(event, order, { baseUrl = "", forward = null } = {}) {
   const link = baseUrl ? `${baseUrl.replace(/\/$/, "")}/admin?order=${encodeURIComponent(order.id)}` : "";
+
+  if (forward && event.startsWith("forward.")) {
+    const count = forwardLines(order, forward).length;
+    const items = `${count} item${count === 1 ? "" : "s"}`;
+    const ship = forward.shipment ?? {};
+    const via = `${ship.carrier ? ` via ${labelFor(CARRIERS, ship.carrier)}` : ""}${ship.trackingNumber ? ` ${ship.trackingNumber}` : ""}`;
+    const text = {
+      "forward.sent": `Merch order ${order.number} for ${order.requester.name}: ${items} forwarded to ${forward.to.name} to ship`,
+      "forward.shipped": `${forward.to.name} shipped ${items} of merch order ${order.number} for ${order.requester.name}${via}`,
+      "forward.tracking": `Tracking added to ${forward.to.name}'s shipment of merch order ${order.number}:${via}`,
+      "forward.cancelled": `Merch order ${order.number}: ${items} pulled back from ${forward.to.name}`,
+    }[event];
+    const url = trackingUrl(ship.carrier, ship.trackingNumber);
+    return [text, url ? `Track it: ${url}` : "", link ? `Open it: ${link}` : ""].filter(Boolean).join("\n");
+  }
 
   if (event === "order.created") {
     return [
@@ -74,8 +90,8 @@ export function orderMessage(event, order, { baseUrl = "" } = {}) {
 export function createNotifier(url, { baseUrl = "", log = console } = {}) {
   if (!url) return () => {};
 
-  return function notify(event, order) {
-    const body = JSON.stringify({ event, text: orderMessage(event, order, { baseUrl }), order });
+  return function notify(event, order, { forward = null } = {}) {
+    const body = JSON.stringify({ event, text: orderMessage(event, order, { baseUrl, forward }), order, ...(forward ? { forward } : {}) });
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

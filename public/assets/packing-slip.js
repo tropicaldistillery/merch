@@ -1,12 +1,12 @@
 import { addressLines, api, clear, el, formatCalendarDate, formatDate } from "./core.js";
-import { ACCOUNT_TYPES, PURPOSES, labelFor, optionText, shippingLines } from "./shared.js";
+import { ACCOUNT_TYPES, PURPOSES, activeForwards, forwardLines, inHouseLines, labelFor, optionText } from "./shared.js";
 
 const slip = document.getElementById("slip");
 
 document.getElementById("print").addEventListener("click", () => window.print());
 
 function block(label, ...lines) {
-  return el("div", {}, el("p", { class: "kv-label", text: label }), el("div", { class: "address" }, lines.filter(Boolean).map((l) => el("div", { text: l }))));
+  return el("div", { class: "slip-block" }, el("p", { class: "kv-label", text: label }), el("div", { class: "address" }, lines.filter(Boolean).map((l) => el("div", { text: l }))));
 }
 
 // One order (?id=) or several picked in the console (?ids=a,b,c), one per page.
@@ -56,8 +56,8 @@ function slipContent(order) {
       el(
         "tbody",
         {},
-        // Only what was approved goes in the box.
-        shippingLines(order).map((line) =>
+        // Only what was approved, and not forwarded to someone else, goes in the box.
+        inHouseLines(order).map((line) =>
           el(
             "tr",
             {},
@@ -68,6 +68,12 @@ function slipContent(order) {
             el("td", { text: String(line.quantity) })
           )
         )
+      )
+    ),
+    ...activeForwards(order).map((forward) =>
+      block(
+        `Not in this box: shipping from ${forward.to.name}`,
+        ...forwardLines(order, forward).map((line) => `${line.quantity} × ${line.name}${optionText(line) ? ` (${optionText(line)})` : ""}`)
       )
     ),
     s.deliveryNotes ? block("Delivery notes", s.deliveryNotes) : null,

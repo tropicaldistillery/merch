@@ -39,7 +39,8 @@ async function start(dir, overrides = {}, { mailer = null } = {}) {
   const handler = await createApp({
     store,
     mailer,
-    notify: (event, order) => notifications.push({ event, number: order.number }),
+    notify: (event, order, context) =>
+      notifications.push({ event, number: order.number, ...(context?.forward ? { to: context.forward.to.email } : {}) }),
     config: {
       teamAccessCode: TEAM_CODE,
       adminPassword: ADMIN_PASSWORD,
@@ -329,6 +330,81 @@ describe("merch store over HTTP", () => {
 
     assert.equal((await review({ decisions: [{ status: "approved" }, { status: "approved" }] })).status, 409, "too late once shipped");
     assert.equal((await admin(`/api/admin/orders/${id}/notify`, { method: "POST", body: {} })).status, 409);
+  });
+
+  it("forwards items to someone else to ship, and keeps admin-only details from the requester", async () => {
+    const jane = await signedInTeam(app);
+    const body = { ...ACCOUNT_ORDER, lines: [ACCOUNT_ORDER.lines[0], { itemId: "jfh-logo-tee", variantId: "m", quantity: 2 }] };
+    const placed = await jane("/api/orders", { method: "POST", body });
+    assert.equal(placed.status, 201, JSON.stringify(placed.data));
+    assert.equal("adminNote" in placed.data.order, false);
+    const { id, number } = placed.data.order;
+    const admin = await signedInAdmin(app);
+    const TEN10 = { toName: "Ten 10 Design", toEmail: "orders@ten10.com" };
+    const forwardTo = (b) => admin(`/api/admin/orders/${id}/forwards`, { method: "POST", body: b });
+
+    assert.equal((await forwardTo({ ...TEN10, lines: [1] })).status, 409, "approved first");
+    await admin(`/api/admin/orders/${id}/review`, { method: "POST", body: { decisions: [{ status: "approved" }, { status: "approved" }], notify: false } });
+    assert.equal((await jane(`/api/admin/orders/${id}/forwards`, { method: "POST", body: { ...TEN10, lines: [1] } })).status, 401);
+    assert.ok((await forwardTo({ ...TEN10, toEmail: "ten10", lines: [1] })).data.fieldErrors.toEmail);
+
+    const sent = await forwardTo({ ...TEN10, lines: [1], note: "PO 4471" });
+    assert.equal(sent.status, 201, JSON.stringify(sent.data));
+    assert.equal(sent.data.emailed, true);
+    const fid = sent.data.forward.id;
+    assert.deepEqual(app.notifications.at(-1), { event: "forward.sent", number, to: "orders@ten10.com" });
+    const again = await admin(`/api/admin/orders/${id}/forwards/${fid}/notify`, { method: "POST", body: {} });
+    assert.equal(again.status, 200);
+    assert.equal(app.notifications.filter((n) => n.event === "forward.sent").length, 2);
+    await admin(`/api/admin/orders/${id}`, { method: "PATCH", body: { adminNote: "Bill to the Q4 events budget" } });
+
+    // The requester sees the tees ship separately, and nothing meant for admins.
+    const mine = (await jane("/api/orders")).data.orders.find((o) => o.id === id);
+    assert.deepEqual(mine.forwards, [{ id: fid, name: "Ten 10 Design", lines: [1], status: "sent", shipment: null }]);
+    assert.doesNotMatch(JSON.stringify(mine), /adminNote|Q4 events|orders@ten10|PO 4471/);
+    const full = (await admin(`/api/admin/orders/${id}`)).data.order;
+    assert.equal(full.adminNote, "Bill to the Q4 events budget");
+    assert.equal(full.forwards[0].to.email, "orders@ten10.com");
+
+    // Shipped with tracking to come, then the tracking.
+    const ship = (b) => admin(`/api/admin/orders/${id}/forwards/${fid}/ship`, { method: "POST", body: b });
+    const shipped = await ship({ carrier: "fedex" });
+    assert.equal(shipped.status, 200, JSON.stringify(shipped.data));
+    assert.equal(shipped.data.order.status, "approved", "the sign is still the merch team's to ship");
+    assert.deepEqual(app.notifications.at(-1), { event: "forward.shipped", number, to: "orders@ten10.com" });
+    await ship({ carrier: "fedex", trackingNumber: "7777", notify: false });
+    assert.equal(app.notifications.at(-1).event, "forward.shipped", "not emailed when asked not to");
+    await ship({ carrier: "fedex", trackingNumber: "7778" });
+    assert.equal(app.notifications.at(-1).event, "forward.tracking");
+    assert.equal((await admin(`/api/admin/orders/${id}/forwards/${fid}/pull-back`, { method: "POST", body: {} })).status, 409);
+    assert.equal((await admin(`/api/admin/orders/${id}/forwards/${fid}/notify`, { method: "POST", body: {} })).status, 409);
+    assert.equal((await admin(`/api/admin/orders/${id}/forwards/nope/ship`, { method: "POST", body: {} })).status, 404);
+
+    // Forwarded to a rep, then pulled back: the rep is told not to ship.
+    const second = await forwardTo({ toName: "Jo Rep", toEmail: "jo@tropicaldistillery.com", lines: [0], notify: false });
+    assert.equal(second.data.emailed, false);
+    assert.equal(app.notifications.at(-1).event, "forward.tracking");
+    const back = await admin(`/api/admin/orders/${id}/forwards/${second.data.forward.id}/pull-back`, { method: "POST", body: {} });
+    assert.equal(back.status, 200, JSON.stringify(back.data));
+    assert.deepEqual(app.notifications.at(-1), { event: "forward.cancelled", number, to: "jo@tropicaldistillery.com" });
+
+    const csv = (await admin(`/api/admin/orders.csv?ids=${id}`)).data.trim().split("\r\n");
+    assert.match(csv[2], /,Ten 10 Design,FedEx,7778,/);
+    assert.match(csv[1], /,Approved,,,,,/);
+
+    // The sign ships from the merch team, which ships the order.
+    const done = await admin(`/api/admin/orders/${id}`, { method: "PATCH", body: { status: "shipped", carrier: "ups" } });
+    assert.equal(done.data.order.status, "shipped");
+
+    // Cancelling an order tells whoever still has its items not to ship them.
+    const other = (await jane("/api/orders", { method: "POST", body })).data.order;
+    await admin(`/api/admin/orders/${other.id}/review`, { method: "POST", body: { decisions: [{ status: "approved" }, { status: "approved" }], notify: false } });
+    await admin(`/api/admin/orders/${other.id}/forwards`, { method: "POST", body: { ...TEN10, lines: [1] } });
+    await admin(`/api/admin/orders/${other.id}`, { method: "PATCH", body: { status: "cancelled", note: "Event moved" } });
+    assert.deepEqual(app.notifications.slice(-2), [
+      { event: "order.cancelled", number: other.number },
+      { event: "forward.cancelled", number: other.number, to: "orders@ten10.com" },
+    ]);
   });
 
   it("edits the catalog and the account directory", async () => {

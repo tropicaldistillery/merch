@@ -214,6 +214,39 @@ export function shippingTotals(order) {
   };
 }
 
+// Some lines can be forwarded to someone else (a supplier, a rep with stock)
+// to ship straight to the order's address. Each forward goes to one person
+// and ships on its own; the merch team packs whatever is left.
+export const FORWARD_STATUSES = [
+  { id: "sent", label: "Waiting to ship" },
+  { id: "shipped", label: "Shipped" },
+  { id: "cancelled", label: "Pulled back" },
+];
+
+/** Forwards still in play: waiting to ship, or shipped. */
+export function activeForwards(order) {
+  return (order.forwards ?? []).filter((f) => f.status !== "cancelled");
+}
+
+/**
+ * The forward a line (one of order.lines) was handed to, or null. One that
+ * was pulled back, or whose order was cancelled, no longer counts.
+ */
+export function forwardOf(order, line) {
+  const index = order.lines.indexOf(line);
+  return activeForwards(order).find((f) => f.lines.includes(index)) ?? null;
+}
+
+/** The lines handed to this forward (each forward keeps their indexes). */
+export function forwardLines(order, forward) {
+  return forward.lines.map((i) => order.lines[i]).filter(Boolean);
+}
+
+/** The approved lines the merch team packs and ships itself: none denied or forwarded. */
+export function inHouseLines(order) {
+  return shippingLines(order).filter((line) => !forwardOf(order, line));
+}
+
 /** How many lines were approved and denied, once the order has been reviewed. */
 export function reviewCounts(order) {
   const decided = order.lines.filter((l) => l.decision);

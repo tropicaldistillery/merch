@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { createEmailer, escapeHtml, inviteEmail, orderEmails, parseAddresses, renderEmail } from "../src/email.mjs";
-import { placeOrder, reviewOrder, updateOrder } from "../src/orders.mjs";
+import { forwardItems, placeOrder, pullBackForward, reviewOrder, shipForward, updateOrder } from "../src/orders.mjs";
 import { initialState } from "../src/store/initial-state.mjs";
 
 const NOW = new Date("2026-10-06T15:00:00Z");
@@ -115,6 +115,65 @@ describe("order emails", () => {
     const text = renderEmail(orderEmails("order.declined", order)[0]).text;
     assert.match(text, /NOT APPROVED: Mats are back-ordered/);
     assert.ok(!text.includes("No reason was given"));
+  });
+
+  it("emails whoever items are forwarded to, and tells the requester when they ship", () => {
+    const { db, order } = placed({
+      rush: true,
+      lines: [{ itemId: "jfh-bar-mat", variantId: "default", quantity: 2 }, { itemId: "jfh-led-sign", quantity: 1 }],
+    });
+    reviewOrder(db, order.id, { decisions: [{ status: "approved" }, { status: "approved" }] }, by);
+    const { forward } = forwardItems(db, order.id, { toName: "Ten 10 Design", toEmail: "orders@ten10.com", lines: [1], note: "PO 4471" }, by);
+
+    const [sent, ...more] = orderEmails("forward.sent", order, { adminTo: ADMINS, baseUrl: BASE, forward });
+    assert.equal(more.length, 0);
+    assert.deepEqual(sent.to, ["orders@ten10.com"]);
+    assert.deepEqual(sent.replyTo, ADMINS, "their reply with tracking comes to the merch inbox");
+    assert.equal(sent.subject, "RUSH: Please ship 1 item for Tropical Distillery merch order TD-1001");
+    const text = renderEmail(sent).text;
+    assert.match(text, /1 × J\.F\. Haden's LED Back-bar Sign.*SKU /);
+    assert.doesNotMatch(text, /Bar Mat|\$/, "only their items, and no prices");
+    assert.match(text, /Message from Allie: PO 4471/);
+    assert.match(text, /Ship to: The Rusty Pelican.*Attn: Marco.*Key Biscayne, FL 33149/);
+    assert.match(text, /Shipping: Rush: Launch party Friday/);
+    assert.match(text, /reply to this email with the carrier and tracking number/);
+    assert.doesNotMatch(text, /jane@/);
+    assert.doesNotMatch(renderEmail(sent).html, /Nothing is ever charged to you/);
+    assert.match(renderEmail(sent).html, /on behalf of the merch team/);
+
+    // The merch team ships the mats; the requester hears the sign comes separately.
+    updateOrder(db, order.id, { status: "shipped", carrier: "ups", trackingNumber: "1ZMAT" }, by);
+    const shipped = renderEmail(orderEmails("order.shipped", order, { adminTo: ADMINS })[0]).text;
+    assert.match(shipped, /2 × J\.F\. Haden's Rubber Bar Mat/);
+    assert.doesNotMatch(shipped, /LED/);
+    assert.match(shipped, /One item ships separately from Ten 10 Design\. You'll get its tracking in a separate email\./);
+
+    shipForward(db, order.id, forward.id, { carrier: "fedex" }, by);
+    const [part] = orderEmails("forward.shipped", order, { adminTo: ADMINS, forward });
+    assert.deepEqual(part.to, ["jane@tropicaldistillery.com"]);
+    assert.equal(part.subject, "Part of your merch order TD-1001 has shipped");
+    const partText = renderEmail(part).text;
+    assert.match(partText, /1 item from order TD-1001 shipped from Ten 10 Design via FedEx\./);
+    assert.match(partText, /We'll email you the tracking number/);
+    assert.match(partText, /1 × J\.F\. Haden's LED Back-bar Sign/);
+
+    shipForward(db, order.id, forward.id, { carrier: "fedex", trackingNumber: "7777" }, by);
+    const [tracking] = orderEmails("forward.tracking", order, { adminTo: ADMINS, forward });
+    assert.equal(tracking.subject, "Tracking for your merch order TD-1001");
+    assert.match(renderEmail(tracking).text, /1 item from order TD-1001 shipping from Ten 10 Design via FedEx: 7777\./);
+    assert.match(renderEmail(tracking).html, /href="https:\/\/www\.fedex\.com\/fedextrack\/\?trknbr=7777"/);
+  });
+
+  it("says the whole order shipped when one forward has all of it", () => {
+    const { db, order } = placed();
+    reviewOrder(db, order.id, { decisions: [{ status: "approved" }] }, by);
+    const { forward } = forwardItems(db, order.id, { toName: "Jo Rep", toEmail: "jo@tropicaldistillery.com", lines: [0] }, by);
+    shipForward(db, order.id, forward.id, { carrier: "hand" }, by);
+    const [email] = orderEmails("forward.shipped", order, { forward });
+    assert.equal(email.subject, "Your merch order TD-1001 has shipped");
+    const text = renderEmail(email).text;
+    assert.match(text, /Order TD-1001 is on the way: Jo Rep is hand-delivering it\./);
+    assert.doesNotMatch(text, /tracking number|ships separately/);
   });
 
   it("emails the admins, not the requester, when requesters cancel their own order", () => {
@@ -330,6 +389,26 @@ describe("sending through Resend", () => {
     await notify("order.created", placed().order);
     assert.equal(sent.length, 2);
     assert.match(sent[1], /^\[email\] sent "We got your merch order TD-1001" to 1 address \(Resend id email-1\)$/);
+  });
+
+  it("keys forward emails by forward, and tells them when it's called off", async () => {
+    const { calls, fetchImpl } = fakeResend([]);
+    const notify = createEmailer({ apiKey: "re_test", from: "merch@tropicaldistillery.com", adminTo: ADMINS, fetchImpl, sleep: noWait, log: quiet });
+    const { db, order } = placed();
+    reviewOrder(db, order.id, { decisions: [{ status: "approved" }] }, by);
+    const { forward } = forwardItems(db, order.id, { toName: "Ten 10 Design", toEmail: "orders@ten10.com", lines: [0] }, by);
+    await notify("forward.sent", order, { forward });
+    await notify("forward.sent", order, { forward, resend: "1" });
+    pullBackForward(db, order.id, forward.id, by);
+    await notify("forward.cancelled", order, { forward });
+    assert.deepEqual(calls.map((c) => c.init.headers["Idempotency-Key"]), [
+      `${order.id}:forward.sent:${forward.id}:fulfiller`,
+      `${order.id}:forward.sent:${forward.id}:fulfiller:1`,
+      `${order.id}:forward.cancelled:${forward.id}:fulfiller`,
+    ]);
+    assert.deepEqual(calls[2].body.to, ["orders@ten10.com"]);
+    assert.equal(calls[2].body.subject, "Cancelled: please don't ship merch order TD-1001");
+    assert.match(calls[2].body.text, /Please don't ship this item from order TD-1001/);
   });
 
   it("retries when Resend is busy, and logs what it can't send", async () => {

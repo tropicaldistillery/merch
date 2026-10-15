@@ -13,7 +13,20 @@ import {
   toast,
   wireHeader,
 } from "./core.js";
-import { ACCOUNT_TYPES, CARRIERS, PURPOSES, formatMoney, isDenied, labelFor, optionText, orderRule, reviewCounts, trackingUrl } from "./shared.js";
+import {
+  ACCOUNT_TYPES,
+  CARRIERS,
+  PURPOSES,
+  forwardOf,
+  formatMoney,
+  inHouseLines,
+  isDenied,
+  labelFor,
+  optionText,
+  orderRule,
+  reviewCounts,
+  trackingUrl,
+} from "./shared.js";
 
 const STEPS = [
   ["submitted", "Submitted"],
@@ -111,29 +124,56 @@ function detailsBlock(order) {
   );
 }
 
+function trackingLink(shipment) {
+  const url = trackingUrl(shipment.carrier, shipment.trackingNumber);
+  if (!shipment.trackingNumber) return null;
+  return url
+    ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: `Track ${shipment.trackingNumber}` })
+    : el("div", { text: shipment.trackingNumber });
+}
+
+function shipmentLines(shipment) {
+  return [
+    shipment.carrier ? el("div", { text: labelFor(CARRIERS, shipment.carrier) }) : null,
+    trackingLink(shipment) ??
+      (shipment.carrier !== "hand" && !shipment.deliveredAt ? el("div", { class: "cell-sub", text: "Tracking number coming soon" }) : null),
+    el("div", { class: "cell-sub", text: `Shipped ${formatDate(shipment.shippedAt)}` }),
+    shipment.deliveredAt ? el("div", { class: "cell-sub", text: `Delivered ${formatDate(shipment.deliveredAt)}` }) : null,
+  ];
+}
+
+// The merch team's own shipment, then each part someone else is shipping.
 function shipmentBlock(order) {
   const shipment = order.shipment;
-  const url = shipment ? trackingUrl(shipment.carrier, shipment.trackingNumber) : null;
+  const forwards = order.forwards ?? [];
+  const closed = order.status === "cancelled" || order.status === "declined";
+  const ours = shipment || !forwards.length || inHouseLines(order).length > 0;
   return el(
     "div",
     {},
-    el("p", { class: "kv-label", text: "Shipment" }),
-    shipment
-      ? el(
-          "div",
-          { class: "address" },
-          shipment.carrier ? el("div", { text: labelFor(CARRIERS, shipment.carrier) }) : null,
-          shipment.trackingNumber
-            ? url
-              ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: `Track ${shipment.trackingNumber}` })
-              : el("div", { text: shipment.trackingNumber })
-            : shipment.carrier !== "hand" && !shipment.deliveredAt
-              ? el("div", { class: "cell-sub", text: "Tracking number coming soon" })
-              : null,
-          el("div", { class: "cell-sub", text: `Shipped ${formatDate(shipment.shippedAt)}` }),
-          shipment.deliveredAt ? el("div", { class: "cell-sub", text: `Delivered ${formatDate(shipment.deliveredAt)}` }) : null
-        )
-      : el("p", { class: "muted", text: order.status === "cancelled" || order.status === "declined" ? "Won't ship" : "Not shipped yet" })
+    el("p", { class: "kv-label", text: forwards.length && !closed ? "Shipments" : "Shipment" }),
+    closed
+      ? el("p", { class: "muted", text: "Won't ship" })
+      : [
+          ours
+            ? el(
+                "div",
+                { class: "address" },
+                forwards.length ? el("div", { class: "cell-main", text: "From the merch team" }) : null,
+                shipment ? shipmentLines(shipment) : el("div", { class: forwards.length ? "cell-sub" : "muted", text: "Not shipped yet" })
+              )
+            : null,
+          forwards.map((forward) =>
+            el(
+              "div",
+              { class: "address separate-shipment" },
+              el("div", { class: "cell-main", text: `From ${forward.name}` }),
+              forward.status === "shipped" && forward.shipment
+                ? shipmentLines(forward.shipment)
+                : el("div", { class: "cell-sub", text: "Not shipped yet" })
+            )
+          ),
+        ]
   );
 }
 
@@ -191,7 +231,9 @@ function orderCard(order) {
             optionText(line) ? ` (${optionText(line)})` : "",
             isDenied(line)
               ? el("span", { class: "line-decision" }, el("span", { class: "tag denied", text: "Not approved" }), line.decision.reason ? ` ${line.decision.reason}` : "")
-              : null
+              : forwardOf(order, line)
+                ? el("span", { class: "line-decision" }, `Ships separately from ${forwardOf(order, line).name}`)
+                : null
           )
         )
       )

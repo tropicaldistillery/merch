@@ -2506,6 +2506,10 @@ dialog.confirm .dialog-actions .btn {
   text-transform: uppercase;
 }
 
+.slip > .slip-block + .slip-block {
+  margin-top: 16px;
+}
+
 .slip .box {
   width: 16px;
   height: 16px;
@@ -3837,4 +3841,107 @@ dialog.password-dialog .field {
   .review-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* --------------------------------------------------- forwarded items */
+
+.tag.forward-sent {
+  background: var(--sky-surface);
+  color: var(--deep);
+}
+
+.tag.forward-shipped {
+  background: var(--blush);
+  color: #a8296a;
+}
+
+.tag.forward-cancelled {
+  background: #edeeec;
+  color: #5c6461;
+}
+
+.forward-tag {
+  margin-top: 4px;
+}
+
+.forward-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.forward-list li {
+  padding: 10px 14px;
+}
+
+.forward-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.forward-list .check > span > span {
+  display: block;
+}
+
+.forward-form fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.forward-form legend {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.forward-card {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.forward-card + .forward-card {
+  margin-top: 10px;
+}
+
+.forward-card > * + * {
+  margin-top: 8px;
+}
+
+.forward-card.is-cancelled {
+  background: var(--surface-alt);
+  color: var(--ink-3);
+}
+
+.forward-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.forward-head .tag {
+  margin-left: auto;
+}
+
+.forward-head a {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.forward-items {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+.forward-note {
+  white-space: pre-line;
+}
+
+.separate-shipment {
+  margin-top: 10px;
 }

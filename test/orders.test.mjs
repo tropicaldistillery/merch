@@ -3,16 +3,22 @@ import { describe, it } from "node:test";
 
 import { initialState } from "../src/store/initial-state.mjs";
 import {
+  bulkUpdateOrders,
   cancelOwnOrder,
   csvCell,
   decisionEvent,
+  forwardItems,
   normalizeAccountEdit,
   ordersToCsv,
   placeOrder,
+  pullBackForward,
+  requesterView,
   reviewOrder,
+  shipForward,
   updateOrder,
   validateOrderInput,
 } from "../src/orders.mjs";
+import { inHouseLines } from "../public/assets/shared.js";
 import { ValidationError } from "../src/validation.mjs";
 
 // 02:00 UTC on 6 Oct is still 5 Oct in New York.
@@ -561,5 +567,160 @@ describe("approving and denying item by item", () => {
     updateOrder(db, id, { status: "shipped", carrier: "hand" }, by);
     assert.throws(() => reviewOrder(db, id, { decisions: [yes, yes] }, by), (e) => e.status === 409);
     assert.equal(decisionEvent(db.orders[0]), null);
+  });
+});
+
+describe("forwarding items to someone else to ship", () => {
+  const by = { actor: "Allie", now: NOW };
+  const TEN10 = { toName: "Ten 10 Design", toEmail: " Orders@Ten10Design.com " };
+  function setup({ approve = true } = {}) {
+    const db = initialState();
+    const placed = place(db, order({
+      shipTo: PELICAN,
+      purpose: "event",
+      lines: [
+        { itemId: "jfh-logo-tee", variantId: "m", quantity: 2 },
+        { itemId: "jfh-led-sign", quantity: 1 },
+        { itemId: "jfh-logo-tee", variantId: "l", quantity: 1 },
+      ],
+    }));
+    if (approve) reviewOrder(db, placed.id, { decisions: [{ status: "approved" }, { status: "approved" }, { status: "approved" }] }, by);
+    return { db, id: placed.id, tees: stock(db, "jfh-logo-tee", "m"), large: stock(db, "jfh-logo-tee", "l"), signs: stock(db, "jfh-led-sign") };
+  }
+
+  it("hands the picked items to someone, leaving the rest to pack", () => {
+    const { db, id, tees, signs } = setup();
+    const { order: o, forward } = forwardItems(db, id, { ...TEN10, lines: [1, 0], note: "PO 4471" }, by);
+    assert.deepEqual(forward.to, { name: "Ten 10 Design", email: "orders@ten10design.com" });
+    assert.deepEqual(forward.lines, [0, 1]);
+    assert.deepEqual([forward.status, forward.note, forward.by, forward.restocked], ["sent", "PO 4471", "Allie", false]);
+    assert.equal(o.status, "approved");
+    assert.deepEqual(inHouseLines(o).map((l) => l.variantId), ["l"]);
+    assert.deepEqual(o.history.at(-1).forward, { id: forward.id, event: "sent", to: "Ten 10 Design", items: 2 });
+    // Without restocking, the units stay set aside.
+    assert.equal(stock(db, "jfh-logo-tee", "m"), tees);
+    assert.equal(stock(db, "jfh-led-sign"), signs);
+
+    const rows = ordersToCsv(db.orders).trim().split("\r\n");
+    assert.match(rows[0], /,item_note,fulfilled_by,carrier,tracking_number,/);
+    assert.match(rows[1], /,Ten 10 Design,,,/);
+    assert.match(rows[3], /,Approved,,,,,/);
+
+    // The requester sees who ships what, but not their email, the message or the admin note.
+    o.adminNote = "Charge to the Q4 events budget";
+    const seen = requesterView(o);
+    assert.equal("adminNote" in seen, false);
+    assert.deepEqual(seen.forwards, [{ id: forward.id, name: "Ten 10 Design", lines: [0, 1], status: "sent", shipment: null }]);
+    assert.ok(seen.history.every((h) => !h.forward));
+    assert.doesNotMatch(JSON.stringify(seen), /ten10design|PO 4471|Q4 events/);
+    assert.ok(o.adminNote, "the order itself keeps its note");
+  });
+
+  it("checks what can be forwarded and to whom", () => {
+    const fresh = setup({ approve: false });
+    assert.throws(() => forwardItems(fresh.db, fresh.id, { ...TEN10, lines: [0] }, by), (e) => e.status === 409 && /Approve the order/.test(e.message));
+
+    const { db, id } = setup();
+    assert.ok(fieldErrors(() => forwardItems(db, id, { ...TEN10, lines: [] }, by)).lines);
+    assert.ok(fieldErrors(() => forwardItems(db, id, { ...TEN10, lines: [7] }, by)).lines);
+    const errors = fieldErrors(() => forwardItems(db, id, { toName: " ", toEmail: "ten10", lines: [0] }, by));
+    assert.ok(errors.toName && errors.toEmail);
+
+    forwardItems(db, id, { ...TEN10, lines: [0] }, by);
+    assert.ok(fieldErrors(() => forwardItems(db, id, { toName: "Jo", toEmail: "jo@x.com", lines: [0] }, by)).lines, "already forwarded");
+    // A forwarded item can't be denied until it's pulled back.
+    const review = fieldErrors(() => reviewOrder(db, id, { decisions: [{ status: "denied", reason: "x" }, { status: "approved" }, { status: "approved" }] }, by));
+    assert.match(review["decisions.0"], /Pull it back/);
+    // Denied items can't be forwarded.
+    reviewOrder(db, id, { decisions: [{ status: "approved" }, { status: "denied", reason: "No" }, { status: "approved" }] }, by);
+    assert.ok(fieldErrors(() => forwardItems(db, id, { ...TEN10, lines: [1] }, by)).lines);
+  });
+
+  it("can put the units back on the shelf, and takes them again when pulled back", () => {
+    const { db, id, tees, signs } = setup();
+    const { forward } = forwardItems(db, id, { ...TEN10, lines: [0, 1], restock: true }, by);
+    assert.equal(stock(db, "jfh-logo-tee", "m"), tees + 2);
+    assert.equal(stock(db, "jfh-led-sign"), signs + 1);
+
+    // Units that have gone since can't come back.
+    db.catalog.find((i) => i.id === "jfh-led-sign").variants[0].stock = 0;
+    assert.throws(() => pullBackForward(db, id, forward.id, by), (e) => e.status === 409 && /Only 0 .*LED/i.test(e.message));
+    db.catalog.find((i) => i.id === "jfh-led-sign").variants[0].stock = signs + 1;
+
+    const { order: o } = pullBackForward(db, id, forward.id, by);
+    assert.equal(forward.status, "cancelled");
+    assert.equal(inHouseLines(o).length, 3, "the items are the merch team's to ship again");
+    assert.equal(stock(db, "jfh-logo-tee", "m"), tees);
+    assert.equal(stock(db, "jfh-led-sign"), signs);
+    assert.equal(o.history.at(-1).forward.event, "cancelled");
+    assert.throws(() => pullBackForward(db, id, forward.id, by), (e) => e.status === 409);
+    // They can be forwarded again.
+    assert.equal(forwardItems(db, id, { ...TEN10, lines: [0] }, by).forward.lines[0], 0);
+  });
+
+  it("ships a forward now and takes its tracking later", () => {
+    const { db, id } = setup();
+    const { forward } = forwardItems(db, id, { ...TEN10, lines: [0] }, by);
+    const first = shipForward(db, id, forward.id, { carrier: "ups" }, by);
+    assert.equal(first.event, "forward.shipped");
+    assert.deepEqual([forward.status, forward.shipment.carrier, forward.shipment.trackingNumber], ["shipped", "ups", ""]);
+    assert.equal(first.order.status, "approved", "the rest still has to ship");
+    assert.equal(shipForward(db, id, forward.id, { carrier: "ups", trackingNumber: "1Z 999" }, by).event, "forward.tracking");
+    assert.equal(forward.shipment.trackingNumber, "1Z999");
+    assert.equal(forward.shipment.shippedAt, first.forward.shipment.shippedAt);
+    assert.equal(shipForward(db, id, forward.id, { carrier: "ups", trackingNumber: "1Z999" }, by).event, null, "same number, nothing new");
+    assert.ok(fieldErrors(() => shipForward(db, id, forward.id, { trackingNumber: "123" }, by)).carrier);
+    assert.throws(() => pullBackForward(db, id, forward.id, by), (e) => e.status === 409 && /already shipped/.test(e.message));
+    const rows = ordersToCsv(db.orders).trim().split("\r\n");
+    assert.match(rows[1], /,Ten 10 Design,UPS,1Z999,/);
+  });
+
+  it("marks the order shipped once every forward has gone and nothing is left to pack", () => {
+    const { db, id } = setup();
+    const a = forwardItems(db, id, { ...TEN10, lines: [0, 1] }, by).forward;
+    const b = forwardItems(db, id, { toName: "Jo Rep", toEmail: "jo@tropicaldistillery.com", lines: [2] }, by).forward;
+    assert.equal(shipForward(db, id, a.id, {}, by).order.status, "approved");
+    const { order: o } = shipForward(db, id, b.id, { carrier: "hand" }, by);
+    assert.equal(o.status, "shipped");
+    assert.equal(o.shipment, null);
+    assert.deepEqual(o.history.slice(-2).map((h) => h.forward?.event ?? h.status), ["shipped", "shipped"]);
+    const { order: done } = updateOrder(db, id, { status: "delivered" }, by);
+    assert.deepEqual([done.status, done.shipment], ["delivered", null]);
+  });
+
+  it("ships through its forwards alone once nothing is left for the merch team", () => {
+    const { db, id } = setup();
+    const f = forwardItems(db, id, { ...TEN10, lines: [0, 1, 2] }, by).forward;
+    assert.throws(() => updateOrder(db, id, { status: "shipped", carrier: "ups" }, by), (e) => e.status === 409 && /mark each forward shipped/.test(e.message));
+    const other = place(db, order()).id;
+    const bulk = bulkUpdateOrders(db, { orderIds: [id, other], action: "shipped" }, by);
+    assert.deepEqual(bulk.updated.map((o) => o.id), [other]);
+    assert.deepEqual(bulk.skipped.map((x) => x.reason), ["Everything on it was forwarded."]);
+    pullBackForward(db, id, f.id, by);
+
+    // Denying the last item left for the merch team, after the forward shipped.
+    const g = forwardItems(db, id, { ...TEN10, lines: [0, 1] }, by).forward;
+    shipForward(db, id, g.id, {}, by);
+    const { order: o } = reviewOrder(db, id, { decisions: [{ status: "approved" }, { status: "approved" }, { status: "denied", reason: "Out of L" }] }, by);
+    assert.equal(o.status, "shipped");
+  });
+
+  it("calls off waiting forwards when the order is cancelled", () => {
+    const { db, id, tees, large, signs } = setup();
+    const kept = forwardItems(db, id, { ...TEN10, lines: [0], restock: true }, by).forward;
+    const shipped = forwardItems(db, id, { toName: "Jo Rep", toEmail: "jo@tropicaldistillery.com", lines: [1] }, by).forward;
+    shipForward(db, id, shipped.id, {}, by);
+    const { cancelledForwards } = updateOrder(db, id, { status: "cancelled", note: "Event moved" }, by);
+    assert.deepEqual(cancelledForwards.map((f) => f.id), [kept.id]);
+    assert.equal(shipped.status, "shipped", "what already went out stays shipped");
+    // The restocked tees and the shipped sign aren't put back twice; the L tee is.
+    assert.equal(stock(db, "jfh-logo-tee", "m"), tees + 2);
+    assert.equal(stock(db, "jfh-led-sign"), signs);
+    assert.equal(stock(db, "jfh-logo-tee", "l"), large + 1);
+
+    const other = setup();
+    const f = forwardItems(other.db, other.id, { ...TEN10, lines: [0] }, by).forward;
+    const bulk = bulkUpdateOrders(other.db, { orderIds: [other.id], action: "cancelled" }, by);
+    assert.deepEqual(bulk.cancelledForwards.map((c) => c.forward.id), [f.id]);
   });
 });

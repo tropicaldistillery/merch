@@ -119,7 +119,7 @@ const store = await openStore({ databaseUrl: env.DATABASE_URL, dataDir });
 const webhook = createNotifier(env.ORDER_WEBHOOK_URL, { baseUrl: env.PUBLIC_URL || "" });
 const email = createEmailer({ apiKey: env.RESEND_API_KEY, from: emailFrom, adminTo: emailTo, routes: emailRoutes, baseUrl: env.PUBLIC_URL || "" });
 function notify(event, order, context) {
-  webhook(event, order);
+  webhook(event, order, context);
   email(event, order, context);
 }
 const handler = await createApp({ store, config, notify, mailer: email });

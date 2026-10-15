@@ -13,9 +13,14 @@ import {
   STATUSES,
   TRANSITIONS,
   US_STATES,
+  activeForwards,
+  forwardLines,
+  forwardOf,
   imageFor,
+  inHouseLines,
   isDenied,
   labelFor,
+  optionText,
   quantityProblem,
 } from "../public/assets/shared.js";
 import {
@@ -336,10 +341,12 @@ function reserveStock(db, order) {
 
 // Put a cancelled or declined order's units back. An item that has since been
 // removed, or stopped being stock-tracked, is skipped, and so is a line that
-// wasn't approved: its units went back when it was denied.
+// wasn't approved (its units went back when it was denied) or one forwarded
+// with its units put back, or already shipped by whoever it was forwarded to.
 export function releaseStock(db, order) {
   for (const line of order.lines) {
-    if (isDenied(line)) continue;
+    const forward = forwardOf(order, line);
+    if (isDenied(line) || forward?.restocked || forward?.status === "shipped") continue;
     const variant = variantFor(db, line);
     if (variant && Number.isInteger(variant.stock)) variant.stock += line.quantity;
   }
@@ -360,6 +367,22 @@ export function accountsFor(db, distributorId) {
 export function ownsOrder(order, user) {
   if ((order.requester.distributorId ?? null) !== (user.distributorId ?? null)) return false;
   return order.requester.email === user.email || Boolean(user.personId && order.requester.personId === user.personId);
+}
+
+/**
+ * An order as the person who placed it sees it: no internal admin note, and
+ * for each forward only who ships it and how it's going (not their email,
+ * the message they were sent, or the forwarding steps in the history).
+ */
+export function requesterView(order) {
+  const { adminNote, forwards = [], ...rest } = order;
+  return {
+    ...rest,
+    history: order.history.filter((entry) => !entry.forward),
+    forwards: forwards
+      .filter((f) => f.status !== "cancelled")
+      .map((f) => ({ id: f.id, name: f.to.name, lines: f.lines, status: f.status, shipment: f.shipment })),
+  };
 }
 
 /**
@@ -488,6 +511,8 @@ function readShipment(patch, errors, at, previous) {
  * shipping, carrier and tracking), tracking added or corrected on an order
  * already shipped, and the internal admin note. `trackingAdded` says a
  * tracking number is new or different, so the requester can be told.
+ * Cancelling an order calls off its forwards that haven't shipped; they come
+ * back in `cancelledForwards`, so whoever had them can be told not to ship.
  */
 export function updateOrder(db, orderId, patch, { actor, now = new Date() }) {
   const order = findOrder(db, orderId);
@@ -507,6 +532,9 @@ export function updateOrder(db, orderId, patch, { actor, now = new Date() }) {
       );
     }
     if (next === "declined" && !note) errors.note = "Tell the requester why it was declined.";
+    if (next === "shipped" && allForwarded(order)) {
+      throw new ValidationError("Everything on this order was forwarded, so mark each forward shipped instead.", {}, 409);
+    }
   }
 
   let shipment = order.shipment;
@@ -521,9 +549,19 @@ export function updateOrder(db, orderId, patch, { actor, now = new Date() }) {
   const trackingAdded =
     correctingShipment && Boolean(shipment.trackingNumber) && shipment.trackingNumber !== order.shipment.trackingNumber;
 
+  const cancelledForwards = [];
   if (statusChanged) {
-    if (RELEASED_STATUSES.includes(next)) releaseStock(db, order);
-    if (next === "delivered") shipment = { ...shipment, deliveredAt: at };
+    if (RELEASED_STATUSES.includes(next)) {
+      releaseStock(db, order);
+      for (const forward of order.forwards ?? []) {
+        if (forward.status !== "sent") continue;
+        forward.status = "cancelled";
+        forward.cancelledAt = at;
+        cancelledForwards.push(forward);
+      }
+    }
+    // An order its forwards shipped all of has no shipment of its own.
+    if (next === "delivered" && shipment) shipment = { ...shipment, deliveredAt: at };
     order.status = next;
     order.history.push({ at, status: next, by: actor, note });
   }
@@ -531,7 +569,7 @@ export function updateOrder(db, orderId, patch, { actor, now = new Date() }) {
   if ("adminNote" in src) order.adminNote = cleanText(src.adminNote, 1000);
   order.updatedAt = at;
 
-  return { order, statusChanged, trackingAdded };
+  return { order, statusChanged, trackingAdded, cancelledForwards };
 }
 
 export const MAX_DECISION_REASON = 200;
@@ -565,6 +603,10 @@ export function reviewOrder(db, orderId, input, { actor, now = new Date() }) {
     const d = raw[i] && typeof raw[i] === "object" ? raw[i] : {};
     const status = cleanLine(d.status, 20);
     if (!LINE_DECISIONS.some((x) => x.id === status)) errors[`decisions.${i}`] = "Approve or deny this item.";
+    const forward = forwardOf(order, line);
+    if (status === "denied" && forward) {
+      errors[`decisions.${i}`] = `This was forwarded to ${forward.to.name}. Pull it back before denying it.`;
+    }
     if (status === "approved" && isDenied(line)) {
       const variant = variantFor(db, line);
       if (variant && Number.isInteger(variant.stock) && variant.stock < line.quantity) {
@@ -598,6 +640,8 @@ export function reviewOrder(db, orderId, input, { actor, now = new Date() }) {
   order.status = next;
   order.updatedAt = at;
   order.history.push({ at, status: next, by: actor, note, review: { approved: order.lines.length - denied, denied } });
+  // Denying what was left for the merch team can leave only forwards that already shipped.
+  shipIfAllForwardsOut(order, { at, actor });
 
   const event = denied === 0 ? "order.approved" : allDenied ? "order.declined" : "order.reviewed";
   return { order, event };
@@ -609,6 +653,169 @@ export function decisionEvent(order) {
   if (order.status === "declined") return "order.declined";
   if (order.status !== "approved") return null;
   return denied ? "order.reviewed" : "order.approved";
+}
+
+/* -------------------------------------------------------------- forwarding */
+
+/** Everything still to ship was forwarded, so the order ships through its forwards. */
+function allForwarded(order) {
+  return activeForwards(order).length > 0 && !inHouseLines(order).length;
+}
+
+// Once every forward has gone out and nothing is left for the merch team to
+// pack, the approved order is shipped.
+function shipIfAllForwardsOut(order, { at, actor }) {
+  if (order.status === "approved" && allForwarded(order) && activeForwards(order).every((f) => f.status === "shipped")) {
+    order.status = "shipped";
+    order.history.push({ at, status: "shipped", by: actor, note: "" });
+  }
+}
+
+export const MAX_FORWARD_NOTE = 1000;
+const EMAIL_RE = /^[^\s@,<>]+@[^\s@,<>]+\.[^\s@,<>]{2,}$/;
+
+function findForward(order, forwardId) {
+  const forward = (order.forwards ?? []).find((f) => f.id === forwardId);
+  if (!forward) throw new ValidationError("That forward could not be found.", {}, 404);
+  return forward;
+}
+
+function forwardEntry(forward, event, order) {
+  return { id: forward.id, event, to: forward.to.name, items: forwardLines(order, forward).length };
+}
+
+/**
+ * Hand some of an approved order's lines to someone else (a supplier, a rep
+ * with stock on hand) to ship straight to the order's address. `input` is
+ * { lines: [line index…], toName, toEmail, note, restock }; the app then
+ * emails them the items and where they go. With `restock`, the lines' units
+ * go back on the shelf, since they won't come from it; otherwise they stay
+ * set aside.
+ */
+export function forwardItems(db, orderId, input, { actor, now = new Date() }) {
+  const order = findOrder(db, orderId);
+  if (order.status !== "approved") {
+    throw new ValidationError(
+      order.status === "submitted"
+        ? "Approve the order before forwarding its items."
+        : `This order is already ${labelFor(STATUSES, order.status).toLowerCase()}, so its items can't be forwarded now.`,
+      {},
+      409
+    );
+  }
+  const src = input && typeof input === "object" ? input : {};
+  const errors = {};
+  const picked = [...new Set((Array.isArray(src.lines) ? src.lines : []).map(Number))];
+  if (!picked.length) errors.lines = "Choose the items to forward.";
+  for (const i of picked) {
+    const line = Number.isInteger(i) ? order.lines[i] : undefined;
+    if (!line || isDenied(line) || forwardOf(order, line)) {
+      errors.lines = "Some of those items can't be forwarded any more. Close the order and open it again.";
+    }
+  }
+  const name = cleanLine(src.toName, 120);
+  const email = cleanLine(src.toEmail, 160).toLowerCase();
+  if (!name) errors.toName = "Who's shipping these? Enter a name or company.";
+  if (!EMAIL_RE.test(email)) errors.toEmail = "Enter their email address, like name@company.com.";
+  if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+
+  const at = now.toISOString();
+  const forward = {
+    id: randomUUID(),
+    to: { name, email },
+    lines: picked.sort((a, b) => a - b),
+    note: cleanText(src.note, MAX_FORWARD_NOTE),
+    at,
+    by: actor,
+    status: "sent",
+    restocked: Boolean(src.restock),
+    shipment: null,
+  };
+  if (forward.restocked) {
+    for (const line of forwardLines(order, forward)) {
+      const variant = variantFor(db, line);
+      if (variant && Number.isInteger(variant.stock)) variant.stock += line.quantity;
+    }
+  }
+  (order.forwards ??= []).push(forward);
+  order.updatedAt = at;
+  order.history.push({ at, status: order.status, by: actor, note: "", forward: forwardEntry(forward, "sent", order) });
+  return { order, forward };
+}
+
+/**
+ * A forward has shipped: mark it so, with the carrier and tracking number if
+ * they're known yet, or add or correct them afterwards. Once every forward
+ * has gone out and nothing is left for the merch team to ship, the order is
+ * marked shipped too. `event` is what to tell the requester: forward.shipped,
+ * forward.tracking (a new tracking number on one already shipped) or null.
+ */
+export function shipForward(db, orderId, forwardId, input, { actor, now = new Date() }) {
+  const order = findOrder(db, orderId);
+  const forward = findForward(order, forwardId);
+  if (forward.status === "cancelled") {
+    throw new ValidationError("This forward was pulled back, so it can't be marked shipped.", {}, 409);
+  }
+  const src = input && typeof input === "object" ? input : {};
+  const errors = {};
+  const at = now.toISOString();
+  const shipment = readShipment(src, errors, at, forward.shipment);
+  if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+
+  const firstTime = forward.status === "sent";
+  const newTracking = Boolean(shipment.trackingNumber) && shipment.trackingNumber !== forward.shipment?.trackingNumber;
+  forward.status = "shipped";
+  forward.shipment = shipment;
+  order.updatedAt = at;
+  if (firstTime) {
+    order.history.push({ at, status: order.status, by: actor, note: "", forward: forwardEntry(forward, "shipped", order) });
+    shipIfAllForwardsOut(order, { at, actor });
+  }
+  return { order, forward, event: firstTime ? "forward.shipped" : newTracking ? "forward.tracking" : null };
+}
+
+/**
+ * Take back a forward that hasn't shipped, for the merch team to ship
+ * itself. Units that were put back on the shelf are set aside again, so
+ * they have to still be there.
+ */
+export function pullBackForward(db, orderId, forwardId, { actor, now = new Date() }) {
+  const order = findOrder(db, orderId);
+  const forward = findForward(order, forwardId);
+  if (forward.status !== "sent") {
+    throw new ValidationError(
+      forward.status === "shipped" ? `${forward.to.name} already shipped these.` : "This forward was already pulled back.",
+      {},
+      409
+    );
+  }
+  const needs = new Map();
+  if (forward.restocked) {
+    for (const line of forwardLines(order, forward)) {
+      const variant = variantFor(db, line);
+      if (!variant || !Number.isInteger(variant.stock)) continue;
+      const need = needs.get(variant) ?? { quantity: 0, line };
+      need.quantity += line.quantity;
+      needs.set(variant, need);
+    }
+  }
+  for (const [variant, { quantity, line }] of needs) {
+    if (variant.stock < quantity) {
+      const what = `${line.name}${optionText(line) ? ` (${optionText(line)})` : ""}`;
+      throw new ValidationError(
+        `Only ${variant.stock} ${what} left in stock, and ${quantity} would come back to the merch team. Update the stock first.`,
+        {},
+        409
+      );
+    }
+  }
+  const at = now.toISOString();
+  for (const [variant, { quantity }] of needs) variant.stock -= quantity;
+  forward.status = "cancelled";
+  forward.cancelledAt = at;
+  order.updatedAt = at;
+  order.history.push({ at, status: order.status, by: actor, note: "", forward: forwardEntry(forward, "cancelled", order) });
+  return { order, forward };
 }
 
 export const MAX_BULK_ORDERS = 200;
@@ -642,6 +849,8 @@ export function bulkUpdateOrders(db, input, { actor, now = new Date() }) {
     if (!order) skipped.push({ id, number: "", reason: "It could not be found." });
     else if (action !== "note" && !TRANSITIONS[order.status]?.includes(action)) {
       skipped.push({ id, number: order.number, reason: `It's ${labelFor(STATUSES, order.status).toLowerCase()}.` });
+    } else if (action === "shipped" && allForwarded(order)) {
+      skipped.push({ id, number: order.number, reason: "Everything on it was forwarded." });
     } else targets.push(order);
   }
 
@@ -688,21 +897,29 @@ export function bulkUpdateOrders(db, input, { actor, now = new Date() }) {
   if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
 
   // Everything has been checked, so none of these can fail part-way.
-  const updated = targets.map(
-    (order) =>
-      updateOrder(
-        db,
-        order.id,
-        action === "shipped"
-          ? { status: action, note, carrier, trackingNumber: tracking[order.id] ?? "" }
-          : { status: action, note },
-        { actor, now }
-      ).order
-  );
-  return { updated, skipped };
+  const cancelledForwards = [];
+  const updated = targets.map((order) => {
+    const result = updateOrder(
+      db,
+      order.id,
+      action === "shipped"
+        ? { status: action, note, carrier, trackingNumber: tracking[order.id] ?? "" }
+        : { status: action, note },
+      { actor, now }
+    );
+    for (const forward of result.cancelledForwards) cancelledForwards.push({ order, forward });
+    return result.order;
+  });
+  return { updated, skipped, cancelledForwards };
 }
 
 /* ------------------------------------------------------------------ export */
+
+// A forwarded line ships with its forward, everything else with the order.
+function lineShipment(order, line) {
+  const forward = forwardOf(order, line);
+  return forward ? forward.shipment : order.shipment;
+}
 
 export const CSV_COLUMNS = [
   ["order_number", (o) => o.number],
@@ -735,8 +952,9 @@ export const CSV_COLUMNS = [
   ["line_cost", (o, l) => (l.lineTotalCents / 100).toFixed(2)],
   ["item_status", (o, l) => (l.decision ? labelFor(LINE_DECISIONS, l.decision.status) : "")],
   ["item_note", (o, l) => l.decision?.reason ?? ""],
-  ["carrier", (o) => (o.shipment ? labelFor(CARRIERS, o.shipment.carrier) : "")],
-  ["tracking_number", (o) => o.shipment?.trackingNumber ?? ""],
+  ["fulfilled_by", (o, l) => forwardOf(o, l)?.to.name ?? ""],
+  ["carrier", (o, l) => labelFor(CARRIERS, lineShipment(o, l)?.carrier ?? "")],
+  ["tracking_number", (o, l) => lineShipment(o, l)?.trackingNumber ?? ""],
   ["notes", (o) => o.notes],
 ];
 

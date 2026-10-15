@@ -7,6 +7,9 @@
 //     part with each item that wasn't and why, shipped with the tracking link
 //     or a note that it's coming, delivered, declined with the reason,
 //     cancelled), and the tracking link when it's added after shipping
+//   - items forwarded to someone else to ship (a supplier, a rep): the items
+//     and where they go to that person, a note if they're called off, and an
+//     update to the requester when they ship (and when tracking is added)
 //   - a requester cancelling their own order: a note to the admins
 //   - an invite from the admin: a link to create (or reset) a password
 //   - a request for an out-of-stock item: an alert to the admins, then to the
@@ -16,7 +19,20 @@
 // Sending never holds up or undoes an order: emails go out one after another
 // in the background, and failures are logged.
 
-import { ACCOUNT_TYPES, CARRIERS, PURPOSES, formatMoney, isDenied, labelFor, optionText, shippingLines, trackingUrl } from "../public/assets/shared.js";
+import {
+  ACCOUNT_TYPES,
+  CARRIERS,
+  PURPOSES,
+  activeForwards,
+  forwardLines,
+  formatMoney,
+  inHouseLines,
+  isDenied,
+  labelFor,
+  optionText,
+  shippingLines,
+  trackingUrl,
+} from "../public/assets/shared.js";
 
 const RESEND_URL = "https://api.resend.com/emails";
 const EMAIL_RE = /^[^\s@,<>]+@[^\s@,<>]+\.[^\s@,<>]{2,}$/;
@@ -107,7 +123,8 @@ const KIND = {
 const block = {
   p: (text) => ({ kind: "p", text }),
   note: (label, text) => ({ kind: "note", label, text }),
-  items: (order) => ({ kind: "items", order }),
+  // `forFulfiller`: no prices, and each SKU, for whoever ships them
+  items: (order, { forFulfiller = false } = {}) => ({ kind: "items", order, forFulfiller }),
   details: (rows) => ({ kind: "details", rows: rows.filter(Boolean) }),
   button: (label, url) => (url ? { kind: "button", label, url } : null),
 };
@@ -119,9 +136,33 @@ function itemTotals(order) {
   return { units: lines.reduce((n, l) => n + l.quantity, 0), cents: lines.reduce((n, l) => n + l.lineTotalCents, 0), label: "Approved: " };
 }
 
-/** Just the lines that ship, for the emails sent once the order is on its way. */
+/** Just the lines that ship (none denied), for the email once it's delivered. */
 function shippedPart(order) {
   return order.lines.some(isDenied) ? partOf(order, shippingLines(order)) : order;
+}
+
+/** Just what the merch team ships itself, leaving out what was forwarded. */
+function inHousePart(order) {
+  const lines = inHouseLines(order);
+  return lines.length === order.lines.length ? order : partOf(order, lines);
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** "Ten 10 Design and Jane Smith" */
+function names(list) {
+  const unique = [...new Set(list)];
+  return unique.length <= 1 ? unique.join("") : `${unique.slice(0, -1).join(", ")} and ${unique[unique.length - 1]}`;
+}
+
+/** What the forwards of an order ship, for the requester's shipped email: "2 items ship separately from X." */
+function separately(order) {
+  const forwards = activeForwards(order);
+  if (!forwards.length) return null;
+  const count = forwards.reduce((n, f) => n + forwardLines(order, f).length, 0);
+  return block.p(
+    `${count === 1 ? "One item ships" : `${count} items ship`} separately from ${names(forwards.map((f) => f.to.name))}. You'll get ${count === 1 ? "its" : "their"} tracking in a separate email.`
+  );
 }
 
 function shipToLines(order) {
@@ -153,7 +194,7 @@ function orderDetails(order, { forAdmin }) {
  * The emails one event sends, as [{ role, to, replyTo, subject, blocks }].
  * `byRequester` marks a cancellation the requester made themselves.
  */
-export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl = "", byRequester = false } = {}) {
+export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl = "", byRequester = false, forward = null } = {}) {
   const base = baseUrl.replace(/\/$/, "");
   const adminLink = base ? `${base}/admin?order=${encodeURIComponent(order.id)}` : "";
   const mineLink = base ? `${base}/orders` : "";
@@ -243,9 +284,10 @@ export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl =
           block.p(hi),
           block.p(how),
           later ? block.p("We'll email you the tracking number as soon as we have it.") : null,
+          separately(order),
           latest.note ? block.note("Note from the merch admin", latest.note) : null,
           block.button("Track the package", url),
-          block.items(shippedPart(order)),
+          block.items(inHousePart(order)),
           block.details([["Ships to", shipToLines(order).join("\n")]]),
         ])
       );
@@ -261,10 +303,89 @@ export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl =
             `Here's the tracking for order ${order.number}${shipment.carrier ? `, shipped via ${labelFor(CARRIERS, shipment.carrier)}` : ""}: ${shipment.trackingNumber}.`
           ),
           block.button("Track the package", url),
-          block.items(shippedPart(order)),
+          block.items(inHousePart(order)),
           block.details([["Ships to", shipToLines(order).join("\n")]]),
         ])
       );
+      break;
+    }
+    case "forward.sent":
+    case "forward.cancelled": {
+      if (!forward) break;
+      const part = partOf(order, forwardLines(order, forward));
+      const these = part.lines.length === 1 ? "this item" : `these ${part.lines.length} items`;
+      // The requesters' footer (nothing is charged to you) isn't for a supplier.
+      const toFulfiller = (subject, blocks) => ({ role: "fulfiller", to: [forward.to.email], replyTo, subject, blocks, footer: FULFILLER_FOOTER });
+      if (event === "forward.sent") {
+        const rush = order.shippingSpeed === "rush";
+        emails.push(
+          toFulfiller(`${rush ? "RUSH: " : ""}Please ship ${plural(part.lines.length, "item")} for Tropical Distillery merch order ${order.number}`, [
+            block.p("Hello,"),
+            block.p(
+              `The Tropical Distillery merch team is asking you to ship ${these} from order ${order.number} straight to the address below${order.neededBy ? `, to arrive by ${calendarDate(order.neededBy)}` : ""}.`
+            ),
+            forward.note ? block.note(`Message from ${forward.by}`, forward.note) : null,
+            block.items(part, { forFulfiller: true }),
+            block.details([
+              ["Ship to", shipToLines(order).join("\n")],
+              order.shipTo.deliveryNotes ? ["Delivery notes", order.shipTo.deliveryNotes] : null,
+              ["Needed by", order.neededBy ? calendarDate(order.neededBy) : "No date given"],
+              ["Shipping", rush ? `Rush: ${order.rushReason}` : "Standard"],
+              ["Ordered by", `${requester.name}${requester.distributor ? ` (${requester.distributor})` : ""}`],
+            ]),
+            block.p("When it ships, reply to this email with the carrier and tracking number, and we'll pass them on. Reply with any questions too."),
+          ])
+        );
+      } else {
+        emails.push(
+          toFulfiller(`Cancelled: please don't ship merch order ${order.number}`, [
+            block.p("Hello,"),
+            block.p(`Please don't ship ${these} from order ${order.number}, which we asked you to send. They're no longer needed from you.`),
+            block.p("If they've already gone out, reply to let us know."),
+            block.items(part, { forFulfiller: true }),
+          ])
+        );
+      }
+      break;
+    }
+    case "forward.shipped":
+    case "forward.tracking": {
+      if (!forward) break;
+      const lines = forwardLines(order, forward);
+      const whole = lines.length === shippingLines(order).length;
+      const shipment = forward.shipment ?? {};
+      const carrier = shipment.carrier ? labelFor(CARRIERS, shipment.carrier) : "";
+      const url = trackingUrl(shipment.carrier, shipment.trackingNumber);
+      const what = whole ? `Order ${order.number}` : `${plural(lines.length, "item")} from order ${order.number}`;
+      if (event === "forward.shipped") {
+        const how =
+          shipment.carrier === "hand"
+            ? `${what} ${whole || lines.length === 1 ? "is" : "are"} on the way: ${forward.to.name} is hand-delivering ${whole || lines.length === 1 ? "it" : "them"}.`
+            : `${what} shipped from ${forward.to.name}${carrier ? ` via ${carrier}` : ""}${shipment.trackingNumber ? `, tracking number ${shipment.trackingNumber}` : ""}.`;
+        emails.push(
+          toRequester(whole ? `Your merch order ${order.number} has shipped` : `Part of your merch order ${order.number} has shipped`, [
+            block.p(hi),
+            block.p(how),
+            shipment.carrier !== "hand" && !shipment.trackingNumber ? block.p("We'll email you the tracking number as soon as we have it.") : null,
+            whole ? null : block.p("The rest of your order ships separately."),
+            block.button("Track the package", url),
+            block.items(partOf(order, lines)),
+            block.details([["Ships to", shipToLines(order).join("\n")]]),
+          ])
+        );
+      } else {
+        emails.push(
+          toRequester(`Tracking for your merch order ${order.number}`, [
+            block.p(hi),
+            block.p(
+              `Here's the tracking for ${whole ? `order ${order.number}` : `the ${plural(lines.length, "item")} from order ${order.number}`} shipping from ${forward.to.name}${carrier ? ` via ${carrier}` : ""}: ${shipment.trackingNumber}.`
+            ),
+            block.button("Track the package", url),
+            block.items(partOf(order, lines)),
+            block.details([["Ships to", shipToLines(order).join("\n")]]),
+          ])
+        );
+      }
       break;
     }
     case "order.delivered":
@@ -335,6 +456,15 @@ function htmlBlock(b) {
     case "note":
       return `<div style="margin:0 0 16px;padding:12px 14px;background:#fdedf4;border-radius:10px"><div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:${PINK}">${escapeHtml(b.label)}</div><div style="margin-top:4px;font-size:15px;line-height:1.5;white-space:pre-line">${escapeHtml(b.text)}</div></div>`;
     case "items": {
+      if (b.forFulfiller) {
+        const rows = b.order.lines
+          .map((l) => {
+            const detail = [optionText(l), l.unit, `SKU ${l.sku}`].filter(Boolean).join(" · ");
+            return `<tr><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px;vertical-align:top;width:52px"><strong>${l.quantity}×</strong></td><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px"><div style="font-weight:600">${escapeHtml(l.name)}</div><div style="color:${MUTED};font-size:13px">${escapeHtml(detail)}</div></td></tr>`;
+          })
+          .join("");
+        return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;border-collapse:collapse">${rows}</table>`;
+      }
       const rows = b.order.lines
         .map((l) => {
           const detail = [optionText(l), l.unit].filter(Boolean).join(" · ");
@@ -373,6 +503,9 @@ function textBlock(b) {
     case "note":
       return `${b.label}: ${b.text}`;
     case "items": {
+      if (b.forFulfiller) {
+        return b.order.lines.map((l) => `${l.quantity} × ${l.name}${optionText(l) ? ` (${optionText(l)})` : ""}, SKU ${l.sku}`).join("\n");
+      }
       const { units, cents, label } = itemTotals(b.order);
       return [
         ...b.order.lines.map((l) => {
@@ -392,8 +525,11 @@ function textBlock(b) {
   }
 }
 
-export function renderEmail({ subject, blocks }) {
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head><body style="margin:0;padding:0;background:#fffaf5;color:${INK};font-family:Inter,'Segoe UI',Helvetica,Arial,sans-serif"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffaf5"><tr><td align="center" style="padding:24px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid ${LINE};border-radius:16px;overflow:hidden"><tr><td style="height:5px;background:#e84890;background-image:linear-gradient(90deg,#e84890,#50b0e0)"></td></tr><tr><td style="padding:26px 28px 10px"><div style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${PINK}">Tropical Distillery team merch</div><h1 style="margin:6px 0 16px;font-size:21px;line-height:1.3;color:${INK}">${escapeHtml(subject)}</h1>${blocks.map(htmlBlock).join("")}</td></tr></table><p style="max-width:560px;margin:14px auto 0;font-size:12px;line-height:1.5;color:${MUTED}">Sent by the Tropical Distillery team merch store. Nothing is ever charged to you: costs show what each order is worth.</p></td></tr></table></body></html>`;
+const FOOTER = "Sent by the Tropical Distillery team merch store. Nothing is ever charged to you: costs show what each order is worth.";
+const FULFILLER_FOOTER = "Sent by the Tropical Distillery team merch store on behalf of the merch team. Reply to reach them.";
+
+export function renderEmail({ subject, blocks, footer = FOOTER }) {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head><body style="margin:0;padding:0;background:#fffaf5;color:${INK};font-family:Inter,'Segoe UI',Helvetica,Arial,sans-serif"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffaf5"><tr><td align="center" style="padding:24px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid ${LINE};border-radius:16px;overflow:hidden"><tr><td style="height:5px;background:#e84890;background-image:linear-gradient(90deg,#e84890,#50b0e0)"></td></tr><tr><td style="padding:26px 28px 10px"><div style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${PINK}">Tropical Distillery team merch</div><h1 style="margin:6px 0 16px;font-size:21px;line-height:1.3;color:${INK}">${escapeHtml(subject)}</h1>${blocks.map(htmlBlock).join("")}</td></tr></table><p style="max-width:560px;margin:14px auto 0;font-size:12px;line-height:1.5;color:${MUTED}">${escapeHtml(footer)}</p></td></tr></table></body></html>`;
   const text = `${subject}\n\n${blocks.map(textBlock).join("\n\n")}\n\n--\nTropical Distillery team merch store\n`;
   return { html, text };
 }
@@ -489,7 +625,7 @@ export function inviteEmail(person, { link, by = "", days = 14, replyTo = [] } =
 /* ---------------------------------------------------------------- sending */
 
 /**
- * notify(event, order, { byRequester }) for the app, or a no-op without an
+ * notify(event, order, { byRequester, resend, forward }) for the app, or a no-op without an
  * API key and a from address. Emails are sent one at a time, a little apart,
  * well inside Resend's rate limit; a 429 or a server error is retried twice.
  * notify.invite(person, { link, by, key }) sends an invite the same way, and
@@ -556,12 +692,17 @@ export function createEmailer({
     return queue;
   }
 
-  function notify(event, order, { byRequester = false, resend = "" } = {}) {
-    const emails = orderEmails(event, order, { adminTo, routes, baseUrl, byRequester });
+  function notify(event, order, { byRequester = false, resend = "", forward = null } = {}) {
+    const emails = orderEmails(event, order, { adminTo, routes, baseUrl, byRequester, forward });
     // The same event on the same order is only ever emailed once, even if a
     // request is retried; the admin sending it again on purpose (`resend`)
-    // gets a new key. Tracking is keyed by the tracking number it carries.
-    const at = event === "order.tracking" ? order.shipment?.trackingNumber : order.history.length;
+    // gets a new key. Tracking is keyed by the tracking number it carries,
+    // and a forward's emails by the forward.
+    const at = forward
+      ? `${forward.id}${event === "forward.tracking" ? `:${forward.shipment?.trackingNumber}` : ""}`
+      : event === "order.tracking"
+        ? order.shipment?.trackingNumber
+        : order.history.length;
     for (const email of emails) enqueue(email, `${order.id}:${event}:${at}:${email.role}${resend ? `:${resend}` : ""}`);
     return queue;
   }
