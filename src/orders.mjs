@@ -750,16 +750,17 @@ export function forwardItems(db, orderId, input, { actor, now = new Date() }) {
  * marked shipped too. `event` is what to tell the requester: forward.shipped,
  * forward.tracking (a new tracking number on one already shipped) or null.
  */
-export function shipForward(db, orderId, forwardId, input, { actor, now = new Date() }) {
+export function shipForward(db, orderId, forwardId, input, { actor, now = new Date(), requireCarrier = false }) {
   const order = findOrder(db, orderId);
   const forward = findForward(order, forwardId);
-  if (forward.status === "cancelled") {
-    throw new ValidationError("This forward was pulled back, so it can't be marked shipped.", {}, 409);
+  if (forward.status === "cancelled" || RELEASED_STATUSES.includes(order.status)) {
+    throw new ValidationError("This was called off, so it can't be marked shipped.", {}, 409);
   }
   const src = input && typeof input === "object" ? input : {};
   const errors = {};
   const at = now.toISOString();
   const shipment = readShipment(src, errors, at, forward.shipment);
+  if (requireCarrier && !shipment.carrier && !errors.carrier) errors.carrier = "Choose how it shipped.";
   if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
 
   const firstTime = forward.status === "sent";
@@ -772,6 +773,63 @@ export function shipForward(db, orderId, forwardId, input, { actor, now = new Da
     shipIfAllForwardsOut(order, { at, actor });
   }
   return { order, forward, event: firstTime ? "forward.shipped" : newTracking ? "forward.tracking" : null };
+}
+
+/** The order and forward a supplier's link opens, or null. */
+export function findForwardById(db, forwardId) {
+  for (const order of db.orders) {
+    const forward = (order.forwards ?? []).find((f) => f.id === forwardId);
+    if (forward) return { order, forward };
+  }
+  return null;
+}
+
+/**
+ * What whoever has a forward sees on their shipping page: the order number,
+ * their items (no prices), where they go and by when, and the message they
+ * were sent. Nothing about the requester beyond their name, and nothing
+ * else on the order.
+ */
+export function supplierView(order, forward) {
+  const s = order.shipTo;
+  const calledOff = forward.status === "cancelled" || RELEASED_STATUSES.includes(order.status);
+  return {
+    number: order.number,
+    requestedBy: order.requester.name,
+    neededBy: order.neededBy,
+    shippingSpeed: order.shippingSpeed,
+    rushReason: order.rushReason,
+    shipTo: {
+      type: s.type,
+      accountName: s.accountName ?? "",
+      attention: s.attention,
+      phone: s.phone,
+      address1: s.address1,
+      address2: s.address2,
+      city: s.city,
+      state: s.state,
+      postalCode: s.postalCode,
+      deliveryNotes: s.deliveryNotes,
+    },
+    forward: {
+      to: forward.to.name,
+      at: forward.at,
+      by: forward.by,
+      note: forward.note,
+      status: calledOff ? "cancelled" : forward.status,
+      shipment: calledOff ? null : forward.shipment,
+      items: forwardLines(order, forward).map((l) => ({
+        sku: l.sku,
+        name: l.name,
+        color: l.color ?? "",
+        variantLabel: l.variantLabel,
+        unit: l.unit,
+        quantity: l.quantity,
+      })),
+    },
+    // Tracking can be added or fixed until the order is delivered.
+    canUpdate: !calledOff && order.status !== "delivered",
+  };
 }
 
 /**

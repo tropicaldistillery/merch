@@ -36,11 +36,14 @@ const ACCOUNT_ORDER = {
 async function start(dir, overrides = {}, { mailer = null } = {}) {
   const store = await openStore({ dataDir: dir });
   const notifications = [];
+  const contexts = [];
   const handler = await createApp({
     store,
     mailer,
-    notify: (event, order, context) =>
-      notifications.push({ event, number: order.number, ...(context?.forward ? { to: context.forward.to.email } : {}) }),
+    notify: (event, order, context) => {
+      notifications.push({ event, number: order.number, ...(context?.forward ? { to: context.forward.to.email } : {}) });
+      contexts.push(context ?? {});
+    },
     config: {
       teamAccessCode: TEAM_CODE,
       adminPassword: ADMIN_PASSWORD,
@@ -87,6 +90,7 @@ async function start(dir, overrides = {}, { mailer = null } = {}) {
     base,
     store,
     notifications,
+    contexts,
     client,
     async close() {
       await new Promise((resolve) => server.close(resolve));
@@ -405,6 +409,70 @@ describe("merch store over HTTP", () => {
       { event: "order.cancelled", number: other.number },
       { event: "forward.cancelled", number: other.number, to: "orders@ten10.com" },
     ]);
+  });
+
+  it("lets a supplier mark forwarded items shipped from their emailed link", async () => {
+    const jane = await signedInTeam(app);
+    const body = { ...ACCOUNT_ORDER, lines: [ACCOUNT_ORDER.lines[0], { itemId: "jfh-logo-tee", variantId: "m", quantity: 2 }] };
+    const { id, number } = (await jane("/api/orders", { method: "POST", body })).data.order;
+    const admin = await signedInAdmin(app);
+    await admin(`/api/admin/orders/${id}/review`, { method: "POST", body: { decisions: [{ status: "approved" }, { status: "approved" }], notify: false } });
+    const sent = await admin(`/api/admin/orders/${id}/forwards`, { method: "POST", body: { toName: "Ten 10 Design", toEmail: "orders@ten10.com", lines: [1], note: "PO 4471" } });
+    const fid = sent.data.forward.id;
+    const emailedLink = app.contexts.at(-1).shipLink;
+    assert.match(emailedLink, /^http:\/\/127\.0\.0\.1:\d+\/ship#[\w-]+\.[\w-]+$/);
+
+    // The admin can copy the same link; nobody else can get it.
+    const copied = await admin(`/api/admin/orders/${id}/forwards/${fid}/link`);
+    assert.equal(copied.data.url, emailedLink);
+    assert.equal((await jane(`/api/admin/orders/${id}/forwards/${fid}/link`)).status, 401);
+    const token = new URL(emailedLink).hash.slice(1);
+
+    // The page itself and what it shows, with no sign-in.
+    const supplier = app.client();
+    const page = await supplier("/ship");
+    assert.equal(page.status, 200);
+    assert.match(page.data, /assets\/ship\.js/);
+    const view = await supplier("/api/ship/view", { method: "POST", body: { token } });
+    assert.equal(view.status, 200, JSON.stringify(view.data));
+    assert.equal(view.headers.get("cache-control"), "no-store");
+    assert.deepEqual([view.data.number, view.data.forward.items.length, view.data.forward.note], [number, 1, "PO 4471"]);
+    assert.doesNotMatch(JSON.stringify(view.data), /jane@|Cents|orders@ten10/);
+    for (const bad of ["", "nope", `${fid}.forged`, token.replace(/.$/, (c) => (c === "A" ? "B" : "A"))]) {
+      assert.equal((await supplier("/api/ship/view", { method: "POST", body: { token: bad } })).status, 404, bad);
+    }
+    assert.equal((await supplier("/api/ship", { method: "POST", body: { token, carrier: "ups" }, csrf: false })).status, 403);
+
+    // Marked shipped from the page: needs the carrier; tracking can follow.
+    const missing = await supplier("/api/ship", { method: "POST", body: { token, trackingNumber: "1Z5" } });
+    assert.equal(missing.status, 400);
+    assert.ok(missing.data.fieldErrors.carrier);
+    const shipped = await supplier("/api/ship", { method: "POST", body: { token, carrier: "ups" } });
+    assert.equal(shipped.status, 200, JSON.stringify(shipped.data));
+    assert.equal(shipped.data.forward.status, "shipped");
+    assert.deepEqual(app.notifications.at(-1), { event: "forward.shipped", number, to: "orders@ten10.com" });
+    assert.equal(app.contexts.at(-1).bySupplier, true);
+    await supplier("/api/ship", { method: "POST", body: { token, carrier: "ups", trackingNumber: "1Z 5" } });
+    assert.equal(app.notifications.at(-1).event, "forward.tracking");
+    const full = (await admin(`/api/admin/orders/${id}`)).data.order;
+    assert.equal(full.forwards[0].shipment.trackingNumber, "1Z5");
+    assert.equal(full.history.at(-1).by, "Ten 10 Design");
+
+    // Once the order is delivered, the page can't change it.
+    await admin(`/api/admin/orders/${id}`, { method: "PATCH", body: { status: "shipped", carrier: "ups" } });
+    await admin(`/api/admin/orders/${id}`, { method: "PATCH", body: { status: "delivered" } });
+    assert.equal((await supplier("/api/ship/view", { method: "POST", body: { token } })).data.canUpdate, false);
+    assert.equal((await supplier("/api/ship", { method: "POST", body: { token, carrier: "ups", trackingNumber: "9" } })).status, 409);
+
+    // A pulled-back forward's page says it's called off.
+    const other = (await jane("/api/orders", { method: "POST", body })).data.order;
+    await admin(`/api/admin/orders/${other.id}/review`, { method: "POST", body: { decisions: [{ status: "approved" }, { status: "approved" }], notify: false } });
+    const f2 = (await admin(`/api/admin/orders/${other.id}/forwards`, { method: "POST", body: { toName: "Jo", toEmail: "jo@tropicaldistillery.com", lines: [0] } })).data.forward;
+    const token2 = new URL(app.contexts.at(-1).shipLink).hash.slice(1);
+    await admin(`/api/admin/orders/${other.id}/forwards/${f2.id}/pull-back`, { method: "POST", body: {} });
+    const off = await supplier("/api/ship/view", { method: "POST", body: { token: token2 } });
+    assert.deepEqual([off.data.forward.status, off.data.canUpdate], ["cancelled", false]);
+    assert.equal((await supplier("/api/ship", { method: "POST", body: { token: token2, carrier: "ups" } })).status, 409);
   });
 
   it("edits the catalog and the account directory", async () => {

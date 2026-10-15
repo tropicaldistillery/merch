@@ -3945,3 +3945,124 @@ dialog.password-dialog .field {
 .separate-shipment {
   margin-top: 10px;
 }
+
+/* ------------------------------------------- supplier's shipping page */
+
+.ship-page {
+  background: var(--page);
+}
+
+.ship-header {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 24px 0;
+}
+
+.ship-header .brand {
+  color: var(--ink);
+}
+
+.ship-main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 18px 24px 56px;
+}
+
+.ship-card {
+  padding: 32px;
+}
+
+.ship-card > * + * {
+  margin-top: 16px;
+}
+
+.ship-card h1 {
+  margin: 4px 0 0;
+  font-size: clamp(26px, 4vw, 34px);
+  line-height: 1.15;
+}
+
+.ship-card h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.callout.ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.callout.rush {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.ship-items {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.ship-items li {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  padding: 12px 16px;
+}
+
+.ship-items li + li {
+  border-top: 1px solid var(--line);
+}
+
+.ship-items .cell-main,
+.ship-items .cell-sub {
+  display: block;
+}
+
+.ship-qty {
+  min-width: 36px;
+}
+
+.ship-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.ship-note {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--blush);
+}
+
+.ship-note p {
+  margin: 0;
+  white-space: pre-line;
+}
+
+.ship-note p + p {
+  margin-top: 4px;
+}
+
+.ship-form {
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--cream);
+  border: 1px solid var(--line);
+}
+
+.ship-form > * + * {
+  margin-top: 12px;
+}
+
+@media (max-width: 600px) {
+  .ship-card {
+    padding: 22px 18px;
+  }
+
+  .ship-grid {
+    grid-template-columns: 1fr;
+  }
+}

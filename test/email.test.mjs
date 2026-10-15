@@ -164,6 +164,26 @@ describe("order emails", () => {
     assert.match(renderEmail(tracking).html, /href="https:\/\/www\.fedex\.com\/fedextrack\/\?trknbr=7777"/);
   });
 
+  it("links the supplier to their page, and tells the admins when they use it", () => {
+    const { db, order } = placed();
+    reviewOrder(db, order.id, { decisions: [{ status: "approved" }] }, by);
+    const { forward } = forwardItems(db, order.id, { toName: "Ten 10 Design", toEmail: "orders@ten10.com", lines: [0] }, by);
+    const link = "https://merch.example.com/ship#abc.def";
+    const [sent] = orderEmails("forward.sent", order, { adminTo: ADMINS, forward, shipLink: link });
+    assert.match(renderEmail(sent).html, /href="https:\/\/merch\.example\.com\/ship#abc\.def"[^>]*>Enter shipping &amp; tracking</);
+    assert.match(renderEmail(sent).text, /enter the carrier and tracking number on this page/);
+
+    shipForward(db, order.id, forward.id, { carrier: "ups", trackingNumber: "1Z5" }, { ...by, actor: "Ten 10 Design" });
+    const emails = orderEmails("forward.shipped", order, { adminTo: ADMINS, baseUrl: BASE, forward, bySupplier: true });
+    assert.deepEqual(emails.map((e) => e.role), ["admin", "requester"]);
+    const [admin] = emails;
+    assert.deepEqual(admin.to, ADMINS);
+    assert.deepEqual(admin.replyTo, ["orders@ten10.com"]);
+    assert.equal(admin.subject, "Ten 10 Design shipped 1 item for merch order TD-1001");
+    assert.match(renderEmail(admin).text, /marked these shipped for Jane Rep's order TD-1001: UPS, tracking 1Z5\. Jane Rep has been emailed\./);
+    assert.equal(orderEmails("forward.shipped", order, { adminTo: ADMINS, forward }).length, 1, "only when the supplier did it");
+  });
+
   it("says the whole order shipped when one forward has all of it", () => {
     const { db, order } = placed();
     reviewOrder(db, order.id, { decisions: [{ status: "approved" }] }, by);

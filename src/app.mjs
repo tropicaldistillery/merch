@@ -14,7 +14,9 @@ import {
   clearedCookie,
   createThrottle,
   credentialFingerprint,
+  linkToken,
   parseCookies,
+  readLinkToken,
   safeEqual,
   sessionCookie,
   signSession,
@@ -57,6 +59,7 @@ import {
   cancelOwnOrder,
   csvCell,
   decisionEvent,
+  findForwardById,
   forwardItems,
   normalizeAccountEdit,
   ordersToCsv,
@@ -66,6 +69,7 @@ import {
   requesterView,
   reviewOrder,
   shipForward,
+  supplierView,
   trackerToCsv,
   updateOrder,
 } from "./orders.mjs";
@@ -147,6 +151,7 @@ const PAGES = {
   "/admin": { file: "admin.html" },
   "/welcome": { file: "welcome.html" },
   "/packing-slip": { file: "packing-slip.html" },
+  "/ship": { file: "ship.html" },
 };
 
 /* ----------------------------------------------------------------- helpers */
@@ -582,6 +587,20 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
     return `${secureCookies(req) ? "https" : "http"}://${req.headers.host}`;
   }
 
+  // A supplier's page for one forward. The token rides in the address's
+  // #fragment, so it never reaches the server's logs or another site; the
+  // page sends it back in the body of its requests.
+  function shipLink(req, forward) {
+    return `${siteUrl(req)}/ship#${linkToken(secret, "ship", forward.id)}`;
+  }
+
+  async function forwardForToken(body) {
+    const id = readLinkToken(secret, "ship", body?.token);
+    const found = id ? findForwardById(await store.read(), id) : null;
+    if (!found) throw new ValidationError("This link doesn't work. Use the link in the latest email from the Tropical Distillery merch team.", {}, 404);
+    return found;
+  }
+
   /** New invite links for these people, emailed to them when email is on. */
   async function sendInvites(req, ids, by) {
     const at = clock().toISOString();
@@ -856,7 +875,7 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
       const body = await readJson(req);
       const { order, forward } = await store.mutate((db) => forwardItems(db, params[0], body, { actor: admin.name, now: clock() }));
       const emailed = body.notify !== false;
-      if (emailed) notify("forward.sent", order, { forward });
+      if (emailed) notify("forward.sent", order, { forward, shipLink: shipLink(req, forward) });
       sendJson(res, 201, { ok: true, order, forward, emailed });
     }],
 
@@ -881,14 +900,48 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
     }],
 
     // Email the forward to whoever has it again.
-    ["POST", /^\/api\/admin\/orders\/([\w-]+)\/forwards\/([\w-]+)\/notify$/, "admin", async ({ res, params }) => {
+    ["POST", /^\/api\/admin\/orders\/([\w-]+)\/forwards\/([\w-]+)\/notify$/, "admin", async ({ req, res, params }) => {
       const db = await store.read();
       const order = find(db.orders, params[0], "order");
       const forward = (order.forwards ?? []).find((f) => f.id === params[1]);
       if (!forward) throw new ValidationError("That forward could not be found.", {}, 404);
       if (forward.status !== "sent") throw new ValidationError("Only a forward that hasn't shipped can be sent again.", {}, 409);
-      notify("forward.sent", order, { forward, resend: String(clock().getTime()) });
+      notify("forward.sent", order, { forward, shipLink: shipLink(req, forward), resend: String(clock().getTime()) });
       sendJson(res, 200, { ok: true, order, forward });
+    }],
+
+    // The supplier's shipping link, for the admin to pass on another way.
+    ["GET", /^\/api\/admin\/orders\/([\w-]+)\/forwards\/([\w-]+)\/link$/, "admin", async ({ req, res, params }) => {
+      const db = await store.read();
+      const order = find(db.orders, params[0], "order");
+      const forward = (order.forwards ?? []).find((f) => f.id === params[1]);
+      if (!forward) throw new ValidationError("That forward could not be found.", {}, 404);
+      sendJson(res, 200, { ok: true, url: shipLink(req, forward) }, { "Cache-Control": "no-store" });
+    }],
+
+    // Suppliers: their items and where they go, from the link they were
+    // emailed, and marking them shipped with the tracking number. The
+    // requester is emailed, and so are the admins, so they know.
+    ["POST", "/api/ship/view", "public", async ({ req, res }) => {
+      const { order, forward } = await forwardForToken(await readJson(req));
+      sendJson(res, 200, { ok: true, ...supplierView(order, forward) }, { "Cache-Control": "no-store" });
+    }],
+
+    ["POST", "/api/ship", "public", async ({ req, res }) => {
+      const body = await readJson(req);
+      const found = await forwardForToken(body);
+      if (!supplierView(found.order, found.forward).canUpdate) {
+        throw new ValidationError("This order is closed, so it can't be changed here. Reply to the merch team's email instead.", {}, 409);
+      }
+      const { order, forward, event } = await store.mutate((db) =>
+        shipForward(db, found.order.id, found.forward.id, { carrier: body.carrier, trackingNumber: body.trackingNumber }, {
+          actor: found.forward.to.name,
+          now: clock(),
+          requireCarrier: true,
+        })
+      );
+      if (event) notify(event, order, { forward, bySupplier: true });
+      sendJson(res, 200, { ok: true, ...supplierView(order, forward) }, { "Cache-Control": "no-store" });
     }],
 
     // Approve or deny each item. The requester is emailed the outcome unless

@@ -1341,6 +1341,17 @@ function pullBackForm(order, forward) {
   return form;
 }
 
+// The supplier's own page (items, address, tracking form), to send another way.
+async function copyForwardLink(order, forward) {
+  try {
+    const { url } = await adminApi(`/api/admin/orders/${encodeURIComponent(order.id)}/forwards/${encodeURIComponent(forward.id)}/link`);
+    await navigator.clipboard.writeText(url);
+    toast(`Link copied. It opens ${forward.to.name}'s shipping page, so only send it to them.`);
+  } catch (error) {
+    toast(error.message || "Couldn't copy the link.", { tone: "error" });
+  }
+}
+
 async function resendForward(order, forward) {
   try {
     await adminApi(`/api/admin/orders/${encodeURIComponent(order.id)}/forwards/${encodeURIComponent(forward.id)}/notify`, { method: "POST", body: {} });
@@ -1400,14 +1411,20 @@ function forwardCard(order, forward) {
             ? [
                 el("button", { type: "button", class: "btn btn-sm", text: "Mark shipped", onclick: () => open(forwardShipForm(order, forward)) }),
                 el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Email them again", onclick: () => resendForward(order, forward) }),
+                el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Copy their link", onclick: () => copyForwardLink(order, forward) }),
                 el("button", { type: "button", class: "btn btn-danger btn-sm", text: "Pull back", onclick: () => open(pullBackForm(order, forward)) }),
               ]
-            : el("button", {
-                type: "button",
-                class: ship?.trackingNumber ? "btn btn-secondary btn-sm" : "btn btn-sm",
-                text: ship?.trackingNumber ? "Edit tracking" : "Add tracking",
-                onclick: () => open(forwardShipForm(order, forward)),
-              })
+            : [
+                el("button", {
+                  type: "button",
+                  class: ship?.trackingNumber ? "btn btn-secondary btn-sm" : "btn btn-sm",
+                  text: ship?.trackingNumber ? "Edit tracking" : "Add tracking",
+                  onclick: () => open(forwardShipForm(order, forward)),
+                }),
+                ship?.trackingNumber
+                  ? null
+                  : el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Copy their link", onclick: () => copyForwardLink(order, forward) }),
+              ]
         ),
     area
   );
@@ -1590,7 +1607,7 @@ function renderOrderDetail(order) {
       ? section(
           "Forwarded",
           order.forwards.some((f) => f.status === "sent")
-            ? el("p", { class: "hint", text: "When they tell you it shipped, mark it shipped here and the requester gets the tracking." })
+            ? el("p", { class: "hint", text: "Their email has a link where they mark it shipped and enter the tracking, and you and the requester are emailed. You can also mark it shipped here." })
             : null,
           order.forwards.map((forward) => forwardCard(order, forward))
         )

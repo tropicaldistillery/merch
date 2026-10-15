@@ -15,6 +15,7 @@ import {
   requesterView,
   reviewOrder,
   shipForward,
+  supplierView,
   updateOrder,
   validateOrderInput,
 } from "../src/orders.mjs";
@@ -656,6 +657,35 @@ describe("forwarding items to someone else to ship", () => {
     assert.throws(() => pullBackForward(db, id, forward.id, by), (e) => e.status === 409);
     // They can be forwarded again.
     assert.equal(forwardItems(db, id, { ...TEN10, lines: [0] }, by).forward.lines[0], 0);
+  });
+
+  it("shows whoever has a forward just their items and where they go", () => {
+    const { db, id } = setup();
+    const { order: o, forward } = forwardItems(db, id, { ...TEN10, lines: [1], note: "PO 4471" }, by);
+    o.adminNote = "Q4 events budget";
+    const view = supplierView(o, forward);
+    assert.equal(view.number, "TD-1001");
+    assert.deepEqual(view.forward.items.map((i) => [i.quantity, i.sku]), [[1, o.lines[1].sku]]);
+    assert.equal(view.forward.note, "PO 4471");
+    assert.equal(view.shipTo.accountName, "The Rusty Pelican");
+    assert.equal(view.shipTo.deliveryNotes, "Before 11am, side door");
+    assert.deepEqual([view.forward.status, view.canUpdate], ["sent", true]);
+    const text = JSON.stringify(view);
+    assert.doesNotMatch(text, /jane@|Cents|Q4 events|ten10design/i, "no requester email, prices, admin note or their own address");
+    assert.doesNotMatch(text, /Logo Tee/, "nothing else on the order");
+
+    // A supplier has to say how it shipped.
+    assert.ok(fieldErrors(() => shipForward(db, id, forward.id, { trackingNumber: "" }, { ...by, requireCarrier: true })).carrier);
+    shipForward(db, id, forward.id, { carrier: "fedex" }, { ...by, requireCarrier: true });
+    assert.equal(supplierView(o, forward).forward.status, "shipped");
+
+    // Once the order is cancelled, the page says it's called off and nothing more can be done.
+    const other = setup();
+    const f2 = forwardItems(other.db, other.id, { ...TEN10, lines: [0] }, by).forward;
+    updateOrder(other.db, other.id, { status: "cancelled" }, by);
+    const off = supplierView(other.db.orders[0], f2);
+    assert.deepEqual([off.forward.status, off.canUpdate], ["cancelled", false]);
+    assert.throws(() => shipForward(other.db, other.id, f2.id, { carrier: "ups" }, by), (e) => e.status === 409);
   });
 
   it("ships a forward now and takes its tracking later", () => {

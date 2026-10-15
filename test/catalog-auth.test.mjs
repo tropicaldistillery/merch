@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import { createThrottle, parseCookies, signSession, verifySession } from "../src/auth.mjs";
+import { createThrottle, linkToken, parseCookies, readLinkToken, signSession, verifySession } from "../src/auth.mjs";
 import {
   CATEGORIES_VERSION,
   SEED_CATALOG,
@@ -966,6 +966,18 @@ describe("sessions", () => {
     assert.equal(verifySession(secret, `${body}.${sig}.extra`), null);
     assert.equal(verifySession(secret, signSession(secret, { ...payload, exp: Date.now() - 1 })), null);
     assert.equal(verifySession(secret, undefined), null);
+  });
+
+  it("signs link tokens for one thing and one purpose", () => {
+    const token = linkToken(secret, "ship", "forward-1");
+    assert.equal(readLinkToken(secret, "ship", token), "forward-1");
+    const [, sig] = token.split(".");
+    assert.equal(readLinkToken(secret, "ship", `forward-2.${sig}`), null, "another id");
+    assert.equal(readLinkToken(secret, "invite", token), null, "another purpose");
+    assert.equal(readLinkToken("other-secret", "ship", token), null);
+    assert.equal(readLinkToken(secret, "ship", `${token}.x`), null);
+    assert.equal(readLinkToken(secret, "ship", "x".repeat(300)), null);
+    assert.equal(readLinkToken(secret, "ship", undefined), null);
   });
 
   it("parses cookie headers", () => {

@@ -26,6 +26,24 @@ export function credentialFingerprint(secret, credential) {
   return hmac(secret, `credential:${credential}`).slice(0, 12);
 }
 
+/**
+ * A token for a link that opens one thing (`id`) for one purpose, such as a
+ * supplier's shipping page: `id.signature`. It needs no storage and works as
+ * long as the session secret stays the same; the thing it opens decides
+ * whether it's still usable.
+ */
+export function linkToken(secret, purpose, id) {
+  return `${id}.${hmac(secret, `link:${purpose}:${id}`)}`;
+}
+
+/** The id a link token opens, or null for anything forged or malformed. */
+export function readLinkToken(secret, purpose, token) {
+  if (typeof token !== "string" || token.length > 200) return null;
+  const [id, signature, extra] = token.split(".");
+  if (!id || !signature || extra !== undefined) return null;
+  return safeEqual(signature, hmac(secret, `link:${purpose}:${id}`)) ? id : null;
+}
+
 export function signSession(secret, payload) {
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${body}.${hmac(secret, body)}`;

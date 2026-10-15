@@ -7,9 +7,11 @@
 //     part with each item that wasn't and why, shipped with the tracking link
 //     or a note that it's coming, delivered, declined with the reason,
 //     cancelled), and the tracking link when it's added after shipping
-//   - items forwarded to someone else to ship (a supplier, a rep): the items
-//     and where they go to that person, a note if they're called off, and an
-//     update to the requester when they ship (and when tracking is added)
+//   - items forwarded to someone else to ship (a supplier, a rep): the items,
+//     where they go and a link to their page for entering tracking to that
+//     person, a note if they're called off, and an update to the requester
+//     when they ship (and when tracking is added); when the supplier does it
+//     on their page, the admins are told too
 //   - a requester cancelling their own order: a note to the admins
 //   - an invite from the admin: a link to create (or reset) a password
 //   - a request for an out-of-stock item: an alert to the admins, then to the
@@ -194,7 +196,11 @@ function orderDetails(order, { forAdmin }) {
  * The emails one event sends, as [{ role, to, replyTo, subject, blocks }].
  * `byRequester` marks a cancellation the requester made themselves.
  */
-export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl = "", byRequester = false, forward = null } = {}) {
+export function orderEmails(
+  event,
+  order,
+  { adminTo = [], routes = {}, baseUrl = "", byRequester = false, forward = null, shipLink = "", bySupplier = false } = {}
+) {
   const base = baseUrl.replace(/\/$/, "");
   const adminLink = base ? `${base}/admin?order=${encodeURIComponent(order.id)}` : "";
   const mineLink = base ? `${base}/orders` : "";
@@ -333,7 +339,11 @@ export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl =
               ["Shipping", rush ? `Rush: ${order.rushReason}` : "Standard"],
               ["Ordered by", `${requester.name}${requester.distributor ? ` (${requester.distributor})` : ""}`],
             ]),
-            block.p("When it ships, reply to this email with the carrier and tracking number, and we'll pass them on. Reply with any questions too."),
+            shipLink
+              ? block.p("When it ships, enter the carrier and tracking number on this page and we'll pass them on. You can come back to it to add tracking later.")
+              : block.p("When it ships, reply to this email with the carrier and tracking number, and we'll pass them on."),
+            block.button("Enter shipping & tracking", shipLink),
+            block.p(shipLink ? "Questions? Just reply to this email." : "Reply with any questions too."),
           ])
         );
       } else {
@@ -357,6 +367,25 @@ export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl =
       const carrier = shipment.carrier ? labelFor(CARRIERS, shipment.carrier) : "";
       const url = trackingUrl(shipment.carrier, shipment.trackingNumber);
       const what = whole ? `Order ${order.number}` : `${plural(lines.length, "item")} from order ${order.number}`;
+      // Done by the supplier on their page: the admins hear about it too.
+      if (bySupplier && replyTo.length) {
+        emails.push({
+          role: "admin",
+          to: replyTo,
+          replyTo: [forward.to.email],
+          subject:
+            event === "forward.shipped"
+              ? `${forward.to.name} shipped ${plural(lines.length, "item")} for merch order ${order.number}`
+              : `${forward.to.name} added tracking for merch order ${order.number}`,
+          blocks: [
+            block.p(
+              `${forward.to.name} ${event === "forward.shipped" ? "marked these shipped" : "updated the tracking"} for ${requester.name}'s order ${order.number}${carrier ? `: ${carrier}` : ""}${shipment.trackingNumber ? `, tracking ${shipment.trackingNumber}` : event === "forward.shipped" && shipment.carrier !== "hand" ? ", no tracking number yet" : ""}. ${requester.name} has been emailed.`
+            ),
+            block.items(partOf(order, lines), { forFulfiller: true }),
+            block.button("Open it in the admin console", adminLink),
+          ],
+        });
+      }
       if (event === "forward.shipped") {
         const how =
           shipment.carrier === "hand"
@@ -625,7 +654,7 @@ export function inviteEmail(person, { link, by = "", days = 14, replyTo = [] } =
 /* ---------------------------------------------------------------- sending */
 
 /**
- * notify(event, order, { byRequester, resend, forward }) for the app, or a no-op without an
+ * notify(event, order, { byRequester, resend, forward, shipLink, bySupplier }) for the app, or a no-op without an
  * API key and a from address. Emails are sent one at a time, a little apart,
  * well inside Resend's rate limit; a 429 or a server error is retried twice.
  * notify.invite(person, { link, by, key }) sends an invite the same way, and
@@ -692,8 +721,8 @@ export function createEmailer({
     return queue;
   }
 
-  function notify(event, order, { byRequester = false, resend = "", forward = null } = {}) {
-    const emails = orderEmails(event, order, { adminTo, routes, baseUrl, byRequester, forward });
+  function notify(event, order, { byRequester = false, resend = "", forward = null, shipLink = "", bySupplier = false } = {}) {
+    const emails = orderEmails(event, order, { adminTo, routes, baseUrl, byRequester, forward, shipLink, bySupplier });
     // The same event on the same order is only ever emailed once, even if a
     // request is retried; the admin sending it again on purpose (`resend`)
     // gets a new key. Tracking is keyed by the tracking number it carries,
