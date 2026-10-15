@@ -13,7 +13,7 @@ import {
   toast,
   wireHeader,
 } from "./core.js";
-import { ACCOUNT_TYPES, CARRIERS, PURPOSES, formatMoney, labelFor, optionText, orderRule, trackingUrl } from "./shared.js";
+import { ACCOUNT_TYPES, CARRIERS, PURPOSES, formatMoney, isDenied, labelFor, optionText, orderRule, reviewCounts, trackingUrl } from "./shared.js";
 
 const STEPS = [
   ["submitted", "Submitted"],
@@ -122,12 +122,14 @@ function shipmentBlock(order) {
       ? el(
           "div",
           { class: "address" },
-          el("div", { text: labelFor(CARRIERS, shipment.carrier) }),
+          shipment.carrier ? el("div", { text: labelFor(CARRIERS, shipment.carrier) }) : null,
           shipment.trackingNumber
             ? url
               ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: `Track ${shipment.trackingNumber}` })
               : el("div", { text: shipment.trackingNumber })
-            : null,
+            : shipment.carrier !== "hand" && !shipment.deliveredAt
+              ? el("div", { class: "cell-sub", text: "Tracking number coming soon" })
+              : null,
           el("div", { class: "cell-sub", text: `Shipped ${formatDate(shipment.shippedAt)}` }),
           shipment.deliveredAt ? el("div", { class: "cell-sub", text: `Delivered ${formatDate(shipment.deliveredAt)}` }) : null
         )
@@ -165,15 +167,32 @@ function orderCard(order) {
           last?.note ? ` — ${last.note}` : "."
         )
       : tracker(order),
+    !closed && reviewCounts(order).denied
+      ? el(
+          "p",
+          { class: "callout partial" },
+          `${reviewCounts(order).approved} of ${plural(order.lines.length, "item")} approved. The rest won't ship.`,
+          last?.note && last.review ? ` “${last.note}”` : ""
+        )
+      : null,
     el(
       "ul",
       { class: "order-items", "aria-label": "Items" },
       order.lines.map((line) =>
         el(
           "li",
-          {},
+          { class: isDenied(line) ? "line-denied" : "" },
           artwork(line, "thumb"),
-          el("span", {}, el("strong", { text: `${line.quantity} × ` }), line.name, optionText(line) ? ` (${optionText(line)})` : "")
+          el(
+            "span",
+            {},
+            el("strong", { text: `${line.quantity} × ` }),
+            line.name,
+            optionText(line) ? ` (${optionText(line)})` : "",
+            isDenied(line)
+              ? el("span", { class: "line-decision" }, el("span", { class: "tag denied", text: "Not approved" }), line.decision.reason ? ` ${line.decision.reason}` : "")
+              : null
+          )
         )
       )
     ),

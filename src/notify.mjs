@@ -7,6 +7,7 @@ import {
   PURPOSES,
   STATUSES,
   formatMoney,
+  isDenied,
   labelFor,
   trackingUrl,
 } from "../public/assets/shared.js";
@@ -34,14 +35,33 @@ export function orderMessage(event, order, { baseUrl = "" } = {}) {
       .join("\n");
   }
 
-  const latest = order.history[order.history.length - 1];
-  const status = labelFor(STATUSES, order.status);
-  const tracking =
-    order.status === "shipped" && order.shipment
-      ? ` via ${labelFor(CARRIERS, order.shipment.carrier)}${order.shipment.trackingNumber ? ` ${order.shipment.trackingNumber}` : ""}`
-      : "";
   const url = order.shipment ? trackingUrl(order.shipment.carrier, order.shipment.trackingNumber) : null;
 
+  if (event === "order.tracking") {
+    return [
+      `Tracking added to merch order ${order.number} for ${order.requester.name}: ${labelFor(CARRIERS, order.shipment.carrier)} ${order.shipment.trackingNumber}`,
+      url ? `Track it: ${url}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  const latest = order.history[order.history.length - 1];
+  const status = labelFor(STATUSES, order.status);
+  if (event === "order.reviewed") {
+    const denied = order.lines.filter(isDenied);
+    return [
+      `Merch order ${order.number} for ${order.requester.name} is *approved in part*: ${order.lines.length - denied.length} of ${order.lines.length} items`,
+      ...denied.map((l) => `• Not approved: ${l.quantity} × ${l.name}${l.decision.reason ? ` (${l.decision.reason})` : ""}`),
+      latest?.note ? `> ${latest.note}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  const tracking =
+    order.status === "shipped" && order.shipment
+      ? `${order.shipment.carrier ? ` via ${labelFor(CARRIERS, order.shipment.carrier)}` : ""}${order.shipment.trackingNumber ? ` ${order.shipment.trackingNumber}` : ""}`
+      : "";
   return [
     `Merch order ${order.number} for ${order.requester.name} is now *${status}*${tracking}`,
     latest?.note ? `> ${latest.note}` : "",

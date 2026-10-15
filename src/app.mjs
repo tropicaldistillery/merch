@@ -56,10 +56,12 @@ import {
   bulkUpdateOrders,
   cancelOwnOrder,
   csvCell,
+  decisionEvent,
   normalizeAccountEdit,
   ordersToCsv,
   ownsOrder,
   placeOrder,
+  reviewOrder,
   trackerToCsv,
   updateOrder,
 } from "./orders.mjs";
@@ -829,13 +831,35 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
       sendJson(res, 200, { ok: true, order: find(db.orders, params[0], "order") });
     }],
 
+    // A status change, tracking added or corrected after shipping (the
+    // requester is emailed it unless `notify` is false) or the internal note.
     ["PATCH", /^\/api\/admin\/orders\/([\w-]+)$/, "admin", async ({ req, res, admin, params }) => {
       const body = await readJson(req);
-      const { order, statusChanged } = await store.mutate((db) =>
+      const { order, statusChanged, trackingAdded } = await store.mutate((db) =>
         updateOrder(db, params[0], body, { actor: admin.name, now: clock() })
       );
       if (statusChanged) notify(`order.${order.status}`, order);
+      else if (trackingAdded && body.notify !== false) notify("order.tracking", order);
       sendJson(res, 200, { ok: true, order });
+    }],
+
+    // Approve or deny each item. The requester is emailed the outcome unless
+    // `notify` is false; it can be sent (again) later with /notify.
+    ["POST", /^\/api\/admin\/orders\/([\w-]+)\/review$/, "admin", async ({ req, res, admin, params }) => {
+      const body = await readJson(req);
+      const { order, event } = await store.mutate((db) => reviewOrder(db, params[0], body, { actor: admin.name, now: clock() }));
+      const emailed = body.notify !== false;
+      if (emailed) notify(event, order);
+      sendJson(res, 200, { ok: true, order, emailed });
+    }],
+
+    ["POST", /^\/api\/admin\/orders\/([\w-]+)\/notify$/, "admin", async ({ res, params }) => {
+      const db = await store.read();
+      const order = find(db.orders, params[0], "order");
+      const event = decisionEvent(order);
+      if (!event) throw new ValidationError("There's no decision to send for this order.", {}, 409);
+      notify(event, order, { resend: String(clock().getTime()) });
+      sendJson(res, 200, { ok: true, order, event });
     }],
 
     // Admin: requests for out-of-stock items, with the stock each has now

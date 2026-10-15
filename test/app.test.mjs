@@ -287,6 +287,50 @@ describe("merch store over HTTP", () => {
     assert.equal(mine.data.orders.find((o) => o.id === id).shipment.carrier, "ups");
   });
 
+  it("approves and denies item by item, emails the decision, and adds tracking later", async () => {
+    const jane = await signedInTeam(app);
+    const body = { ...ACCOUNT_ORDER, lines: [ACCOUNT_ORDER.lines[0], { itemId: "jfh-logo-tee", variantId: "m", quantity: 2 }] };
+    const placed = await jane("/api/orders", { method: "POST", body });
+    assert.equal(placed.status, 201, JSON.stringify(placed.data));
+    const { id, number } = placed.data.order;
+    const admin = await signedInAdmin(app);
+    const review = (b) => admin(`/api/admin/orders/${id}/review`, { method: "POST", body: b });
+
+    assert.equal((await jane(`/api/admin/orders/${id}/review`, { method: "POST", body: {} })).status, 401);
+    assert.ok((await review({ decisions: [{ status: "approved" }] })).data.fieldErrors["decisions.1"]);
+
+    // Saved without emailing, then emailed on purpose.
+    const quiet = await review({ decisions: [{ status: "approved" }, { status: "denied", reason: "Tees are for the team" }], notify: false });
+    assert.equal(quiet.status, 200, JSON.stringify(quiet.data));
+    assert.equal(quiet.data.emailed, false);
+    assert.equal(quiet.data.order.status, "approved");
+    assert.notEqual(app.notifications.at(-1).event, "order.reviewed");
+    const sent = await admin(`/api/admin/orders/${id}/notify`, { method: "POST", body: {} });
+    assert.equal(sent.data.event, "order.reviewed");
+    assert.deepEqual(app.notifications.at(-1), { event: "order.reviewed", number });
+
+    // Changed to approve everything, emailed straight away.
+    const all = await review({ decisions: [{ status: "approved" }, { status: "approved" }] });
+    assert.equal(all.data.emailed, true);
+    assert.deepEqual(app.notifications.at(-1), { event: "order.approved", number });
+
+    // The requester sees the decisions on their order.
+    const mine = (await jane("/api/orders")).data.orders.find((o) => o.id === id);
+    assert.deepEqual(mine.lines.map((l) => l.decision.status), ["approved", "approved"]);
+
+    // Shipped with no tracking, which is emailed once it's added.
+    const shipped = await admin(`/api/admin/orders/${id}`, { method: "PATCH", body: { status: "shipped", carrier: "ups" } });
+    assert.equal(shipped.status, 200, JSON.stringify(shipped.data));
+    assert.deepEqual(app.notifications.at(-1), { event: "order.shipped", number });
+    await admin(`/api/admin/orders/${id}`, { method: "PATCH", body: { carrier: "ups", trackingNumber: "1Z999", notify: false } });
+    assert.deepEqual(app.notifications.at(-1), { event: "order.shipped", number }, "not emailed when asked not to");
+    await admin(`/api/admin/orders/${id}`, { method: "PATCH", body: { carrier: "ups", trackingNumber: "1Z1000" } });
+    assert.deepEqual(app.notifications.at(-1), { event: "order.tracking", number });
+
+    assert.equal((await review({ decisions: [{ status: "approved" }, { status: "approved" }] })).status, 409, "too late once shipped");
+    assert.equal((await admin(`/api/admin/orders/${id}/notify`, { method: "POST", body: {} })).status, 409);
+  });
+
   it("edits the catalog and the account directory", async () => {
     const admin = await signedInAdmin(app);
     const created = await admin("/api/admin/catalog", {
@@ -451,14 +495,15 @@ describe("bulk order edits and the per-person tracker", () => {
       assert.equal(approved.data.orders[0].history.at(-1).note, "Go ahead");
       assert.equal(app.notifications.filter((n) => n.event === "order.approved").length, 2);
 
-      // A missing tracking number stops the whole batch and names the order.
-      const missing = await bulk({ action: "shipped", orderIds: [o1.id, o2.id], carrier: "ups", tracking: { [o1.id]: "1Z1" } });
-      assert.equal(missing.status, 400);
-      assert.ok(missing.data.fieldErrors[`tracking.${o2.id}`]);
+      // Tracking numbers need a carrier, which stops the whole batch.
+      const noCarrier = await bulk({ action: "shipped", orderIds: [o1.id, o2.id], tracking: { [o1.id]: "1Z1" } });
+      assert.equal(noCarrier.status, 400);
+      assert.ok(noCarrier.data.fieldErrors.carrier);
       assert.equal((await admin(`/api/admin/orders/${o1.id}`)).data.order.status, "approved", "nothing shipped");
 
-      const shipped = await bulk({ action: "shipped", orderIds: [o1.id, o2.id], carrier: "ups", tracking: { [o1.id]: "1Z1", [o2.id]: "1Z 2" } });
-      assert.deepEqual(shipped.data.orders.map((o) => o.shipment.trackingNumber), ["1Z1", "1Z2"]);
+      // A tracking number can be left out and added later.
+      const shipped = await bulk({ action: "shipped", orderIds: [o1.id, o2.id], carrier: "ups", tracking: { [o1.id]: "1Z1", [o2.id]: "" } });
+      assert.deepEqual(shipped.data.orders.map((o) => o.shipment.trackingNumber), ["1Z1", ""]);
 
       const mixed = await bulk({ action: "approved", orderIds: [o1.id, s1.id] });
       assert.deepEqual(mixed.data.orders.map((o) => o.id), [s1.id]);

@@ -186,6 +186,44 @@ export function formatMoney(cents) {
   return (value / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
+/* --------------------------------------------------- item-by-item review */
+
+// Each line of an order can be approved or denied on its own. A line with no
+// decision yet counts as going ahead (that's how orders approved as a whole
+// were handled before), so only a denied line is left out.
+export const LINE_DECISIONS = [
+  { id: "approved", label: "Approved" },
+  { id: "denied", label: "Not approved" },
+];
+
+export function isDenied(line) {
+  return line?.decision?.status === "denied";
+}
+
+/** The lines that will ship. */
+export function shippingLines(order) {
+  return order.lines.filter((line) => !isDenied(line));
+}
+
+/** Units and value of the lines that will ship. */
+export function shippingTotals(order) {
+  const lines = shippingLines(order);
+  return {
+    units: lines.reduce((n, l) => n + l.quantity, 0),
+    cents: lines.reduce((n, l) => n + l.lineTotalCents, 0),
+  };
+}
+
+/** How many lines were approved and denied, once the order has been reviewed. */
+export function reviewCounts(order) {
+  const decided = order.lines.filter((l) => l.decision);
+  return {
+    reviewed: decided.length > 0,
+    approved: order.lines.length - order.lines.filter(isDenied).length,
+    denied: order.lines.filter(isDenied).length,
+  };
+}
+
 export function trackingUrl(carrierId, trackingNumber) {
   const carrier = CARRIERS.find((c) => c.id === carrierId);
   if (!carrier?.trackingUrl || !trackingNumber) return null;
@@ -276,7 +314,8 @@ export function quantityRuleText(item) {
 /**
  * What each person has ordered, for the admin's tracker: their orders, units
  * and order value, and every item they ordered by option and colour, most
- * ordered first. Cancelled and declined orders don't count.
+ * ordered first. Cancelled and declined orders, and items that weren't
+ * approved, don't count.
  *
  * `from` and `to` are ISO times (`to` is exclusive). `people` is the team
  * list: everyone on it gets a row, ordered or not, and orders placed before
@@ -326,14 +365,15 @@ export function trackByPerson(orders, { from = "", to = "", people = [] } = {}) 
     if (!person && order.requester.name && (!row.lastOrderAt || order.createdAt >= row.lastOrderAt)) {
       row.name = order.requester.name;
     }
+    const shipped = shippingTotals(order);
     row.orders += 1;
     if (OPEN_STATUSES.includes(order.status)) row.openOrders += 1;
-    row.units += order.totalUnits;
-    row.valueCents += order.totalCents;
+    row.units += shipped.units;
+    row.valueCents += shipped.cents;
     if (!row.firstOrderAt || order.createdAt < row.firstOrderAt) row.firstOrderAt = order.createdAt;
     if (!row.lastOrderAt || order.createdAt > row.lastOrderAt) row.lastOrderAt = order.createdAt;
     row.orderIds.push(order.id);
-    for (const line of order.lines) {
+    for (const line of shippingLines(order)) {
       const key = `${line.itemId}::${line.variantId}::${line.color ?? ""}`;
       const item = row.items.get(key) ?? {
         itemId: line.itemId,

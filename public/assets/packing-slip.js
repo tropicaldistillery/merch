@@ -1,5 +1,5 @@
 import { addressLines, api, clear, el, formatCalendarDate, formatDate } from "./core.js";
-import { ACCOUNT_TYPES, PURPOSES, labelFor, optionText } from "./shared.js";
+import { ACCOUNT_TYPES, PURPOSES, labelFor, optionText, shippingLines } from "./shared.js";
 
 const slip = document.getElementById("slip");
 
@@ -56,7 +56,8 @@ function slipContent(order) {
       el(
         "tbody",
         {},
-        order.lines.map((line) =>
+        // Only what was approved goes in the box.
+        shippingLines(order).map((line) =>
           el(
             "tr",
             {},

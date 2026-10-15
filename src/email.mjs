@@ -3,8 +3,10 @@
 //     confirmation to the person who placed it. With ORDER_EMAIL_TO_POS and/or
 //     ORDER_EMAIL_TO_SAMPLES set, the alert is split: point-of-sale lines go
 //     to one inbox and samples to the other, each with just its own lines
-//   - every status change: an update to that person (approved, shipped with
-//     the tracking link, delivered, declined with the reason, cancelled)
+//   - every status change: an update to that person (approved, approved in
+//     part with each item that wasn't and why, shipped with the tracking link
+//     or a note that it's coming, delivered, declined with the reason,
+//     cancelled), and the tracking link when it's added after shipping
 //   - a requester cancelling their own order: a note to the admins
 //   - an invite from the admin: a link to create (or reset) a password
 //   - a request for an out-of-stock item: an alert to the admins, then to the
@@ -14,7 +16,7 @@
 // Sending never holds up or undoes an order: emails go out one after another
 // in the background, and failures are logged.
 
-import { ACCOUNT_TYPES, CARRIERS, PURPOSES, STATUSES, formatMoney, labelFor, optionText, trackingUrl } from "../public/assets/shared.js";
+import { ACCOUNT_TYPES, CARRIERS, PURPOSES, formatMoney, isDenied, labelFor, optionText, shippingLines, trackingUrl } from "../public/assets/shared.js";
 
 const RESEND_URL = "https://api.resend.com/emails";
 const EMAIL_RE = /^[^\s@,<>]+@[^\s@,<>]+\.[^\s@,<>]{2,}$/;
@@ -110,6 +112,18 @@ const block = {
   button: (label, url) => (url ? { kind: "button", label, url } : null),
 };
 
+/** The order's total, or with lines denied, the total of what was approved. */
+function itemTotals(order) {
+  if (!order.lines.some(isDenied)) return { units: order.totalUnits, cents: order.totalCents, label: "" };
+  const lines = shippingLines(order);
+  return { units: lines.reduce((n, l) => n + l.quantity, 0), cents: lines.reduce((n, l) => n + l.lineTotalCents, 0), label: "Approved: " };
+}
+
+/** Just the lines that ship, for the emails sent once the order is on its way. */
+function shippedPart(order) {
+  return order.lines.some(isDenied) ? partOf(order, shippingLines(order)) : order;
+}
+
 function shipToLines(order) {
   const s = order.shipTo;
   return [
@@ -181,32 +195,73 @@ export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl =
       );
       break;
     }
-    case "order.approved":
+    case "order.approved": {
+      const itemByItem = order.lines.some((l) => l.decision);
       emails.push(
         toRequester(`Your merch order ${order.number} is approved`, [
           block.p(hi),
-          block.p(`Good news: order ${order.number} is approved and will be packed and shipped next.`),
+          block.p(
+            itemByItem
+              ? `Good news: every item in order ${order.number} is approved, and it will be packed and shipped next.`
+              : `Good news: order ${order.number} is approved and will be packed and shipped next.`
+          ),
           latest.note ? block.note("Note from the merch admin", latest.note) : null,
           block.items(order),
           block.button("See it under My orders", mineLink),
         ])
       );
       break;
+    }
+    case "order.reviewed": {
+      const denied = order.lines.filter(isDenied).length;
+      const approved = order.lines.length - denied;
+      emails.push(
+        toRequester(`Your merch order ${order.number}: ${approved} of ${order.lines.length} items approved`, [
+          block.p(hi),
+          block.p(
+            `The merch admin reviewed order ${order.number}. ${approved === 1 ? "One item is" : `${approved} items are`} approved and will be packed and shipped next. ${denied === 1 ? "One item wasn't" : `${denied} items weren't`} approved, so ${denied === 1 ? "it" : "they"} won't ship.`
+          ),
+          latest.note ? block.note("Note from the merch admin", latest.note) : null,
+          block.items(order),
+          block.p("Reply to this email if you have questions."),
+          block.button("See it under My orders", mineLink),
+        ])
+      );
+      break;
+    }
     case "order.shipped": {
       const shipment = order.shipment ?? {};
-      const carrier = labelFor(CARRIERS, shipment.carrier);
+      const carrier = shipment.carrier ? labelFor(CARRIERS, shipment.carrier) : "";
       const url = trackingUrl(shipment.carrier, shipment.trackingNumber);
+      const later = shipment.carrier !== "hand" && !shipment.trackingNumber;
       const how =
         shipment.carrier === "hand"
           ? `Order ${order.number} is on its way: it's being hand-delivered.`
-          : `Order ${order.number} has shipped via ${carrier}${shipment.trackingNumber ? `, tracking number ${shipment.trackingNumber}` : ""}.`;
+          : `Order ${order.number} has shipped${carrier ? ` via ${carrier}` : ""}${shipment.trackingNumber ? `, tracking number ${shipment.trackingNumber}` : ""}.`;
       emails.push(
         toRequester(`Your merch order ${order.number} has shipped`, [
           block.p(hi),
           block.p(how),
+          later ? block.p("We'll email you the tracking number as soon as we have it.") : null,
           latest.note ? block.note("Note from the merch admin", latest.note) : null,
           block.button("Track the package", url),
-          block.items(order),
+          block.items(shippedPart(order)),
+          block.details([["Ships to", shipToLines(order).join("\n")]]),
+        ])
+      );
+      break;
+    }
+    case "order.tracking": {
+      const shipment = order.shipment ?? {};
+      const url = trackingUrl(shipment.carrier, shipment.trackingNumber);
+      emails.push(
+        toRequester(`Tracking for your merch order ${order.number}`, [
+          block.p(hi),
+          block.p(
+            `Here's the tracking for order ${order.number}${shipment.carrier ? `, shipped via ${labelFor(CARRIERS, shipment.carrier)}` : ""}: ${shipment.trackingNumber}.`
+          ),
+          block.button("Track the package", url),
+          block.items(shippedPart(order)),
           block.details([["Ships to", shipToLines(order).join("\n")]]),
         ])
       );
@@ -218,21 +273,24 @@ export function orderEmails(event, order, { adminTo = [], routes = {}, baseUrl =
           block.p(hi),
           block.p(`Order ${order.number} has been delivered. Reply to this email if anything is missing or damaged.`),
           latest.note ? block.note("Note from the merch admin", latest.note) : null,
-          block.items(order),
+          block.items(shippedPart(order)),
         ])
       );
       break;
-    case "order.declined":
+    case "order.declined": {
+      // Declined item by item, each line carries its own reason.
+      const reasonsOnItems = order.lines.some((l) => l.decision?.reason);
       emails.push(
         toRequester(`Your merch order ${order.number} was declined`, [
           block.p(hi),
           block.p(`Order ${order.number} wasn't approved, and nothing will ship.`),
-          block.note("Reason", latest.note || "No reason was given."),
+          latest.note || !reasonsOnItems ? block.note("Reason", latest.note || "No reason was given.") : null,
           block.p("Reply to this email if you have questions, or place a new order from the store."),
           block.items(order),
         ])
       );
       break;
+    }
     case "order.cancelled":
       if (byRequester) {
         emails.push(
@@ -280,10 +338,18 @@ function htmlBlock(b) {
       const rows = b.order.lines
         .map((l) => {
           const detail = [optionText(l), l.unit].filter(Boolean).join(" · ");
-          return `<tr><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px;vertical-align:top;width:44px"><strong>${l.quantity}×</strong></td><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px"><div style="font-weight:600">${escapeHtml(l.name)}</div>${detail ? `<div style="color:${MUTED};font-size:13px">${escapeHtml(detail)}</div>` : ""}</td><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px;text-align:right;white-space:nowrap;vertical-align:top">${escapeHtml(formatMoney(l.lineTotalCents))}</td></tr>`;
+          const denied = isDenied(l);
+          const status = denied
+            ? `<div style="margin-top:3px;color:${PINK};font-size:13px;font-weight:600">Not approved${l.decision.reason ? `: ${escapeHtml(l.decision.reason)}` : ""}</div>`
+            : l.decision
+              ? `<div style="margin-top:3px;color:#2e6b1f;font-size:13px;font-weight:600">Approved</div>`
+              : "";
+          const strike = denied ? ";color:#8a93a6;text-decoration:line-through" : "";
+          return `<tr><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px;vertical-align:top;width:44px${strike}"><strong>${l.quantity}×</strong></td><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px"><div style="font-weight:600${strike}">${escapeHtml(l.name)}</div>${detail ? `<div style="color:${MUTED};font-size:13px">${escapeHtml(detail)}</div>` : ""}${status}</td><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px;text-align:right;white-space:nowrap;vertical-align:top${strike}">${escapeHtml(formatMoney(l.lineTotalCents))}</td></tr>`;
         })
         .join("");
-      const total = `<tr><td></td><td style="padding:10px 0 0;font-size:14px;font-weight:700">${b.order.totalUnits} unit${b.order.totalUnits === 1 ? "" : "s"}</td><td style="padding:10px 0 0;font-size:14px;font-weight:700;text-align:right">${escapeHtml(formatMoney(b.order.totalCents))}</td></tr>`;
+      const { units, cents, label } = itemTotals(b.order);
+      const total = `<tr><td></td><td style="padding:10px 0 0;font-size:14px;font-weight:700">${label}${units} unit${units === 1 ? "" : "s"}</td><td style="padding:10px 0 0;font-size:14px;font-weight:700;text-align:right">${escapeHtml(formatMoney(cents))}</td></tr>`;
       return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;border-collapse:collapse">${rows}${total}</table>`;
     }
     case "details":
@@ -306,14 +372,17 @@ function textBlock(b) {
       return b.text;
     case "note":
       return `${b.label}: ${b.text}`;
-    case "items":
+    case "items": {
+      const { units, cents, label } = itemTotals(b.order);
       return [
         ...b.order.lines.map((l) => {
           const detail = optionText(l);
-          return `${l.quantity} × ${l.name}${detail ? ` (${detail})` : ""}: ${formatMoney(l.lineTotalCents)}`;
+          const status = isDenied(l) ? ` (NOT APPROVED${l.decision.reason ? `: ${l.decision.reason}` : ""})` : l.decision ? " (approved)" : "";
+          return `${l.quantity} × ${l.name}${detail ? ` (${detail})` : ""}: ${formatMoney(l.lineTotalCents)}${status}`;
         }),
-        `Total: ${b.order.totalUnits} unit${b.order.totalUnits === 1 ? "" : "s"}, ${formatMoney(b.order.totalCents)}`,
+        `${label ? label.replace(/: $/, "") : "Total"}: ${units} unit${units === 1 ? "" : "s"}, ${formatMoney(cents)}`,
       ].join("\n");
+    }
     case "details":
       return b.rows.map(([k, v]) => `${k}: ${String(v).replace(/\n/g, ", ")}`).join("\n");
     case "button":
@@ -487,11 +556,13 @@ export function createEmailer({
     return queue;
   }
 
-  function notify(event, order, { byRequester = false } = {}) {
+  function notify(event, order, { byRequester = false, resend = "" } = {}) {
     const emails = orderEmails(event, order, { adminTo, routes, baseUrl, byRequester });
     // The same event on the same order is only ever emailed once, even if a
-    // request is retried.
-    for (const email of emails) enqueue(email, `${order.id}:${event}:${order.history.length}:${email.role}`);
+    // request is retried; the admin sending it again on purpose (`resend`)
+    // gets a new key. Tracking is keyed by the tracking number it carries.
+    const at = event === "order.tracking" ? order.shipment?.trackingNumber : order.history.length;
+    for (const email of emails) enqueue(email, `${order.id}:${event}:${at}:${email.role}${resend ? `:${resend}` : ""}`);
     return queue;
   }
 

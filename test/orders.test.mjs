@@ -5,9 +5,11 @@ import { initialState } from "../src/store/initial-state.mjs";
 import {
   cancelOwnOrder,
   csvCell,
+  decisionEvent,
   normalizeAccountEdit,
   ordersToCsv,
   placeOrder,
+  reviewOrder,
   updateOrder,
   validateOrderInput,
 } from "../src/orders.mjs";
@@ -352,12 +354,25 @@ describe("status changes", () => {
     assert.equal(stock(db, "jfh-led-sign"), 6);
   });
 
-  it("needs tracking to ship by carrier, but not by hand", () => {
+  it("ships now and takes the tracking number later", () => {
     const { db, id } = setup();
-    assert.ok(fieldErrors(() => updateOrder(db, id, { status: "shipped", carrier: "ups" }, by)).trackingNumber);
     assert.ok(fieldErrors(() => updateOrder(db, id, { status: "shipped", carrier: "pigeon" }, by)).carrier);
-    const { order: shipped } = updateOrder(db, id, { status: "shipped", carrier: "hand" }, by);
+    assert.ok(fieldErrors(() => updateOrder(db, id, { status: "shipped", trackingNumber: "1Z1" }, by)).carrier, "a tracking number needs its carrier");
+    const { order: shipped } = updateOrder(db, id, { status: "shipped", carrier: "ups" }, by);
     assert.equal(shipped.status, "shipped");
+    assert.equal(shipped.shipment.trackingNumber, "");
+
+    const added = updateOrder(db, id, { carrier: "ups", trackingNumber: "1Z 999" }, by);
+    assert.deepEqual([added.statusChanged, added.trackingAdded, added.order.shipment.trackingNumber], [false, true, "1Z999"]);
+    assert.equal(added.order.shipment.shippedAt, shipped.shipment.shippedAt, "still shipped when it shipped");
+    assert.equal(updateOrder(db, id, { carrier: "ups", trackingNumber: "1Z999" }, by).trackingAdded, false, "the same number isn't news");
+    assert.equal(updateOrder(db, id, { adminNote: "Boxed" }, by).trackingAdded, false);
+  });
+
+  it("can ship with no carrier yet", () => {
+    const { db, id } = setup();
+    const { order: shipped } = updateOrder(db, id, { status: "shipped" }, by);
+    assert.deepEqual([shipped.shipment.carrier, shipped.shipment.trackingNumber], ["", ""]);
   });
 
   it("corrects tracking without a status change", () => {
@@ -453,5 +468,98 @@ describe("the per-person tracker", () => {
     const csv = trackerToCsv(rows).trim().split("\r\n");
     assert.equal(csv.length, 4, "a header, Jane's tee, Sam's cap, Lee's empty row");
     assert.match(csv[3], /^Lee,lee@tropicaldistillery.com,,yes,0,0,0.00,,,,,,0,0.00,0$/);
+  });
+});
+
+describe("approving and denying item by item", () => {
+  const by = { actor: "Allie", now: NOW };
+  function setup() {
+    const db = initialState();
+    const placed = place(db, order({
+      shipTo: PELICAN,
+      purpose: "event",
+      lines: [
+        { itemId: "jfh-logo-tee", variantId: "m", quantity: 2 },
+        { itemId: "jfh-led-sign", quantity: 1 },
+      ],
+    }));
+    return { db, id: placed.id, tees: stock(db, "jfh-logo-tee", "m"), signs: stock(db, "jfh-led-sign") };
+  }
+  const yes = { status: "approved" };
+
+  it("approves some items and denies others, putting the denied units back", () => {
+    const { db, id, tees, signs } = setup();
+    const { order: reviewed, event } = reviewOrder(db, id, {
+      decisions: [yes, { status: "denied", reason: "  Signs are for priority accounts  " }],
+      note: "Tees are on the way",
+    }, by);
+    assert.equal(event, "order.reviewed");
+    assert.equal(reviewed.status, "approved");
+    assert.deepEqual(reviewed.lines.map((l) => l.decision.status), ["approved", "denied"]);
+    assert.equal(reviewed.lines[1].decision.reason, "Signs are for priority accounts");
+    assert.equal(reviewed.lines[0].decision.reason, "", "only a denied item keeps a reason");
+    assert.deepEqual(reviewed.history.at(-1).review, { approved: 1, denied: 1 });
+    assert.equal(stock(db, "jfh-logo-tee", "m"), tees);
+    assert.equal(stock(db, "jfh-led-sign"), signs + 1);
+    assert.equal(decisionEvent(reviewed), "order.reviewed");
+
+    const rows = ordersToCsv(db.orders).trim().split("\r\n");
+    assert.match(rows[0], /,item_status,item_note,/);
+    assert.match(rows[2], /,Not approved,Signs are for priority accounts,/);
+
+    // Cancelling it now returns only the units still held.
+    updateOrder(db, id, { status: "cancelled" }, by);
+    assert.equal(stock(db, "jfh-logo-tee", "m"), tees + 2);
+    assert.equal(stock(db, "jfh-led-sign"), signs + 1);
+  });
+
+  it("approves everything as order.approved", () => {
+    const { db, id } = setup();
+    const { order: reviewed, event } = reviewOrder(db, id, { decisions: [yes, yes] }, by);
+    assert.deepEqual([reviewed.status, event, decisionEvent(reviewed)], ["approved", "order.approved", "order.approved"]);
+  });
+
+  it("declines the order when everything is denied, and needs a reason", () => {
+    const { db, id, tees, signs } = setup();
+    const no = { status: "denied" };
+    assert.ok(fieldErrors(() => reviewOrder(db, id, { decisions: [no, no] }, by)).note);
+    assert.equal(stock(db, "jfh-led-sign"), signs, "a refused review leaves stock alone");
+    // Reasons on each item are enough.
+    const { order: declined, event } = reviewOrder(db, id, { decisions: [{ ...no, reason: "Out of budget" }, { ...no, reason: "Not this quarter" }] }, by);
+    assert.deepEqual([declined.status, event], ["declined", "order.declined"]);
+    assert.equal(stock(db, "jfh-logo-tee", "m"), tees + 2);
+    assert.equal(stock(db, "jfh-led-sign"), signs + 1);
+    assert.equal(declined.history.at(-1).status, "declined");
+    assert.throws(() => reviewOrder(db, id, { decisions: [yes, yes] }, by), (e) => e.status === 409, "declined is final");
+  });
+
+  it("needs a decision for every item", () => {
+    const { db, id } = setup();
+    const errors = fieldErrors(() => reviewOrder(db, id, { decisions: [yes] }, by));
+    assert.ok(errors["decisions.1"]);
+    assert.ok(fieldErrors(() => reviewOrder(db, id, { decisions: [yes, { status: "maybe" }] }, by))["decisions.1"]);
+  });
+
+  it("can change a decision before shipping, taking the stock again if it's there", () => {
+    const { db, id, signs } = setup();
+    reviewOrder(db, id, { decisions: [yes, { status: "denied", reason: "No" }] }, by);
+    assert.equal(stock(db, "jfh-led-sign"), signs + 1);
+    const { order: changed, event } = reviewOrder(db, id, { decisions: [yes, yes] }, by);
+    assert.equal(event, "order.approved");
+    assert.equal(changed.lines[1].decision.status, "approved");
+    assert.equal(stock(db, "jfh-led-sign"), signs);
+
+    // Denied again, and then the stock runs out before it's approved again.
+    reviewOrder(db, id, { decisions: [yes, { status: "denied" }] }, by);
+    db.catalog.find((i) => i.id === "jfh-led-sign").variants[0].stock = 0;
+    assert.match(fieldErrors(() => reviewOrder(db, id, { decisions: [yes, yes] }, by))["decisions.1"], /Only 0 left/);
+  });
+
+  it("can't review an order once it has shipped", () => {
+    const { db, id } = setup();
+    reviewOrder(db, id, { decisions: [yes, yes] }, by);
+    updateOrder(db, id, { status: "shipped", carrier: "hand" }, by);
+    assert.throws(() => reviewOrder(db, id, { decisions: [yes, yes] }, by), (e) => e.status === 409);
+    assert.equal(decisionEvent(db.orders[0]), null);
   });
 });

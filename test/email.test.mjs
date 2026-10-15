@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { createEmailer, escapeHtml, inviteEmail, orderEmails, parseAddresses, renderEmail } from "../src/email.mjs";
-import { placeOrder, updateOrder } from "../src/orders.mjs";
+import { placeOrder, reviewOrder, updateOrder } from "../src/orders.mjs";
 import { initialState } from "../src/store/initial-state.mjs";
 
 const NOW = new Date("2026-10-06T15:00:00Z");
 const ADMINS = ["allie@tropicaldistillery.com", "ops@tropicaldistillery.com"];
 const BASE = "https://tropical-merch.onrender.com/";
 
-function placed({ name = "Jane Rep", rush = false, notes = "" } = {}) {
+function placed({ name = "Jane Rep", rush = false, notes = "", lines = [{ itemId: "jfh-bar-mat", variantId: "default", quantity: 2 }] } = {}) {
   const db = initialState();
   const order = placeOrder(
     db,
@@ -30,7 +30,7 @@ function placed({ name = "Jane Rep", rush = false, notes = "" } = {}) {
       shippingSpeed: rush ? "rush" : "standard",
       rushReason: rush ? "Launch party Friday" : "",
       notes,
-      lines: [{ itemId: "jfh-bar-mat", variantId: "default", quantity: 2 }],
+      lines,
     },
     { requester: { name, email: "jane@tropicaldistillery.com" }, now: NOW, timeZone: "America/New_York", prefix: "TD" }
   );
@@ -81,6 +81,40 @@ describe("order emails", () => {
     db2.orders.push(declinedOrder);
     updateOrder(db2, declinedOrder.id, { status: "declined", note: "Over budget this month" }, by);
     assert.match(renderEmail(orderEmails("order.declined", declinedOrder)[0]).text, /Reason: Over budget this month/);
+  });
+
+  it("tells the requester which items were approved and which weren't, and why", () => {
+    const { db, order } = placed({ lines: [{ itemId: "jfh-bar-mat", variantId: "default", quantity: 2 }, { itemId: "jfh-logo-tee", variantId: "m", quantity: 1 }] });
+    const { event } = reviewOrder(db, order.id, { decisions: [{ status: "approved" }, { status: "denied", reason: "Tees are for the team" }], note: "Mats ship Monday" }, by);
+    const [email] = orderEmails(event, order, { adminTo: ADMINS, baseUrl: BASE });
+    assert.equal(email.role, "requester");
+    assert.equal(email.subject, "Your merch order TD-1001: 1 of 2 items approved");
+    const { text, html } = renderEmail(email);
+    assert.match(text, /One item is approved and will be packed and shipped next\. One item wasn't approved/);
+    assert.match(text, /1 × J\.F\. Haden's Logo Tee \(M\): \$11\.50 \(NOT APPROVED: Tees are for the team\)/);
+    assert.match(text, /Approved: 2 units, /);
+    assert.match(text, /Note from the merch admin: Mats ship Monday/);
+    assert.match(html, /Not approved: Tees are for the team/);
+
+    // Once it ships, only the approved items are listed.
+    updateOrder(db, order.id, { status: "shipped", carrier: "ups" }, by);
+    const shipped = renderEmail(orderEmails("order.shipped", order)[0]).text;
+    assert.match(shipped, /has shipped via UPS\./);
+    assert.match(shipped, /We'll email you the tracking number as soon as we have it\./);
+    assert.ok(!shipped.includes("Logo Tee"));
+
+    updateOrder(db, order.id, { carrier: "ups", trackingNumber: "1Z999" }, by);
+    const [tracking] = orderEmails("order.tracking", order, { baseUrl: BASE });
+    assert.equal(tracking.subject, "Tracking for your merch order TD-1001");
+    assert.match(renderEmail(tracking).html, /href="https:\/\/www\.ups\.com\/track\?tracknum=1Z999"/);
+  });
+
+  it("gives each item's reason when every item is declined", () => {
+    const { db, order } = placed();
+    reviewOrder(db, order.id, { decisions: [{ status: "denied", reason: "Mats are back-ordered" }] }, by);
+    const text = renderEmail(orderEmails("order.declined", order)[0]).text;
+    assert.match(text, /NOT APPROVED: Mats are back-ordered/);
+    assert.ok(!text.includes("No reason was given"));
   });
 
   it("emails the admins, not the requester, when requesters cancel their own order", () => {

@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import {
   ACCOUNT_TYPES,
   CARRIERS,
+  LINE_DECISIONS,
   PURPOSES,
   RELEASED_STATUSES,
   SHIPPING_SPEEDS,
@@ -13,6 +14,7 @@ import {
   TRANSITIONS,
   US_STATES,
   imageFor,
+  isDenied,
   labelFor,
   quantityProblem,
 } from "../public/assets/shared.js";
@@ -333,9 +335,11 @@ function reserveStock(db, order) {
 }
 
 // Put a cancelled or declined order's units back. An item that has since been
-// removed, or stopped being stock-tracked, is skipped.
+// removed, or stopped being stock-tracked, is skipped, and so is a line that
+// wasn't approved: its units went back when it was denied.
 export function releaseStock(db, order) {
   for (const line of order.lines) {
+    if (isDenied(line)) continue;
     const variant = variantFor(db, line);
     if (variant && Number.isInteger(variant.stock)) variant.stock += line.quantity;
   }
@@ -468,20 +472,22 @@ export function cancelOwnOrder(db, orderId, { email, name, personId = null, dist
   return order;
 }
 
+// The carrier and tracking number can both wait: an order can be marked
+// shipped first and its tracking added once it's known. A tracking number
+// does need its carrier, to make the tracking link.
 function readShipment(patch, errors, at, previous) {
   const carrier = cleanLine(patch.carrier, 20);
-  if (!CARRIERS.some((c) => c.id === carrier)) errors.carrier = "Choose a carrier.";
+  if (carrier && !CARRIERS.some((c) => c.id === carrier)) errors.carrier = "Choose a carrier.";
   const trackingNumber = cleanLine(patch.trackingNumber, 60).replace(/\s+/g, "");
-  if (!trackingNumber && carrier !== "hand" && carrier !== "other") {
-    errors.trackingNumber = "Add the tracking number.";
-  }
+  if (trackingNumber && !carrier) errors.carrier = "Choose the carrier for this tracking number.";
   return { ...previous, carrier, trackingNumber, shippedAt: previous?.shippedAt ?? at };
 }
 
 /**
  * Admin changes to an order: a status change (with its note and, when
- * shipping, carrier and tracking), a tracking correction on an order already
- * shipped, and the internal admin note.
+ * shipping, carrier and tracking), tracking added or corrected on an order
+ * already shipped, and the internal admin note. `trackingAdded` says a
+ * tracking number is new or different, so the requester can be told.
  */
 export function updateOrder(db, orderId, patch, { actor, now = new Date() }) {
   const order = findOrder(db, orderId);
@@ -512,6 +518,9 @@ export function updateOrder(db, orderId, patch, { actor, now = new Date() }) {
 
   if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
 
+  const trackingAdded =
+    correctingShipment && Boolean(shipment.trackingNumber) && shipment.trackingNumber !== order.shipment.trackingNumber;
+
   if (statusChanged) {
     if (RELEASED_STATUSES.includes(next)) releaseStock(db, order);
     if (next === "delivered") shipment = { ...shipment, deliveredAt: at };
@@ -522,7 +531,84 @@ export function updateOrder(db, orderId, patch, { actor, now = new Date() }) {
   if ("adminNote" in src) order.adminNote = cleanText(src.adminNote, 1000);
   order.updatedAt = at;
 
-  return { order, statusChanged };
+  return { order, statusChanged, trackingAdded };
+}
+
+export const MAX_DECISION_REASON = 200;
+
+/**
+ * Approve or deny each line of an order that hasn't shipped yet, in one go.
+ * `input.decisions` has one { status: "approved" | "denied", reason } per
+ * line, in order; the reason is what the requester sees for a denied line.
+ *
+ * A denied line's units go back to stock, and approving a line that was
+ * denied takes them again (if they're still there). With every line denied
+ * the order is declined, and the requester needs to be told why; otherwise
+ * it's approved, with just the approved lines to ship. Returns the event to
+ * tell the requester about: order.approved, order.reviewed (some lines
+ * denied) or order.declined.
+ */
+export function reviewOrder(db, orderId, input, { actor, now = new Date() }) {
+  const order = findOrder(db, orderId);
+  if (order.status !== "submitted" && order.status !== "approved") {
+    throw new ValidationError(
+      `This order is already ${labelFor(STATUSES, order.status).toLowerCase()}, so its items can't be approved or denied now.`,
+      {},
+      409
+    );
+  }
+  const src = input && typeof input === "object" ? input : {};
+  const raw = Array.isArray(src.decisions) ? src.decisions : [];
+  const errors = {};
+
+  const decisions = order.lines.map((line, i) => {
+    const d = raw[i] && typeof raw[i] === "object" ? raw[i] : {};
+    const status = cleanLine(d.status, 20);
+    if (!LINE_DECISIONS.some((x) => x.id === status)) errors[`decisions.${i}`] = "Approve or deny this item.";
+    if (status === "approved" && isDenied(line)) {
+      const variant = variantFor(db, line);
+      if (variant && Number.isInteger(variant.stock) && variant.stock < line.quantity) {
+        errors[`decisions.${i}`] = `Only ${variant.stock} left, so this can't be approved now.`;
+      }
+    }
+    return { status, reason: status === "denied" ? cleanText(d.reason, MAX_DECISION_REASON) : "" };
+  });
+
+  const note = cleanText(src.note, 500);
+  const denied = decisions.filter((d) => d.status === "denied").length;
+  const allDenied = denied === order.lines.length;
+  if (allDenied && !note && decisions.some((d) => !d.reason)) {
+    errors.note = "Nothing is approved, so tell the requester why.";
+  }
+  if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
+
+  // Everything has been checked, so none of this can fail part-way.
+  const at = now.toISOString();
+  order.lines.forEach((line, i) => {
+    const wasDenied = isDenied(line);
+    const nowDenied = decisions[i].status === "denied";
+    const variant = variantFor(db, line);
+    if (variant && Number.isInteger(variant.stock) && wasDenied !== nowDenied) {
+      variant.stock += nowDenied ? line.quantity : -line.quantity;
+    }
+    line.decision = { status: decisions[i].status, reason: decisions[i].reason, at, by: actor };
+  });
+
+  const next = allDenied ? "declined" : "approved";
+  order.status = next;
+  order.updatedAt = at;
+  order.history.push({ at, status: next, by: actor, note, review: { approved: order.lines.length - denied, denied } });
+
+  const event = denied === 0 ? "order.approved" : allDenied ? "order.declined" : "order.reviewed";
+  return { order, event };
+}
+
+/** The email (and webhook) event that tells the requester where a reviewed order stands. */
+export function decisionEvent(order) {
+  const denied = order.lines.filter(isDenied).length;
+  if (order.status === "declined") return "order.declined";
+  if (order.status !== "approved") return null;
+  return denied ? "order.reviewed" : "order.approved";
 }
 
 export const MAX_BULK_ORDERS = 200;
@@ -588,15 +674,15 @@ export function bulkUpdateOrders(db, input, { actor, now = new Date() }) {
   const note = cleanText(src.note, 500);
   if (action === "declined" && !note) errors.note = "Tell the requesters why they were declined.";
 
+  // Tracking numbers are optional here too, and can be added to each order
+  // later; any that are given need the carrier.
   let carrier = "";
   const tracking = src.tracking && typeof src.tracking === "object" ? src.tracking : {};
   if (action === "shipped") {
     carrier = cleanLine(src.carrier, 20);
-    if (!CARRIERS.some((c) => c.id === carrier)) errors.carrier = "Choose a carrier.";
-    else if (carrier !== "hand" && carrier !== "other") {
-      for (const order of targets) {
-        if (!cleanLine(tracking[order.id], 60)) errors[`tracking.${order.id}`] = "Add the tracking number.";
-      }
+    if (carrier && !CARRIERS.some((c) => c.id === carrier)) errors.carrier = "Choose a carrier.";
+    else if (!carrier && targets.some((order) => cleanLine(tracking[order.id], 60))) {
+      errors.carrier = "Choose the carrier for these tracking numbers.";
     }
   }
   if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
@@ -647,6 +733,8 @@ export const CSV_COLUMNS = [
   ["quantity", (o, l) => l.quantity],
   ["unit_cost", (o, l) => (l.unitCostCents / 100).toFixed(2)],
   ["line_cost", (o, l) => (l.lineTotalCents / 100).toFixed(2)],
+  ["item_status", (o, l) => (l.decision ? labelFor(LINE_DECISIONS, l.decision.status) : "")],
+  ["item_note", (o, l) => l.decision?.reason ?? ""],
   ["carrier", (o) => (o.shipment ? labelFor(CARRIERS, o.shipment.carrier) : "")],
   ["tracking_number", (o) => o.shipment?.trackingNumber ?? ""],
   ["notes", (o) => o.notes],

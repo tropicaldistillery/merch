@@ -37,10 +37,13 @@ import {
   distributorCodeFor,
   formatMoney,
   generateSku,
+  isDenied,
   itemImages,
   labelFor,
   optionText,
   quantityRuleText,
+  reviewCounts,
+  shippingTotals,
   suggestedMaxPerOrder,
   suggestedMinPerOrder,
   trackByPerson,
@@ -446,7 +449,7 @@ function renderOrders() {
           el("td", {}, shipToCell(order)),
           el("td", { class: "num" }, el("div", { text: String(order.totalUnits) }), el("div", { class: "cell-sub", text: formatMoney(order.totalCents) })),
           el("td", {}, neededByCell(order)),
-          el("td", {}, statusBadge(order.status))
+          el("td", {}, statusBadge(order.status), deniedTag(order))
         )
       )
     )
@@ -572,7 +575,7 @@ function openBulk(action) {
         el(
           "table",
           { class: "table bulk-tracking" },
-          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Order" }), el("th", { scope: "col", text: "Tracking number" }))),
+          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Order" }), el("th", { scope: "col", text: "Tracking number (optional)" }))),
           el(
             "tbody",
             {},
@@ -636,8 +639,8 @@ function openBulk(action) {
             "div",
             { class: "field span-3" },
             el("label", { for: "bulk-carrier", text: "Carrier" }),
-            el("select", { id: "bulk-carrier", name: "carrier" }, options(CARRIERS, { placeholder: "Choose…" })),
-            el("p", { class: "hint", text: "Hand-delivered and other carriers don't need tracking numbers." })
+            el("select", { id: "bulk-carrier", name: "carrier" }, options(CARRIERS, { placeholder: "Add later" })),
+            el("p", { class: "hint", text: "Tracking numbers are optional: leave any blank and add them to each order later." })
           )
         )
       : "",
@@ -761,14 +764,15 @@ function actionForm(order, status) {
           "div",
           { class: "field span-3" },
           el("label", { for: "carrier", text: "Carrier" }),
-          el("select", { id: "carrier", name: "carrier" }, options(CARRIERS, { placeholder: "Choose…", selected: order.shipment?.carrier }))
+          el("select", { id: "carrier", name: "carrier" }, options(CARRIERS, { placeholder: "Add later", selected: order.shipment?.carrier }))
         ),
         el(
           "div",
           { class: "field span-3" },
-          el("label", { for: "trackingNumber", text: "Tracking number" }),
-          el("input", { id: "trackingNumber", name: "trackingNumber", type: "text", maxlength: "60", value: order.shipment?.trackingNumber ?? "" })
-        )
+          el("label", { for: "trackingNumber" }, "Tracking number", el("span", { class: "optional", text: " (optional)" })),
+          el("input", { id: "trackingNumber", name: "trackingNumber", type: "text", maxlength: "60", value: order.shipment?.trackingNumber ?? "", "aria-describedby": "tracking-later" })
+        ),
+        el("p", { class: "hint span-6", id: "tracking-later", text: "Don't have it yet? Leave it blank and add it later with Add tracking. The requester is emailed when you do." })
       )
     : null;
 
@@ -823,7 +827,10 @@ function actionForm(order, status) {
   return form;
 }
 
+// Add tracking to an order marked shipped without it, or correct it. A new
+// tracking number is emailed to the requester unless the box is unticked.
 function trackingCorrectionForm(order) {
+  const adding = !order.shipment.trackingNumber;
   const form = el("form", { class: "action-form", novalidate: true });
   const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
   form.append(
@@ -835,7 +842,7 @@ function trackingCorrectionForm(order) {
         "div",
         { class: "field span-3" },
         el("label", { for: "fix-carrier", text: "Carrier" }),
-        el("select", { id: "fix-carrier", name: "carrier" }, options(CARRIERS, { selected: order.shipment.carrier }))
+        el("select", { id: "fix-carrier", name: "carrier" }, options(CARRIERS, { placeholder: "Choose…", selected: order.shipment.carrier }))
       ),
       el(
         "div",
@@ -845,30 +852,205 @@ function trackingCorrectionForm(order) {
       )
     ),
     el(
+      "label",
+      { class: "check" },
+      el("input", { type: "checkbox", name: "notify", checked: true }),
+      el("span", { text: adding ? " Email the tracking number to the requester" : " Email the new tracking number to the requester" })
+    ),
+    el(
       "div",
       { class: "inline-actions" },
-      el("button", { type: "submit", class: "btn", text: "Save tracking" }),
+      el("button", { type: "submit", class: "btn", text: adding ? "Add tracking" : "Save tracking" }),
       el("button", { type: "button", class: "btn btn-secondary", text: "Never mind", onclick: () => form.remove() })
     )
   );
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     clearFieldErrors(form);
+    const trackingNumber = form.elements.namedItem("trackingNumber").value;
+    if (!trackingNumber.trim() && adding) {
+      showFieldErrors(form, { trackingNumber: "Add the tracking number." });
+      return;
+    }
     try {
       const { order: updated } = await adminApi(`/api/admin/orders/${encodeURIComponent(order.id)}`, {
         method: "PATCH",
-        body: { carrier: form.elements.namedItem("carrier").value, trackingNumber: form.elements.namedItem("trackingNumber").value },
+        body: { carrier: form.elements.namedItem("carrier").value, trackingNumber, notify: form.elements.namedItem("notify").checked },
       });
       replaceOrder(updated);
       renderOrderDetail(updated);
       detailTitle.focus();
-      toast("Tracking updated.");
+      const changed = updated.shipment.trackingNumber && updated.shipment.trackingNumber !== order.shipment.trackingNumber;
+      toast(changed && form.elements.namedItem("notify").checked ? "Tracking saved and emailed to the requester." : "Tracking saved.");
     } catch (error) {
       setAlert(alertBox, error.message);
       showFieldErrors(form, error.fieldErrors);
     }
   });
   return form;
+}
+
+/* ---------------------------------------------------- item-by-item review */
+
+function deniedTag(order) {
+  const { denied } = reviewCounts(order);
+  if (!denied || order.status === "declined" || order.status === "cancelled") return null;
+  return el("div", {}, el("span", { class: "tag partial", text: `${denied} not approved` }));
+}
+
+function decisionCell(line) {
+  if (!line.decision) return el("span", { class: "muted", text: "—" });
+  const denied = isDenied(line);
+  return el(
+    "div",
+    {},
+    el("span", { class: `tag ${denied ? "denied" : "approved"}`, text: denied ? "Not approved" : "Approved" }),
+    denied && line.decision.reason ? el("div", { class: "cell-sub", text: line.decision.reason }) : null
+  );
+}
+
+// Approve or deny each item, with a reason the requester sees for each one
+// denied, then save and (unless unticked) email the requester the outcome.
+function reviewForm(order) {
+  const form = el("form", { class: "action-form review-form", novalidate: true });
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  const summary = el("p", { class: "review-summary", "aria-live": "polite" });
+  const choiceOf = (i) => form.querySelector(`input[name="decisions.${i}"]:checked`)?.value ?? "approved";
+
+  const updateSummary = () => {
+    const denied = order.lines.filter((_, i) => choiceOf(i) === "denied").length;
+    const approved = order.lines.length - denied;
+    summary.textContent =
+      denied === order.lines.length
+        ? "Nothing approved: the order will be declined."
+        : denied
+          ? `${approved} approved · ${denied} not approved. The approved items go on to ship.`
+          : `All ${plural(approved, "item")} approved.`;
+    submit.textContent = denied === order.lines.length ? "Decline order" : denied ? "Save decisions" : "Approve all";
+    submit.className = denied === order.lines.length ? "btn btn-danger solid" : "btn";
+  };
+
+  const rows = order.lines.map((line, i) => {
+    const current = line.decision?.status ?? "approved";
+    const reasonWrap = el(
+      "div",
+      { class: "review-reason", hidden: current !== "denied" },
+      el("label", { class: "sr-only", for: `reason-${i}`, text: `Why ${line.name} isn't approved` }),
+      el("input", { id: `reason-${i}`, name: `reason-${i}`, type: "text", maxlength: "200", placeholder: "Why not? The requester sees this.", value: line.decision?.reason ?? "" })
+    );
+    const row = el("li", { class: `review-row field${current === "denied" ? " is-denied" : ""}` });
+    const choice = (status, label) =>
+      el(
+        "label",
+        { class: `review-choice ${status}` },
+        el("input", {
+          type: "radio",
+          name: `decisions.${i}`,
+          value: status,
+          checked: current === status,
+          onchange: () => {
+            reasonWrap.hidden = status !== "denied";
+            row.classList.toggle("is-denied", status === "denied");
+            updateSummary();
+            if (status === "denied") $("input", reasonWrap).focus();
+          },
+        }),
+        el("span", { text: label })
+      );
+    row.append(
+      el(
+        "div",
+        { class: "review-item" },
+        el("div", { class: "cell-main", text: `${line.quantity} × ${line.name}` }),
+        el("div", { class: "cell-sub", text: [line.sku, line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") })
+      ),
+      el("div", { class: "review-choices", role: "radiogroup", "aria-label": `Decision for ${line.name}` }, choice("approved", "Approve"), choice("denied", "Deny")),
+      reasonWrap
+    );
+    return row;
+  });
+
+  const submit = el("button", { type: "submit", class: "btn", text: "Approve all" });
+  form.append(
+    alertBox,
+    el("div", { class: "inline-actions review-bulk" },
+      el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Approve all", onclick: () => setAll("approved") }),
+      el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Deny all", onclick: () => setAll("denied") })
+    ),
+    el("ul", { class: "review-list" }, rows),
+    summary,
+    el(
+      "div",
+      { class: "field" },
+      el("label", { for: "review-note" }, "Note to the requester", el("span", { class: "optional", text: " (optional)" })),
+      el("textarea", { id: "review-note", name: "note", rows: "2", maxlength: "500" })
+    ),
+    el(
+      "label",
+      { class: "check" },
+      el("input", { type: "checkbox", name: "notify", checked: true }),
+      el("span", { text: " Email the requester the decision" })
+    ),
+    el(
+      "div",
+      { class: "inline-actions" },
+      submit,
+      el("button", { type: "button", class: "btn btn-secondary", text: "Never mind", onclick: () => form.remove() })
+    )
+  );
+
+  function setAll(status) {
+    order.lines.forEach((_, i) => {
+      const input = form.querySelector(`input[name="decisions.${i}"][value="${status}"]`);
+      if (input && !input.checked) {
+        input.checked = true;
+        input.dispatchEvent(new Event("change"));
+      }
+    });
+    updateSummary();
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    const body = {
+      decisions: order.lines.map((_, i) => ({ status: choiceOf(i), reason: form.elements.namedItem(`reason-${i}`).value })),
+      note: form.elements.namedItem("note").value,
+      notify: form.elements.namedItem("notify").checked,
+    };
+    submit.disabled = true;
+    try {
+      const { order: updated, emailed } = await adminApi(`/api/admin/orders/${encodeURIComponent(order.id)}/review`, { method: "POST", body });
+      replaceOrder(updated);
+      renderOrderDetail(updated);
+      detailTitle.focus();
+      const { approved, denied } = reviewCounts(updated);
+      const outcome = updated.status === "declined" ? `${updated.number} is declined` : denied ? `${updated.number}: ${approved} approved, ${denied} not approved` : `${updated.number} is approved`;
+      toast(`${outcome}.${emailed ? " The requester has been emailed." : ""}`);
+      if (denied) {
+        ({ items: catalog } = await adminApi("/api/admin/catalog"));
+        renderCatalog();
+        renderKpis();
+      }
+    } catch (error) {
+      submit.disabled = false;
+      setAlert(alertBox, error.message);
+      showFieldErrors(form, error.fieldErrors);
+    }
+  });
+
+  updateSummary();
+  return form;
+}
+
+async function resendDecision(order) {
+  try {
+    await adminApi(`/api/admin/orders/${encodeURIComponent(order.id)}/notify`, { method: "POST", body: {} });
+    toast(`The decision on ${order.number} has been emailed to ${order.requester.name}.`);
+  } catch (error) {
+    toast(error.message, { tone: "error" });
+  }
 }
 
 function renderOrderDetail(order) {
@@ -878,6 +1060,8 @@ function renderOrderDetail(order) {
 
   const actionArea = el("div");
   const next = TRANSITIONS[order.status] ?? [];
+  const reviewable = order.status === "submitted" || order.status === "approved";
+  const decided = order.lines.some((line) => line.decision);
 
   const noteInput = el("textarea", { id: "admin-note", rows: "2", maxlength: "1000", value: order.adminNote || "" });
 
@@ -897,46 +1081,55 @@ function renderOrderDetail(order) {
       )
     ),
 
-    next.length
+    next.length || order.shipment || decided
       ? section(
           "Update",
           el(
             "div",
             { class: "action-row" },
-            next.map((status) =>
-              el("button", {
-                type: "button",
-                class: ACTIONS[status].danger ? "btn btn-danger btn-sm" : "btn btn-sm",
-                text: ACTIONS[status].label,
-                onclick: () => {
-                  clear(actionArea, actionForm(order, status));
-                  $("select, input, textarea", actionArea)?.focus();
-                },
-              })
-            ),
+            reviewable
+              ? el("button", {
+                  type: "button",
+                  class: order.status === "submitted" ? "btn btn-sm" : "btn btn-secondary btn-sm",
+                  text: order.status === "submitted" ? "Approve or deny items" : "Change item decisions",
+                  onclick: () => {
+                    clear(actionArea, reviewForm(order));
+                    $("input:checked", actionArea)?.focus();
+                  },
+                })
+              : null,
+            // Approving and declining go through the item review instead.
+            next
+              .filter((status) => !reviewable || (status !== "approved" && status !== "declined"))
+              .map((status) =>
+                el("button", {
+                  type: "button",
+                  class: ACTIONS[status].danger ? "btn btn-danger btn-sm" : "btn btn-sm",
+                  text: ACTIONS[status].label,
+                  onclick: () => {
+                    clear(actionArea, actionForm(order, status));
+                    $("select, input, textarea", actionArea)?.focus();
+                  },
+                })
+              ),
             order.shipment
               ? el("button", {
                   type: "button",
-                  class: "btn btn-secondary btn-sm",
-                  text: "Edit tracking",
-                  onclick: () => clear(actionArea, trackingCorrectionForm(order)),
+                  class: order.shipment.trackingNumber ? "btn btn-secondary btn-sm" : "btn btn-sm",
+                  text: order.shipment.trackingNumber ? "Edit tracking" : "Add tracking",
+                  onclick: () => {
+                    clear(actionArea, trackingCorrectionForm(order));
+                    $("select, input", actionArea)?.focus();
+                  },
                 })
+              : null,
+            decided && (order.status === "approved" || order.status === "declined")
+              ? el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Email the decision", onclick: () => resendDecision(order) })
               : null
           ),
           actionArea
         )
-      : order.shipment
-        ? section(
-            "Update",
-            el("div", { class: "action-row" }, el("button", {
-              type: "button",
-              class: "btn btn-secondary btn-sm",
-              text: "Edit tracking",
-              onclick: () => clear(actionArea, trackingCorrectionForm(order)),
-            })),
-            actionArea
-          )
-        : null,
+      : null,
 
     section(
       "Ship to",
@@ -984,16 +1177,17 @@ function renderOrderDetail(order) {
         el(
           "table",
           { class: "table items-table" },
-          el("thead", {}, el("tr", {}, ["SKU", "Item", "Qty", "Cost"].map((h) => el("th", { class: h === "Qty" || h === "Cost" ? "num" : "", text: h })))),
+          el("thead", {}, el("tr", {}, ["SKU", "Item", "Decision", "Qty", "Cost"].map((h) => el("th", { class: h === "Qty" || h === "Cost" ? "num" : "", text: h })))),
           el(
             "tbody",
             {},
             order.lines.map((line) =>
               el(
                 "tr",
-                {},
+                { class: isDenied(line) ? "line-denied" : "" },
                 el("td", { text: line.sku }),
                 el("td", {}, el("div", { class: "cell-main", text: line.name }), el("div", { class: "cell-sub", text: [line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") }), supplierLine(catalog.find((i) => i.id === line.itemId))),
+                el("td", {}, decisionCell(line)),
                 el("td", { class: "num", text: String(line.quantity) }),
                 el("td", { class: "num", text: formatMoney(line.lineTotalCents) })
               )
@@ -1002,7 +1196,10 @@ function renderOrderDetail(order) {
           el(
             "tfoot",
             {},
-            el("tr", {}, el("td", { colspan: "2", text: "Total" }), el("td", { class: "num", text: String(order.totalUnits) }), el("td", { class: "num", text: formatMoney(order.totalCents) }))
+            el("tr", {}, el("td", { colspan: "3", text: "Total" }), el("td", { class: "num", text: String(order.totalUnits) }), el("td", { class: "num", text: formatMoney(order.totalCents) })),
+            order.lines.some(isDenied) && order.status !== "declined"
+              ? el("tr", {}, el("td", { colspan: "3", text: "To ship" }), el("td", { class: "num", text: String(shippingTotals(order).units) }), el("td", { class: "num", text: formatMoney(shippingTotals(order).cents) }))
+              : null
           )
         )
       )
@@ -1012,10 +1209,12 @@ function renderOrderDetail(order) {
       ? section(
           "Shipment",
           kv([
-            ["Carrier", labelFor(CARRIERS, order.shipment.carrier)],
+            ["Carrier", order.shipment.carrier ? labelFor(CARRIERS, order.shipment.carrier) : "Not added yet"],
             order.shipment.trackingNumber
               ? ["Tracking", url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: order.shipment.trackingNumber }) : order.shipment.trackingNumber]
-              : null,
+              : order.shipment.carrier === "hand"
+                ? null
+                : ["Tracking", "Not added yet"],
             ["Shipped", formatDateTime(order.shipment.shippedAt)],
             order.shipment.deliveredAt ? ["Delivered", formatDateTime(order.shipment.deliveredAt)] : null,
           ])
@@ -1061,6 +1260,7 @@ function renderOrderDetail(order) {
               "li",
               {},
               el("strong", { text: labelFor(STATUSES, entry.status) }),
+              entry.review?.denied && entry.status !== "declined" ? ` (${entry.review.approved} approved, ${entry.review.denied} not)` : "",
               ` · ${formatDateTime(entry.at)} · ${entry.by}`,
               entry.note ? el("div", { class: "cell-sub", text: entry.note }) : null
             )

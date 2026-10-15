@@ -3706,3 +3706,135 @@ dialog.password-dialog .field {
   border-top: 1px solid var(--line);
   font-size: 14px;
 }
+
+/* ------------------------------------------------- item-by-item review */
+
+.tag.approved {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.tag.denied,
+.tag.partial {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.items-table tr.line-denied td:not(:nth-child(3)) {
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+
+.review-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.review-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.review-row + .review-row {
+  border-top: 1px solid var(--line);
+}
+
+.review-row.is-denied {
+  background: var(--warn-bg);
+}
+
+.review-row.is-denied .review-item .cell-main {
+  text-decoration: line-through;
+}
+
+.review-reason,
+.review-row .field-error {
+  grid-column: 1 / -1;
+}
+
+.review-reason input {
+  width: 100%;
+}
+
+.review-choices {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.review-choice {
+  position: relative;
+  cursor: pointer;
+}
+
+.review-choice input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  cursor: pointer;
+}
+
+.review-choice span {
+  display: block;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.review-choice + .review-choice {
+  border-left: 1px solid var(--line-strong);
+}
+
+.review-choice.approved input:checked + span {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.review-choice.denied input:checked + span {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.review-choice input:focus-visible + span {
+  box-shadow: var(--focus-ring);
+}
+
+.review-summary {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.review-bulk {
+  margin-top: 0;
+}
+
+.order-items li.line-denied {
+  color: var(--ink-3);
+  border-radius: 16px;
+}
+
+.line-decision {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.callout.partial {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+@media (max-width: 560px) {
+  .review-row {
+    grid-template-columns: 1fr;
+  }
+}
