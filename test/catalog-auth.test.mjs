@@ -807,6 +807,26 @@ describe("starter items added to existing stores", () => {
     assert.equal(needsAddedItems(db), false);
   });
 
+  it("adds the 4th & Pour Game Day tee once, after the gradient crop top, with its photo and no stock yet", () => {
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "jfh-game-day-tee");
+    const db = {
+      meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1, leatherCoasters: 1, twinpLeatherCoasters: 1, banners2026: 1, talkers2026: 1 },
+      catalog,
+    };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["jfh-game-day-tee"]);
+    const ids = db.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("jfh-gradient-crop") + 1], "jfh-game-day-tee");
+    const tee = db.catalog.find((i) => i.id === "jfh-game-day-tee");
+    assert.deepEqual([tee.name, tee.brand, tee.category, tee.costCents], ["4th & Pour Game Day Tee", "jf-hadens", "Apparel", 1578]);
+    assert.match(tee.sku, /^JFH-APP-\d{3}$/);
+    assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
+    assert.equal(tee.image, "/assets/merch/jfh-game-day-tee.jpg");
+    assert.ok(existsSync(new URL("../public/assets/merch/jfh-game-day-tee.jpg", import.meta.url)));
+    assert.deepEqual(tee.variants.map((v) => v.stock), [0, 0, 0, 0, 0, 0]);
+    assert.equal(needsAddedItems(db), false);
+    assert.deepEqual(applyAddedItems(db), [], "only once");
+  });
+
   it("gives the booklet its photo when it has none, leaving an admin's own photo alone", () => {
     const db = { meta: { seedPhotos: 2 }, catalog: structuredClone(SEED_CATALOG) };
     const booklet = db.catalog.find((i) => i.id === "td-booklet");

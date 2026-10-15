@@ -80,6 +80,8 @@ export const SEED_PHOTOS = {
   // printed on the back
   "twinp-game-day-tee": one("twinp-game-day-tee"),
   "twinp-sunday-funday-tee": one("twinp-sunday-funday-tee"),
+  // printed on the back
+  "jfh-game-day-tee": one("jfh-game-day-tee"),
   "twinp-sunday-funday-hat": one("twinp-sunday-funday-hat"),
   "twinp-sunday-funday-tote": one("twinp-sunday-funday-tote"),
   "jfh-bar-mat": one("jfh-bar-mat"),
@@ -238,6 +240,13 @@ export const SEED_CATALOG = [
     brand: "jf-hadens", category: "Apparel", tone: "lychee", art: "tee", unit: "Each",
     description: "Fitted long sleeve crop top with the J.F. Haden's gradient logo on the chest. White, or black with the logo outlined in white.",
     costCents: 1500, maxPerOrder: 6, variants: sized([6, 10, 10, 6, 3, 1]),
+  },
+  {
+    id: "jfh-game-day-tee", name: "4th & Pour Game Day Tee",
+    brand: "jf-hadens", category: "Apparel", tone: "mango", art: "tee", unit: "Each",
+    description: "Navy tee with THE GAME PLAN, a football play that ends at a martini in the end zone, 4TH & POUR and the J.F. Haden's logo, printed on the back in cream and orange.",
+    // Added after the 7 Oct 2026 stock reset, so it starts at 0 like everything else until it's counted.
+    costCents: 1578, maxPerOrder: 6, variants: sized([0, 0, 0, 0, 0, 0]),
   },
   {
     id: "jfh-dad-hat", name: "J.F. Haden's Washed Dad Hat",
@@ -860,6 +869,7 @@ const ADDED_ITEMS = [
   { flag: "talkers2026", id: "twinp-talker-logo", after: "jfh-shelf-strip" },
   { flag: "talkers2026", id: "twinp-talker-legacy", after: "twinp-talker-logo" },
   { flag: "talkers2026", id: "twinp-talker-game-day", after: "twinp-talker-legacy" },
+  { flag: "jfhGameDayTee", id: "jfh-game-day-tee", after: ["jfh-gradient-crop", "jfh-gradient-tee", "jfh-martini-tee"] },
   ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 
