@@ -30,8 +30,9 @@ const SEED_COLORS = {
 };
 
 // The spirits themselves, for tastings, events and accounts: every J.F.
-// Haden's flavour and Twin P Whiskey as a 750 ml bottle and as a case.
-const CASE_SIZE = 6;
+// Haden's flavour and Twin P Whiskey as a 750 ml bottle, up to 4 of each per
+// order. (They came in cases of 6 too, until those were taken out.)
+const BOTTLES_PER_ORDER = 4;
 const BOTTLE_COST_CENTS = 1500; // a placeholder, like every starter cost
 const PRODUCTS = [
   ["citrus", "Citrus Liqueur", "citrus", "Made with 100% Florida citrus."],
@@ -43,10 +44,9 @@ const PRODUCTS = [
 ]
   .map(([flavor, liqueur, tone, made]) => ({ key: `jfh-${flavor}`, flavor, product: `J.F. Haden's ${liqueur}`, brand: "jf-hadens", tone, made }))
   .concat({ key: "twinp", flavor: "", product: "Twin P Whiskey", brand: "twin-p", tone: "oak", made: "Smooth and full-bodied, with notes of oak, vanilla and warm spice." });
-const SPIRITS = PRODUCTS.flatMap((p) => [
-  { ...p, id: `${p.key}-bottle`, kind: "bottle" },
-  { ...p, id: `${p.key}-case`, kind: "case" },
-]);
+const SPIRITS = PRODUCTS.map((p) => ({ ...p, id: `${p.key}-bottle` }));
+// The cases of 6, taken out of the store by applySampleTrim.
+const RETIRED_CASE_IDS = PRODUCTS.map((p) => `${p.key}-case`);
 
 // The 50 ml samples these replaced, the day they went in. They are removed
 // from a store that has them, unless an admin has renamed them.
@@ -148,9 +148,9 @@ const SPIRITS_SHIPPING =
   "Pulled from distillery stock. Spirits can't go by USPS: hand-deliver, or ship with a carrier the distillery has an alcohol shipping agreement with.";
 const SEED_SUPPLIERS = {
   ...Object.fromEntries(
-    SPIRITS.map(({ id, product, kind }) => [
+    SPIRITS.map(({ id, product }) => [
       id,
-      { company: "Tropical Distillery (own stock)", itemNumber: kind === "case" ? `${product}, case of ${CASE_SIZE} × 750 ml` : `${product}, 750 ml`, notes: SPIRITS_SHIPPING },
+      { company: "Tropical Distillery (own stock)", itemNumber: `${product}, 750 ml`, notes: SPIRITS_SHIPPING },
     ])
   ),
   "td-booklet": { itemNumber: "Saddle-stitched booklet" },
@@ -398,22 +398,13 @@ export const SEED_CATALOG = [
     // Added after the 7 Oct 2026 stock reset, so it starts at 0 until it's counted.
     costCents: 1000, maxPerOrder: 10, variants: single(0),
   },
-  // 750 ml bottles and cases (see SPIRITS)
-  ...SPIRITS.map(({ id, product, brand, tone, made, kind }) =>
-    kind === "case"
-      ? {
-          id, name: `${product}, Case of ${CASE_SIZE}`,
-          brand, category: "Samples", tone, art: "bottle", unit: `Case of ${CASE_SIZE} × 750 ml`,
-          description: `A case of ${CASE_SIZE} bottles (750 ml each) of ${product}, for events, activations and accounts. ${made}`,
-          costCents: BOTTLE_COST_CENTS * CASE_SIZE, minPerOrder: 1, maxPerOrder: 2, variants: single(10),
-        }
-      : {
-          id, name: `${product}, 750 ml`,
-          brand, category: "Samples", tone, art: "bottle", unit: "750 ml bottle",
-          description: `A 750 ml bottle of ${product} for account visits, tastings and events. ${made}`,
-          costCents: BOTTLE_COST_CENTS, minPerOrder: 1, maxPerOrder: 6, variants: single(24),
-        }
-  ),
+  // 750 ml bottles (see SPIRITS)
+  ...SPIRITS.map(({ id, product, brand, tone, made }) => ({
+    id, name: `${product}, 750 ml`,
+    brand, category: "Samples", tone, art: "bottle", unit: "750 ml bottle",
+    description: `A 750 ml bottle of ${product} for account visits, tastings and events. ${made}`,
+    costCents: BOTTLE_COST_CENTS, minPerOrder: 1, maxPerOrder: BOTTLES_PER_ORDER, variants: single(24),
+  })),
   {
     id: "td-table-throw", name: "6 ft Table Throw",
     brand: "tropical-distillery", category: "Sampling & Events", tone: "palm", art: "table-throw", unit: "Each",
@@ -1008,6 +999,29 @@ export function applyMinimums(db) {
     if (item.minPerOrder > 1) raised += 1;
   }
   return raised;
+}
+
+/**
+ * The sample cases of 6 are no longer offered, and the 750 ml bottles are
+ * limited to 4 of a flavour per order. Once: the cases leave the store (past
+ * orders keep their lines), and each bottle's limit becomes 4.
+ */
+export function needsSampleTrim(db) {
+  return !db.meta?.sampleTrim;
+}
+
+export function applySampleTrim(db) {
+  const removed = db.catalog.filter((item) => RETIRED_CASE_IDS.includes(item.id));
+  for (const item of removed) db.catalog.splice(db.catalog.indexOf(item), 1);
+  const limited = [];
+  for (const item of db.catalog) {
+    if (!SPIRITS.some((s) => s.id === item.id) || item.maxPerOrder === BOTTLES_PER_ORDER) continue;
+    item.maxPerOrder = BOTTLES_PER_ORDER;
+    item.minPerOrder = Math.min(item.minPerOrder ?? 1, BOTTLES_PER_ORDER);
+    limited.push(item);
+  }
+  db.meta.sampleTrim = 1;
+  return { removed, limited };
 }
 
 /**

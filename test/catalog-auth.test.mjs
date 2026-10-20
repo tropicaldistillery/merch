@@ -31,6 +31,8 @@ import {
   applySkuFormat,
   needsStockCleared,
   applyStockCleared,
+  needsSampleTrim,
+  applySampleTrim,
   normalizeItem,
   publicItem,
   bulkEditCatalog,
@@ -187,7 +189,7 @@ describe("categories", () => {
   });
 
   it("moves an older store over once, respecting the admin's own choices", () => {
-    const old = { "td-tumbler": "Drinkware", "jfh-led-sign": "Point of Sale", "jfh-stickers": "Print", "jfh-bar-mat": "Point of Sale", "twinp-case": "Sampling & Events", "jfh-mango-bottle": "Sampling & Events" };
+    const old = { "td-tumbler": "Drinkware", "jfh-led-sign": "Point of Sale", "jfh-stickers": "Print", "jfh-bar-mat": "Point of Sale", "twinp-bottle": "Sampling & Events", "jfh-mango-bottle": "Sampling & Events" };
     const catalog = structuredClone(SEED_CATALOG).map((i) => ({ ...i, category: old[i.id] ?? i.category }));
     catalog.find((i) => i.id === "jfh-bar-mat").category = "Sampling & Events"; // the admin moved it
     catalog.find((i) => i.id === "jfh-mango-bottle").category = "VIP"; // and this one
@@ -203,7 +205,7 @@ describe("categories", () => {
     assert.equal(of("jfh-bar-mat"), "Sampling & Events");
     assert.equal(of("custom-glass"), "Giveaways");
     assert.equal(of("custom-sign"), "Print");
-    assert.equal(of("twinp-case"), "Samples", "bottles and cases get their own category");
+    assert.equal(of("twinp-bottle"), "Samples", "the bottles get their own category");
     assert.equal(of("jfh-mango-bottle"), "VIP");
     assert.equal(db.meta.categories, CATEGORIES_VERSION);
     assert.equal(needsCategoryMoves(db), false);
@@ -316,9 +318,9 @@ describe("automatic SKUs", () => {
     const tee = db.catalog.find((i) => i.id === "jfh-logo-tee");
     tee.sku = "MY-OWN-TEE"; // an admin's own SKU since
     assert.equal(needsSkuFormat(db), true);
-    assert.equal(applySkuFormat(db), 14 + 1, "the 14 samples, and the kit (the only Sampling & Events item given SAM here)");
+    assert.equal(applySkuFormat(db), 7 + 1, "the 7 bottles, and the kit (the only Sampling & Events item given SAM here)");
     assert.equal(db.catalog.find((i) => i.id === "jfh-citrus-bottle").sku, "JFH-SMP-001");
-    assert.equal(db.catalog.find((i) => i.id === "twinp-case").sku, "TWI-SMP-002");
+    assert.equal(db.catalog.find((i) => i.id === "twinp-bottle").sku, "TWI-SMP-001");
     assert.equal(kit.sku, "TD-EVNT-001", "and Sampling & Events moves to EVNT, Tropical Distillery to TD");
     assert.equal(tee.sku, "MY-OWN-TEE");
     assert.equal(needsSkuFormat(db), false);
@@ -632,17 +634,17 @@ describe("starter items added to existing stores", () => {
     assert.equal(crop.variants.length, 6);
   });
 
-  const SPIRIT_IDS = ["jfh-citrus", "jfh-espresso", "jfh-key-lime-pie", "jfh-lychee", "jfh-mango", "jfh-orange", "twinp"].flatMap((p) => [`${p}-bottle`, `${p}-case`]);
+  const SPIRIT_IDS = ["jfh-citrus", "jfh-espresso", "jfh-key-lime-pie", "jfh-lychee", "jfh-mango", "jfh-orange", "twinp"].map((p) => `${p}-bottle`);
   const BEFORE_SPIRITS = { teamPolo: 1, jfhPolo: 1, merchDrop2: 1, martiniTee: 1, proofDrop: 1, sunglassesSplit: 1, lipBalm: 1, proofDrop3: 1 };
 
-  it("adds a 750 ml bottle and a case of every spirit, and the booklet, once, next to their kind", () => {
+  it("adds a 750 ml bottle of every spirit, and the booklet, once, next to their kind", () => {
     const NEW = ["td-booklet", ...SPIRIT_IDS];
     const db = { meta: { ...BEFORE_SPIRITS }, catalog: structuredClone(SEED_CATALOG).filter((i) => !NEW.includes(i.id)) };
     assert.deepEqual(applyAddedItems(db).map((i) => i.id), NEW);
     assert.equal(needsAddedItems(db), false);
     const ids = db.catalog.map((i) => i.id);
     const at = ids.indexOf("td-sample-cups");
-    assert.deepEqual(ids.slice(at + 1, at + 15), SPIRIT_IDS, "in a run after the sample cups");
+    assert.deepEqual(ids.slice(at + 1, at + 8), SPIRIT_IDS, "in a run after the sample cups");
     assert.equal(ids[ids.indexOf("td-sell-sheets") + 1], "td-booklet");
 
     const bottle = db.catalog.find((i) => i.id === "jfh-lychee-bottle");
@@ -650,13 +652,11 @@ describe("starter items added to existing stores", () => {
     assert.equal(bottle.category, "Samples");
     assert.equal(bottle.image, "/assets/merch/jfh-lychee-bottle.jpg");
     assert.equal(bottle.minPerOrder, 1);
+    assert.equal(bottle.maxPerOrder, 4, "4 of a flavour per order");
     assert.match(bottle.supplier.notes, /USPS/);
-    const box = db.catalog.find((i) => i.id === "twinp-case");
-    assert.equal(box.name, "Twin P Whiskey, Case of 6");
-    assert.equal(box.unit, "Case of 6 × 750 ml");
-    assert.equal(box.costCents, 6 * bottle.costCents);
-    assert.equal(box.brand, "twin-p");
-    const expected = [...Array.from({ length: 12 }, (_, i) => `JFH-SMP-${String(i + 1).padStart(3, "0")}`), "TWI-SMP-001", "TWI-SMP-002"];
+    assert.equal(db.catalog.find((i) => i.id === "twinp-bottle").brand, "twin-p");
+    assert.ok(!db.catalog.some((i) => i.id.endsWith("-case")), "no cases");
+    const expected = [...Array.from({ length: 6 }, (_, i) => `JFH-SMP-${String(i + 1).padStart(3, "0")}`), "TWI-SMP-001"];
     assert.deepEqual(SPIRIT_IDS.map((id) => db.catalog.find((i) => i.id === id).sku), expected);
     const booklet = db.catalog.find((i) => i.id === "td-booklet");
     assert.equal(booklet.variants[0].stock, null, "printed to order");
@@ -825,6 +825,28 @@ describe("starter items added to existing stores", () => {
     assert.deepEqual(tee.variants.map((v) => v.stock), [0, 0, 0, 0, 0, 0]);
     assert.equal(needsAddedItems(db), false);
     assert.deepEqual(applyAddedItems(db), [], "only once");
+  });
+
+  it("takes the sample cases out once, and limits each bottle to 4 per order", () => {
+    // a live store as it was: a case of every spirit, bottles at 6 a time
+    const catalog = structuredClone(SEED_CATALOG);
+    const bottles = SPIRIT_IDS.map((id) => catalog.find((i) => i.id === id));
+    for (const b of bottles) b.maxPerOrder = 6;
+    for (const b of [...bottles].reverse()) {
+      catalog.splice(catalog.indexOf(b) + 1, 0, { ...structuredClone(b), id: b.id.replace(/-bottle$/, "-case"), name: b.name.replace(", 750 ml", ", Case of 6"), maxPerOrder: 2 });
+    }
+    const order = { id: "o1", lines: [{ itemId: "twinp-case", name: "Twin P Whiskey, Case of 6", quantity: 1 }] };
+    const db = { meta: {}, catalog, orders: [order] };
+    assert.equal(needsSampleTrim(db), true);
+    const { removed, limited } = applySampleTrim(db);
+    assert.equal(removed.length, 7);
+    assert.ok(!db.catalog.some((i) => i.id.endsWith("-case")));
+    assert.equal(limited.length, 7);
+    assert.ok(SPIRIT_IDS.every((id) => db.catalog.find((i) => i.id === id).maxPerOrder === 4));
+    assert.equal(order.lines[0].name, "Twin P Whiskey, Case of 6", "past orders keep their lines");
+    assert.equal(needsSampleTrim(db), false);
+    assert.deepEqual(applySampleTrim({ meta: {}, catalog: db.catalog }).limited, [], "nothing more to change");
+    assert.equal(needsSampleTrim(initialState()), false, "a new store starts that way");
   });
 
   it("gives the booklet its photo when it has none, leaving an admin's own photo alone", () => {

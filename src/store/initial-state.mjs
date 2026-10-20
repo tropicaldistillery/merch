@@ -20,6 +20,8 @@ export function initialState() {
       skuFormat: SKU_FORMAT_VERSION,
       // a new store starts with the starter stock, not the 7 Oct 2026 reset
       stockCleared: 1,
+      // and with no sample cases, and bottles limited to 4 a flavour
+      sampleTrim: 1,
     },
     catalog: structuredClone(SEED_CATALOG),
     orders: [],

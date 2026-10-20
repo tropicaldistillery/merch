@@ -27,6 +27,7 @@ import {
   applyCategoryMoves,
   applyColors,
   applyMinimums,
+  applySampleTrim,
   applyPoloColors,
   applySeedPhotos,
   applySeedSuppliers,
@@ -38,6 +39,7 @@ import {
   needsCategoryMoves,
   needsColors,
   needsMinimums,
+  needsSampleTrim,
   needsPoloColors,
   needsSeedPhotos,
   needsSeedSuppliers,
@@ -336,6 +338,12 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
   if (needsMinimums(initial)) {
     const raised = await store.mutate((db) => applyMinimums(db));
     console.log(`[catalog] set per-order minimums (${raised} item(s) above one)`);
+    initial = await store.read();
+  }
+  if (needsSampleTrim(initial)) {
+    const { removed, limited } = await store.mutate((db) => applySampleTrim(db));
+    console.log(`[catalog] took out ${removed.length} sample case(s)${removed.length ? `: ${removed.map((i) => `${i.name} (${i.sku})`).join(", ")}` : ""}`);
+    console.log(`[catalog] limited ${limited.length} 750 ml bottle(s) to 4 per order`);
     initial = await store.read();
   }
   const secret = config.sessionSecret || initial.meta.sessionSecret;
