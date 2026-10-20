@@ -124,11 +124,6 @@ export const PURPOSES = [
   { id: "other", label: "Other" },
 ];
 
-export const SHIPPING_SPEEDS = [
-  { id: "standard", label: "Standard", detail: "Ships within 3 business days of approval" },
-  { id: "rush", label: "Rush", detail: "Ships the next business day — tell us why" },
-];
-
 export const STATUSES = [
   { id: "submitted", label: "Submitted" },
   { id: "approved", label: "Approved" },

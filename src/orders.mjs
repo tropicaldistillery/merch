@@ -9,7 +9,6 @@ import {
   LINE_DECISIONS,
   PURPOSES,
   RELEASED_STATUSES,
-  SHIPPING_SPEEDS,
   STATUSES,
   TRANSITIONS,
   US_STATES,
@@ -202,12 +201,6 @@ export function validateOrderInput(input, { catalog, accounts = [], today }) {
   if (neededBy && !isIsoDate(neededBy)) errors.neededBy = "Enter a valid date.";
   else if (neededBy && neededBy < today) errors.neededBy = "Choose today or a later date.";
 
-  const shippingSpeed = cleanLine(src.shippingSpeed, 20) || "standard";
-  if (!SHIPPING_SPEEDS.some((s) => s.id === shippingSpeed)) errors.shippingSpeed = "Choose a shipping speed.";
-
-  const rushReason = shippingSpeed === "rush" ? cleanText(src.rushReason, 300) : "";
-  if (shippingSpeed === "rush" && !rushReason) errors.rushReason = "Tell us why this needs to rush.";
-
   const lines = readLines(src.lines, catalog, errors);
 
   return {
@@ -215,8 +208,11 @@ export function validateOrderInput(input, { catalog, accounts = [], today }) {
       shipTo,
       purpose,
       neededBy,
-      shippingSpeed,
-      rushReason,
+      // Rush shipping isn't offered any more, so every order ships standard,
+      // even one sent from a checkout page opened before rush went. Orders
+      // placed as rush before then keep it, and still show it.
+      shippingSpeed: "standard",
+      rushReason: "",
       notes: cleanText(src.notes, 1000),
       saveAddress: src.saveAddress === true,
       lines,

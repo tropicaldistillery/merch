@@ -27,13 +27,13 @@ function placed({ name = "Jane Rep", rush = false, notes = "", lines = [{ itemId
       },
       purpose: "account-activation",
       neededBy: "2026-10-20",
-      shippingSpeed: rush ? "rush" : "standard",
-      rushReason: rush ? "Launch party Friday" : "",
       notes,
       lines,
     },
     { requester: { name, email: "jane@tropicaldistillery.com" }, now: NOW, timeZone: "America/New_York", prefix: "TD" }
   );
+  // Rush isn't offered any more; an order placed as rush before then still shows it.
+  if (rush) Object.assign(order, { shippingSpeed: "rush", rushReason: "Launch party Friday" });
   return { db, order };
 }
 

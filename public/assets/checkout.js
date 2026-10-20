@@ -13,7 +13,7 @@ import {
   teamApi,
   wireHeader,
 } from "./core.js";
-import { ACCOUNT_TYPES, PURPOSES, SHIPPING_SPEEDS, US_STATES, formatMoney, imageFor } from "./shared.js";
+import { ACCOUNT_TYPES, PURPOSES, US_STATES, formatMoney, imageFor } from "./shared.js";
 
 const form = $("#checkout-form");
 const alertBox = $("#checkout-alert");
@@ -69,19 +69,6 @@ clear(
 );
 savedSelect.disabled = !accounts.length;
 $("#neededBy").min = localToday();
-
-clear(
-  $("#speed-choices"),
-  SHIPPING_SPEEDS.map((speed) =>
-    el(
-      "label",
-      { class: "choice compact" },
-      el("input", { type: "radio", name: "shippingSpeed", value: speed.id, checked: speed.id === "standard" }),
-      el("span", {}, el("span", { class: "choice-title", text: speed.label }), el("span", { class: "choice-text", text: speed.detail })),
-      el("span", { class: "choice-tick", "aria-hidden": "true" })
-    )
-  )
-);
 
 /* --------------------------------------------------------------- ship to */
 
@@ -171,16 +158,6 @@ input("accountName").addEventListener("input", () => {
   if (account && input("accountName").value.trim().toLowerCase() !== account.name.toLowerCase()) savedSelect.value = "";
 });
 
-/* ----------------------------------------------------------------- rush */
-
-const rushField = $("#rush-field");
-for (const radio of form.elements.namedItem("shippingSpeed")) {
-  radio.addEventListener("change", () => {
-    rushField.hidden = form.elements.namedItem("shippingSpeed").value !== "rush";
-    if (!rushField.hidden) $("#rushReason").focus();
-  });
-}
-
 /* --------------------------------------------------------------- summary */
 
 function renderSummary() {
@@ -266,8 +243,6 @@ form.addEventListener("submit", async (event) => {
     },
     purpose: $("#purpose").value,
     neededBy: $("#neededBy").value,
-    shippingSpeed: form.elements.namedItem("shippingSpeed").value,
-    rushReason: $("#rushReason").value,
     notes: $("#notes").value,
     saveAddress: mode === "self" && saveAddress.checked,
     lines: cart.lines(),

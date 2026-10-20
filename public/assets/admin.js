@@ -283,7 +283,7 @@ function renderKpis() {
 
   clear(
     $("#kpis"),
-    tile("Awaiting approval", String(submitted.length), rush ? `${rush} rush` : "No rush orders"),
+    tile("Awaiting approval", String(submitted.length), rush ? `${rush} placed as rush` : "Waiting for your review"),
     tile("Ready to ship", String(approved), "Approved, not yet shipped"),
     tile("Shipped", String(shipped), `In ${month}`),
     tile("Ordered", formatMoney(spend), `Cost of ${month} orders`),
@@ -313,8 +313,8 @@ function orderMatches(order) {
   return ui.orderQuery.toLowerCase().split(/\s+/).every((w) => haystack.includes(w));
 }
 
-// The open queue is worked oldest-first with rush orders on top; everything
-// else reads newest-first.
+// The open queue is worked by needed-by date, with any order placed as rush
+// (before rush was taken away) on top; everything else reads newest-first.
 function sortOrders(list) {
   if (ui.status !== "needs-action" && ui.status !== "submitted" && ui.status !== "approved") return list;
   return list.slice().sort((a, b) => {
@@ -386,8 +386,9 @@ function renderOrders() {
   // hidden by the filter or search.
   const shown = new Set(visible.map((o) => o.id));
   for (const id of ui.selected) if (!shown.has(id)) ui.selected.delete(id);
+  const anyRush = visible.some((o) => o.shippingSpeed === "rush");
   $("#order-count").textContent =
-    `${plural(visible.length, "order")}${ui.status === "needs-action" ? " · rush first, then by needed-by date" : ""}`;
+    `${plural(visible.length, "order")}${ui.status === "needs-action" ? ` · ${anyRush ? "rush first, then " : ""}by needed-by date` : ""}`;
 
   const table = $("#orders-table");
   if (!visible.length) {

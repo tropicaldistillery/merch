@@ -108,6 +108,13 @@ describe("placing an order", () => {
     assert.equal(stock(db, "td-sample-cups"), null);
   });
 
+  it("always ships standard: rush isn't offered any more", () => {
+    // as sent by a checkout page opened before rush was taken away
+    const placed = place(initialState(), order({ shippingSpeed: "rush", rushReason: "Tasting Friday" }));
+    assert.equal(placed.shippingSpeed, "standard");
+    assert.equal(placed.rushReason, "");
+  });
+
   it("reports every missing field at once", () => {
     const errors = fieldErrors(() =>
       place(initialState(), { shipTo: { type: "account" }, shippingSpeed: "rush", lines: [] })
@@ -115,7 +122,6 @@ describe("placing an order", () => {
     assert.deepEqual(Object.keys(errors).sort(), [
       "lines",
       "purpose",
-      "rushReason",
       "shipTo.accountName",
       "shipTo.accountType",
       "shipTo.address1",
