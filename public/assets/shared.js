@@ -61,6 +61,7 @@ export const CARD_FIELDS = [
   { id: "email", label: "Email", max: 80 },
   { id: "address", label: "Address", max: 90 },
   { id: "website", label: "Website", max: 60 },
+  { id: "cocktail", label: "Favorite cocktail", max: 40 },
 ];
 
 export const CARD_DEFAULTS = {
@@ -114,7 +115,9 @@ export function readCardDetails(raw) {
 
 /** Every detail on one line, for exports and the printer: "Allie Mindermann · COO · (954)…". */
 export function cardText(card) {
-  return CARD_FIELDS.map((field) => card?.[field.id]).filter(Boolean).join(" · ");
+  return CARD_FIELDS.map((field) => (card?.[field.id] && field.id === "cocktail" ? `Favorite cocktail: ${card.cocktail}` : card?.[field.id]))
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** The first three letters of a name, in capitals: "J.F. Haden's" → JFH. */

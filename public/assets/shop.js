@@ -235,10 +235,11 @@ function rememberedCard() {
 const CARD_HINTS = {
   name: "Prints in capitals.",
   phone: "Add a phone number, an email, or both.",
+  cocktail: "Prints small in the bottom right corner.",
 };
 
 const CARD_INPUT_TYPES = { phone: "tel", email: "email" };
-const CARD_OPTIONAL = new Set(["title", "address", "website"]);
+const CARD_OPTIONAL = new Set(["title", "address", "website", "cocktail"]);
 
 // Filling in a card: the fields on one side, the proof on the other, updated
 // as they type. Adds `quantity` boxes to the order, or, given `line`, changes
@@ -256,7 +257,8 @@ function cardDialog(item, { variant, quantity = 1, line = null, onAdded } = {}) 
       name: field.id,
       type: CARD_INPUT_TYPES[field.id] ?? "text",
       maxlength: String(field.max),
-      autocomplete: { name: "name", title: "organization-title", phone: "tel", email: "email", address: "street-address", website: "url" }[field.id],
+      autocomplete: { name: "name", title: "organization-title", phone: "tel", email: "email", address: "street-address", website: "url", cocktail: "off" }[field.id],
+      ...(field.id === "cocktail" ? { placeholder: "Key Lime Pie Colada" } : {}),
       value: field.id === "website" ? formatWebsite(start.website) : start[field.id] ?? "",
       spellcheck: field.id === "name" || field.id === "title" ? "true" : "false",
     })

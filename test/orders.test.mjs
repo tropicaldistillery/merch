@@ -925,6 +925,10 @@ describe("business cards", () => {
     assert.equal(cardText(value), `Allie Mindermann · ${"x".repeat(60)} · (954) 600-3005 · allie@tropicaldistillery.com · 2141 NW 10th Ave, Miami, FL 33127 · http://www.tropicaldistillery.com`, "websites print as http://www.…");
     assert.equal(readCardDetails({ name: "Sam", phone: "305", website: "https://JFHadens.com/" }).value.website, "https://www.jfhadens.com");
     assert.equal(readCardDetails({ name: "Sam", phone: "305", website: "shop.tropicaldistillery.com" }).value.website, "http://shop.tropicaldistillery.com");
+    // An optional favourite cocktail, labelled wherever the details are listed.
+    const withCocktail = readCardDetails({ name: "Sam", phone: "305", cocktail: "  Key Lime   Pie Colada " }).value;
+    assert.equal(withCocktail.cocktail, "Key Lime Pie Colada");
+    assert.equal(cardText(withCocktail), "Sam · 305 · Favorite cocktail: Key Lime Pie Colada");
   });
 
   it("keeps each person's cards on their own line, with their details", () => {
@@ -932,7 +936,7 @@ describe("business cards", () => {
     const sam = { name: "Sam Rep", phone: "305-555-0100" };
     const placed = place(db, cards([ALLIE, 1], [sam, 1]));
     assert.deepEqual(placed.lines.map((l) => [l.card.name, l.quantity]), [["Allie Mindermann", 1], ["Sam Rep", 1]]);
-    assert.deepEqual(placed.lines[1].card, { name: "Sam Rep", title: "", phone: "305-555-0100", email: "", address: "", website: "" });
+    assert.deepEqual(placed.lines[1].card, { name: "Sam Rep", title: "", phone: "305-555-0100", email: "", address: "", website: "", cocktail: "" });
     assert.equal(optionText(placed.lines[0]), "for Allie Mindermann");
     assert.equal(placed.totalUnits, 2);
 
