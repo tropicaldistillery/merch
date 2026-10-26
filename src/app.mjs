@@ -28,6 +28,7 @@ import {
   applyColors,
   applyMinimums,
   applySampleTrim,
+  applyBottleAccountLimit,
   applyPoloColors,
   applySeedPhotos,
   applySeedSuppliers,
@@ -40,6 +41,7 @@ import {
   needsColors,
   needsMinimums,
   needsSampleTrim,
+  needsBottleAccountLimit,
   needsPoloColors,
   needsSeedPhotos,
   needsSeedSuppliers,
@@ -344,6 +346,11 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
     const { removed, limited } = await store.mutate((db) => applySampleTrim(db));
     console.log(`[catalog] took out ${removed.length} sample case(s)${removed.length ? `: ${removed.map((i) => `${i.name} (${i.sku})`).join(", ")}` : ""}`);
     console.log(`[catalog] limited ${limited.length} 750 ml bottle(s) to 4 per order`);
+    initial = await store.read();
+  }
+  if (needsBottleAccountLimit(initial)) {
+    const limited = await store.mutate((db) => applyBottleAccountLimit(db));
+    console.log(`[catalog] limited ${limited.length} 750 ml bottle(s) to 4 per person for each account`);
     initial = await store.read();
   }
   const secret = config.sessionSecret || initial.meta.sessionSecret;

@@ -311,6 +311,15 @@ export function orderIncrement(item) {
   return Number.isInteger(item?.orderIncrement) && item.orderIncrement > 1 ? item.orderIncrement : 1;
 }
 
+/**
+ * How many of an item one person may get for each account they ship to (and
+ * for themselves), across all their orders, or null for no such limit. The
+ * sample bottles have 4.
+ */
+export function maxPerAccount(item) {
+  return Number.isInteger(item?.maxPerAccount) && item.maxPerAccount > 0 ? item.maxPerAccount : null;
+}
+
 /** The quantities one order may hold of an item: from min to max in steps. */
 export function orderRule(item) {
   const step = orderIncrement(item);
@@ -334,7 +343,10 @@ export function quantityRuleText(item) {
   const parts = [];
   if (step > 1) parts.push(`Sold in ${step}s`);
   if (min > step) parts.push(`min ${min}`);
-  parts.push(`up to ${max} per order`);
+  const perAccount = maxPerAccount(item);
+  // The tighter limit is the one to show.
+  if (perAccount && perAccount <= max) parts.push(`up to ${perAccount} per account`);
+  else parts.push(`up to ${max} per order`, ...(perAccount ? [`${perAccount} per account`] : []));
   const text = parts.join(" · ");
   return text[0].toUpperCase() + text.slice(1);
 }

@@ -760,3 +760,55 @@ describe("forwarding items to someone else to ship", () => {
     assert.deepEqual(bulk.cancelledForwards.map((c) => c.forward.id), [f.id]);
   });
 });
+
+describe("sample bottles: 4 per person for each account", () => {
+  const by = { actor: "Allie", now: NOW };
+  const mango = (quantity, shipTo = PELICAN) => order({ shipTo, purpose: "event", lines: [{ itemId: "jfh-mango-bottle", variantId: "default", quantity }] });
+  const problem = (fn) => fieldErrors(fn).lines;
+
+  it("counts what a person has ordered for the same account, across orders", () => {
+    const db = initialState();
+    place(db, mango(3));
+    assert.match(problem(() => place(db, mango(2))), /limited to 4 per person for each account\. You've already ordered 3 for The Rusty Pelican, so you can add 1 more\./);
+    place(db, mango(1));
+    assert.match(problem(() => place(db, mango(1))), /so you can't order more\./);
+    // The same account typed again, in other capitals, is still the same account.
+    assert.ok(problem(() => place(db, mango(1, { ...PELICAN, accountName: "the rusty PELICAN" }))));
+  });
+
+  it("gives each account, each person, and shipping to yourself their own 4", () => {
+    const db = initialState();
+    place(db, mango(4));
+    place(db, mango(4, { ...PELICAN, accountName: "Monty's Raw Bar", postalCode: "33133" }));
+    place(db, mango(4), SAM);
+    place(db, mango(4, HOME));
+    assert.match(problem(() => place(db, mango(1, HOME))), /limited to 4 per person shipped to yourself\. You've already ordered 4 for yourself/);
+    // a distributor's rep with the same email is someone else
+    place(db, mango(4), { ...JANE, distributorId: "dist-1", distributor: "Southern Glazer's" });
+    // other flavours have their own 4
+    place(db, order({ shipTo: PELICAN, purpose: "event", lines: [{ itemId: "jfh-lychee-bottle", variantId: "default", quantity: 4 }] }));
+  });
+
+  it("doesn't count cancelled or declined orders, or bottles that weren't approved", () => {
+    const db = initialState();
+    const a = place(db, mango(4));
+    updateOrder(db, a.id, { status: "cancelled" }, by);
+    const b = place(db, order({ shipTo: PELICAN, purpose: "event", lines: [
+      { itemId: "jfh-mango-bottle", variantId: "default", quantity: 4 },
+      { itemId: "jfh-bar-mat", variantId: "default", quantity: 2 },
+    ] }));
+    reviewOrder(db, b.id, { decisions: [{ status: "denied", reason: "Not this month" }, { status: "approved" }] }, by);
+    assert.equal(place(db, mango(4)).lines[0].quantity, 4);
+  });
+
+  it("checks the bottles in one order together with what was had before", () => {
+    const db = initialState();
+    place(db, mango(2));
+    // two lines of the same bottle in one order count together
+    const errors = fieldErrors(() => place(db, order({ shipTo: PELICAN, purpose: "event", lines: [
+      { itemId: "jfh-mango-bottle", variantId: "default", quantity: 2 },
+      { itemId: "jfh-mango-bottle", variantId: "default", quantity: 1 },
+    ] })));
+    assert.match(errors.lines, /you can add 2 more/);
+  });
+});

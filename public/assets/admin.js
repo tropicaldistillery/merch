@@ -3177,6 +3177,12 @@ function openItem(item) {
   });
   const maxField = maxSetting.field;
   const minField = minSetting.field;
+  const perAccountInput = el("input", { id: "item-per-account", name: "maxPerAccount", type: "number", min: "1", max: "999", step: "1", value: draft.maxPerAccount ?? "", placeholder: "No limit" });
+  const perAccountField = field("Max per person, per account", perAccountInput, {
+    span: 2,
+    optional: true,
+    hint: "Across all of a person's orders, for each account they ship to (and for themselves). The sample bottles have 4.",
+  });
   for (const setting of [minSetting, maxSetting]) {
     cost.addEventListener("input", setting.refresh);
     stepInput.addEventListener("input", setting.refresh);
@@ -3229,6 +3235,7 @@ function openItem(item) {
       minField,
       maxField,
       stepField,
+      perAccountField,
       el("div", { class: "field span-2" }, el("span", { class: "label", text: "Visibility" }), el("label", { class: "check" }, el("input", { id: "item-active", type: "checkbox", checked: draft.active }), "Show in the store")),
       field("Description", el("textarea", { id: "item-description", name: "description", rows: "3", maxlength: "600", value: draft.description }), { optional: true }),
       field("Colourway", tone, { span: 3 }),
@@ -3269,6 +3276,7 @@ function openItem(item) {
       minPerOrder: Number(form.elements.namedItem("minPerOrder").value),
       orderIncrement: Number(form.elements.namedItem("orderIncrement").value),
       maxPerOrder: Number(form.elements.namedItem("maxPerOrder").value),
+      maxPerAccount: form.elements.namedItem("maxPerAccount").value,
       description: form.elements.namedItem("description").value,
       tone: tone.value,
       art: art.value,

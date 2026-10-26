@@ -30,9 +30,12 @@ const SEED_COLORS = {
 };
 
 // The spirits themselves, for tastings, events and accounts: every J.F.
-// Haden's flavour and Twin P Whiskey as a 750 ml bottle, up to 4 of each per
-// order. (They came in cases of 6 too, until those were taken out.)
+// Haden's flavour and Twin P Whiskey as a 750 ml bottle. Each person can get
+// up to 4 of a flavour for each account they ship to (and 4 for themselves),
+// across all their orders. (They came in cases of 6 too, until those were
+// taken out.)
 const BOTTLES_PER_ORDER = 4;
+const BOTTLES_PER_ACCOUNT = 4;
 const BOTTLE_COST_CENTS = 1500; // a placeholder, like every starter cost
 const PRODUCTS = [
   ["citrus", "Citrus Liqueur", "citrus", "Made with 100% Florida citrus."],
@@ -403,7 +406,8 @@ export const SEED_CATALOG = [
     id, name: `${product}, 750 ml`,
     brand, category: "Samples", tone, art: "bottle", unit: "750 ml bottle",
     description: `A 750 ml bottle of ${product} for account visits, tastings and events. ${made}`,
-    costCents: BOTTLE_COST_CENTS, minPerOrder: 1, maxPerOrder: BOTTLES_PER_ORDER, variants: single(24),
+    costCents: BOTTLE_COST_CENTS, minPerOrder: 1, maxPerOrder: BOTTLES_PER_ORDER, maxPerAccount: BOTTLES_PER_ACCOUNT,
+    variants: single(24),
   })),
   {
     id: "td-table-throw", name: "6 ft Table Throw",
@@ -1024,6 +1028,22 @@ export function applySampleTrim(db) {
   return { removed, limited };
 }
 
+/** The sample bottles' limit of 4 per person for each account, once. */
+export function needsBottleAccountLimit(db) {
+  return !db.meta?.bottleAccountLimit;
+}
+
+export function applyBottleAccountLimit(db) {
+  const limited = [];
+  for (const item of db.catalog) {
+    if (!SPIRITS.some((s) => s.id === item.id) || item.maxPerAccount !== undefined) continue;
+    item.maxPerAccount = BOTTLES_PER_ACCOUNT;
+    limited.push(item);
+  }
+  db.meta.bottleAccountLimit = 1;
+  return limited;
+}
+
 /**
  * The categories changed from Drinkware and Point of Sale to Giveaways and
  * VIP. Move each starter item an admin hasn't recategorized to its new home,
@@ -1470,6 +1490,15 @@ export function normalizeItem(input, { catalog, existing = null }) {
   if (!errors.maxPerOrder && !errors.orderIncrement && maxPerOrder % orderIncrement) {
     errors.maxPerOrder = `Make the maximum a multiple of ${orderIncrement}.`;
   }
+  // Optional: how many one person may get for each account, across orders.
+  // Left out (an older page saving the item), it keeps what it was.
+  const rawPerAccount = "maxPerAccount" in src ? src.maxPerAccount : existing?.maxPerAccount;
+  const maxPerAccount = rawPerAccount === undefined || rawPerAccount === null || rawPerAccount === "" ? null : Number(rawPerAccount);
+  if (maxPerAccount !== null && (!Number.isInteger(maxPerAccount) || maxPerAccount < 1 || maxPerAccount > 999)) {
+    errors.maxPerAccount = "Enter a whole number from 1 to 999, or leave it blank for no limit.";
+  } else if (maxPerAccount !== null && !errors.minPerOrder && maxPerAccount < minPerOrder) {
+    errors.maxPerAccount = "It can't be less than the minimum order.";
+  }
 
   const rawVariants = Array.isArray(src.variants) ? src.variants : [];
   const variants = [];
@@ -1551,6 +1580,7 @@ export function normalizeItem(input, { catalog, existing = null }) {
     costCents,
     minPerOrder,
     maxPerOrder,
+    maxPerAccount,
     orderIncrement,
     variants,
     supplier,
@@ -1576,6 +1606,7 @@ export function publicItem(item) {
     costCents: item.costCents,
     minPerOrder: item.minPerOrder ?? 1,
     maxPerOrder: item.maxPerOrder,
+    maxPerAccount: item.maxPerAccount ?? null,
     orderIncrement: item.orderIncrement ?? 1,
     variants: item.variants.map((v) => ({ id: v.id, label: v.label, stock: v.stock })),
   };

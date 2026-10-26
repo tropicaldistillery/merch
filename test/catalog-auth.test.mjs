@@ -33,6 +33,8 @@ import {
   applyStockCleared,
   needsSampleTrim,
   applySampleTrim,
+  needsBottleAccountLimit,
+  applyBottleAccountLimit,
   normalizeItem,
   publicItem,
   bulkEditCatalog,
@@ -847,6 +849,37 @@ describe("starter items added to existing stores", () => {
     assert.equal(needsSampleTrim(db), false);
     assert.deepEqual(applySampleTrim({ meta: {}, catalog: db.catalog }).limited, [], "nothing more to change");
     assert.equal(needsSampleTrim(initialState()), false, "a new store starts that way");
+  });
+
+  it("limits each sample bottle to 4 per person for each account, once", () => {
+    const catalog = structuredClone(SEED_CATALOG);
+    for (const id of SPIRIT_IDS) delete catalog.find((i) => i.id === id).maxPerAccount;
+    catalog.find((i) => i.id === "twinp-bottle").maxPerAccount = 2; // an admin's own choice since
+    const db = { meta: {}, catalog };
+    assert.equal(needsBottleAccountLimit(db), true);
+    assert.equal(applyBottleAccountLimit(db).length, 6);
+    const of = (id) => db.catalog.find((i) => i.id === id).maxPerAccount;
+    assert.equal(of("jfh-mango-bottle"), 4);
+    assert.equal(of("twinp-bottle"), 2);
+    assert.equal(of("jfh-logo-tee"), undefined, "nothing else");
+    assert.equal(needsBottleAccountLimit(db), false);
+    assert.equal(needsBottleAccountLimit(initialState()), false);
+    assert.equal(quantityRuleText(SEED_CATALOG.find((i) => i.id === "jfh-mango-bottle")), "Up to 4 per account");
+    assert.equal(quantityRuleText({ maxPerOrder: 4, maxPerAccount: 12 }), "Up to 4 per order · 12 per account");
+  });
+
+  it("saves an item's limit per account, or none", () => {
+    const tee = structuredClone(SEED_CATALOG.find((i) => i.id === "jfh-logo-tee"));
+    const save = (patch, existing = tee) => normalizeItem({ ...tee, ...patch }, { catalog: SEED_CATALOG, existing });
+    const refused = (patch) => assert.throws(() => save(patch), (e) => Boolean(e.fieldErrors?.maxPerAccount));
+    assert.equal(save({ maxPerAccount: "6" }).maxPerAccount, 6);
+    assert.equal(save({ maxPerAccount: "" }).maxPerAccount, null);
+    refused({ maxPerAccount: "0" });
+    refused({ maxPerAccount: "2.5" });
+    refused({ minPerOrder: 4, maxPerOrder: 8, maxPerAccount: "2" });
+    // left out by an older page, it keeps what it was
+    const { maxPerAccount, ...withoutIt } = { ...tee };
+    assert.equal(normalizeItem(withoutIt, { catalog: SEED_CATALOG, existing: { ...tee, maxPerAccount: 3 } }).maxPerAccount, 3);
   });
 
   it("gives the booklet its photo when it has none, leaving an admin's own photo alone", () => {

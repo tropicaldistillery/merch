@@ -19,6 +19,7 @@ import {
   inHouseLines,
   isDenied,
   labelFor,
+  maxPerAccount,
   optionText,
   quantityProblem,
 } from "../public/assets/shared.js";
@@ -348,6 +349,47 @@ export function releaseStock(db, order) {
   }
 }
 
+/* ----------------------------------------------------- limits per account */
+
+// Where an order goes, for the limits per account: the account (keyed by
+// name and ZIP, as the account directory is) or the requester themselves.
+function destinationKey(shipTo) {
+  return shipTo.type === "account" ? `account:${accountKey(shipTo.accountName, shipTo.postalCode)}` : "self";
+}
+
+/**
+ * Some items (the sample bottles) can go to each account only so many times
+ * per person, across all their orders, and to the requester themselves the
+ * same. What this order would add is checked against what they've already
+ * ordered for the same place; cancelled and declined orders, and items that
+ * weren't approved, don't count.
+ */
+function perAccountProblems(db, value, requester) {
+  const toAccount = value.shipTo.type === "account";
+  const where = destinationKey(value.shipTo);
+  const totals = new Map();
+  for (const line of value.lines) totals.set(line.itemId, (totals.get(line.itemId) ?? 0) + line.quantity);
+  const problems = [];
+  for (const [itemId, quantity] of totals) {
+    const item = db.catalog.find((i) => i.id === itemId);
+    const limit = maxPerAccount(item);
+    if (!limit) continue;
+    let had = 0;
+    for (const order of db.orders) {
+      if (RELEASED_STATUSES.includes(order.status) || !ownsOrder(order, requester) || destinationKey(order.shipTo) !== where) continue;
+      for (const line of order.lines) if (line.itemId === itemId && !isDenied(line)) had += line.quantity;
+    }
+    if (had + quantity <= limit) continue;
+    const left = Math.max(0, limit - had);
+    const rule = toAccount ? `${limit} per person for each account` : `${limit} per person shipped to yourself`;
+    const place = toAccount ? value.shipTo.accountName : "yourself";
+    problems.push(
+      `${item.name} is limited to ${rule}. You've already ordered ${had} for ${place}, so ${left ? `you can add ${left} more` : "you can't order more"}.`
+    );
+  }
+  return problems;
+}
+
 /* ------------------------------------------------------------ place order */
 
 /**
@@ -396,6 +438,10 @@ export function placeOrder(
     accounts: accountsFor(db, distributorId),
     today: todayIn(timeZone, now),
   });
+  if (!Object.keys(errors).length) {
+    const over = perAccountProblems(db, value, requester);
+    if (over.length) errors.lines = over.join(" ");
+  }
   if (Object.keys(errors).length) failWith(errors);
 
   const at = now.toISOString();

@@ -22,6 +22,7 @@ export function initialState() {
       stockCleared: 1,
       // and with no sample cases, and bottles limited to 4 a flavour
       sampleTrim: 1,
+      bottleAccountLimit: 1,
     },
     catalog: structuredClone(SEED_CATALOG),
     orders: [],
