@@ -279,8 +279,8 @@ function cardDialog(item, { variant, quantity = 1, line = null, onAdded } = {}) 
   function showCocktail() {
     const pick = cocktailSelect.value;
     cocktailInput.hidden = pick !== "other";
-    const made = listed(pick);
-    cocktailHint.textContent = made ? `Made with J.F. Haden's ${made.liqueur}.` : "";
+    const made = listed(pick)?.liqueur;
+    cocktailHint.textContent = made ? `Made with J.F. Haden's ${made}.` : "";
     cocktailHint.hidden = !made;
   }
   cocktailSelect.value = listed(start.cocktail)?.name ?? (start.cocktail ? "other" : "");
