@@ -22,7 +22,7 @@ const RIGHT = 2000;
 const MAX_TEXT_WIDTH = 1900;
 const INK = "#3b3b3b";
 // The banner's colours, pink first: pink, purple, blue. They fill the title
-// (or the name: see ACCENT) and the favourite cocktail.
+// (or the name: see ACCENT).
 const GRADIENT = ["#c94486", "#784c7f", "#499fce"];
 export const ACCENT = "title";
 let gradients = 0;
@@ -41,9 +41,10 @@ const CONTACT = {
   website: { size: 64, spacing: "0.01em", gap: 71 },
 };
 // The favourite cocktail sits in the bottom right corner, level with the
-// last contact line, under a small FAVORITE COCKTAIL label.
-const COCKTAIL = { size: 64, spacing: "0.01em", maxWidth: 820 };
-const COCKTAIL_LABEL = { size: 34, spacing: "0.16em", above: 66 };
+// last contact line, under a small FAVORITE COCKTAIL label; a size up from
+// the contact lines so it stands out.
+const COCKTAIL = { size: 84, spacing: "0.01em", maxWidth: 900 };
+const COCKTAIL_LABEL = { size: 40, spacing: "0.16em", above: 86 };
 
 function node(tag, attrs = {}, text) {
   const n = document.createElementNS(SVG, tag);
@@ -115,7 +116,7 @@ export function cardFront(details = {}, { print = false, label = "", accent = AC
   if (d.cocktail) {
     svg.append(
       line("Favorite cocktail", { y: y - COCKTAIL_LABEL.above, size: COCKTAIL_LABEL.size, spacing: COCKTAIL_LABEL.spacing, upper: true, right: true }),
-      line(d.cocktail, { y, size: COCKTAIL.size, spacing: COCKTAIL.spacing, fill: paint, right: true })
+      line(d.cocktail, { y, size: COCKTAIL.size, spacing: COCKTAIL.spacing, right: true })
     );
   }
   return svg;
