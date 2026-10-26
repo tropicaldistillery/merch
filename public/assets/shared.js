@@ -75,6 +75,11 @@ export function isCardItem(item) {
 /** Business cards: how many boxes each person on the cards can have in an order. */
 export const CARD_BOXES_PER_PERSON = 1;
 
+// For now, business cards aren't covered by the marketing budget: once
+// they're approved, the requester orders them at Vistaprint and pays with
+// this.
+export const CARD_PAYMENT = "your company Amex";
+
 /** Whose cards a line holds, to count them by: the name, whatever its case and spacing. */
 export function cardHolderKey(card) {
   return String(card?.name ?? "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -295,6 +300,15 @@ export function forwardOf(order, line) {
 /** The lines handed to this forward (each forward keeps their indexes). */
 export function forwardLines(order, forward) {
   return forward.lines.map((i) => order.lines[i]).filter(Boolean);
+}
+
+/**
+ * Approved business cards nobody has ordered yet, with their line numbers:
+ * the requester orders these at Vistaprint, paying with CARD_PAYMENT.
+ */
+export function cardsToOrder(order) {
+  if (order.status !== "approved") return [];
+  return order.lines.map((line, index) => ({ line, index })).filter(({ line }) => line.card && !isDenied(line) && !forwardOf(order, line));
 }
 
 /** The approved lines the merch team packs and ships itself: none denied or forwarded. */

@@ -15,9 +15,10 @@ import {
   US_STATES,
   VENDORS,
   activeForwards,
-  cardText,
-  forwardLines,
   cardHolderKey,
+  cardText,
+  cardsToOrder,
+  forwardLines,
   forwardOf,
   imageFor,
   inHouseLines,
@@ -448,7 +449,15 @@ export function requesterView(order) {
     history: order.history.filter((entry) => !entry.forward),
     forwards: forwards
       .filter((f) => f.status !== "cancelled")
-      .map((f) => ({ id: f.id, name: f.to.name, lines: f.lines, status: f.status, shipment: f.shipment })),
+      .map((f) => ({
+        id: f.id,
+        name: f.to.name,
+        lines: f.lines,
+        status: f.status,
+        shipment: f.shipment,
+        // a printer's order number (their own, when they ordered the cards)
+        ...(f.vendor ? { vendor: f.vendor, reference: f.reference } : {}),
+      })),
   };
 }
 
@@ -862,6 +871,40 @@ export function shipForward(db, orderId, forwardId, input, { actor, now = new Da
     shipIfAllForwardsOut(order, { at, actor });
   }
   return { order, forward, event: firstTime ? "forward.shipped" : newTracking ? "forward.tracking" : null };
+}
+
+/**
+ * The requester has ordered their approved business cards at Vistaprint and
+ * paid there (see cardsToOrder): keep Vistaprint's order number as a forward,
+ * just as when the merch team orders them. `input` is { reference, lines };
+ * without `lines`, it's all their cards still to order.
+ */
+export function orderOwnCards(db, orderId, input, { requester, now = new Date() }) {
+  const order = findOrder(db, orderId);
+  if (!ownsOrder(order, requester)) throw new ValidationError("That order could not be found.", {}, 404);
+  const waiting = cardsToOrder(order).map(({ index }) => index);
+  if (!waiting.length) {
+    throw new ValidationError(
+      order.status === "submitted" ? "Your business cards need approving before you order them." : "There are no business cards on this order waiting to be ordered.",
+      {},
+      409
+    );
+  }
+  const src = input && typeof input === "object" ? input : {};
+  const picked = Array.isArray(src.lines) && src.lines.length ? src.lines.map(Number) : waiting;
+  if (picked.some((i) => !waiting.includes(i))) {
+    throw new ValidationError("Some of those cards can't be ordered now. Reload the page and try again.", {}, 409);
+  }
+  return forwardItems(db, orderId, { vendor: "vistaprint", reference: src.reference, lines: picked }, { actor: requester.name, now });
+}
+
+/** The requester adds the tracking for business cards they ordered themselves. */
+export function shipOwnCards(db, orderId, forwardId, input, { requester, now = new Date() }) {
+  const order = findOrder(db, orderId);
+  if (!ownsOrder(order, requester)) throw new ValidationError("That order could not be found.", {}, 404);
+  const forward = findForward(order, forwardId);
+  if (!forward.vendor) throw new ValidationError("The merch team adds the tracking for these.", {}, 403);
+  return shipForward(db, orderId, forwardId, input, { actor: requester.name, now, requireCarrier: true });
 }
 
 /** The order and forward a supplier's link opens, or null. */

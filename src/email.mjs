@@ -23,10 +23,12 @@
 
 import {
   ACCOUNT_TYPES,
+  CARD_PAYMENT,
   CARRIERS,
   PURPOSES,
   activeForwards,
   cardText,
+  cardsToOrder,
   forwardLines,
   formatMoney,
   inHouseLines,
@@ -245,17 +247,21 @@ export function orderEmails(
     }
     case "order.approved": {
       const itemByItem = order.lines.some((l) => l.decision);
+      const onlyCards = order.lines.every((l) => l.card);
       emails.push(
         toRequester(`Your merch order ${order.number} is approved`, [
           block.p(hi),
           block.p(
-            itemByItem
-              ? `Good news: every item in order ${order.number} is approved, and it will be packed and shipped next.`
-              : `Good news: order ${order.number} is approved and will be packed and shipped next.`
+            onlyCards
+              ? `Good news: order ${order.number} is approved.`
+              : itemByItem
+                ? `Good news: every item in order ${order.number} is approved, and it will be packed and shipped next.`
+                : `Good news: order ${order.number} is approved and will be packed and shipped next.`
           ),
+          cardsNext(order),
           latest.note ? block.note("Note from the merch admin", latest.note) : null,
           block.items(order),
-          block.button("See it under My orders", mineLink),
+          block.button(cardsToOrder(order).length ? "Order your cards from My orders" : "See it under My orders", mineLink),
         ])
       );
       break;
@@ -269,10 +275,11 @@ export function orderEmails(
           block.p(
             `The merch admin reviewed order ${order.number}. ${approved === 1 ? "One item is" : `${approved} items are`} approved and will be packed and shipped next. ${denied === 1 ? "One item wasn't" : `${denied} items weren't`} approved, so ${denied === 1 ? "it" : "they"} won't ship.`
           ),
+          cardsNext(order),
           latest.note ? block.note("Note from the merch admin", latest.note) : null,
           block.items(order),
           block.p("Reply to this email if you have questions."),
-          block.button("See it under My orders", mineLink),
+          block.button(cardsToOrder(order).length ? "Order your cards from My orders" : "See it under My orders", mineLink),
         ])
       );
       break;
@@ -362,7 +369,8 @@ export function orderEmails(
     }
     case "forward.shipped":
     case "forward.tracking": {
-      if (!forward) break;
+      // The requester added the tracking for cards they ordered themselves.
+      if (!forward || byRequester) break;
       const lines = forwardLines(order, forward);
       const whole = lines.length === shippingLines(order).length;
       const shipment = forward.shipment ?? {};
@@ -469,7 +477,22 @@ export function orderEmails(
     default:
       break;
   }
-  return emails.filter(Boolean).map((email) => ({ ...email, blocks: email.blocks.filter(Boolean) }));
+  // Business cards are the one thing a requester pays for (CARD_PAYMENT).
+  const withCards = order.lines.some((l) => l.card);
+  return emails
+    .filter(Boolean)
+    .map((email) => ({ ...email, blocks: email.blocks.filter(Boolean), ...(withCards && email.role === "requester" && !email.footer ? { footer: CARD_FOOTER } : {}) }));
+}
+
+/** What to do next with approved business cards: order them at Vistaprint. */
+function cardsNext(order) {
+  const cards = cardsToOrder(order);
+  if (!cards.length) return null;
+  const whose = [...new Set(cards.map(({ line }) => line.card.name))].join(", ");
+  return block.note(
+    "Next: order your business cards",
+    `Your business cards (${whose}) are approved. Order them at Vistaprint and pay with ${CARD_PAYMENT}: My orders has the print files and each step, then save Vistaprint's order number there.`
+  );
 }
 
 /* -------------------------------------------------------------- rendering */
@@ -561,6 +584,7 @@ function textBlock(b) {
 }
 
 const FOOTER = "Sent by the Tropical Distillery team merch store. Nothing is ever charged to you: costs show what each order is worth.";
+const CARD_FOOTER = `Sent by the Tropical Distillery team merch store. Nothing is charged to you except business cards, which you order at Vistaprint with ${CARD_PAYMENT}.`;
 const FULFILLER_FOOTER = "Sent by the Tropical Distillery team merch store on behalf of the merch team. Reply to reach them.";
 
 export function renderEmail({ subject, blocks, footer = FOOTER }) {

@@ -70,6 +70,7 @@ import {
   findForwardById,
   forwardItems,
   normalizeAccountEdit,
+  orderOwnCards,
   ordersToCsv,
   ownsOrder,
   placeOrder,
@@ -77,6 +78,7 @@ import {
   requesterView,
   reviewOrder,
   shipForward,
+  shipOwnCards,
   supplierView,
   trackerToCsv,
   updateOrder,
@@ -783,6 +785,22 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
       );
       notify("order.created", order);
       sendJson(res, 201, { ok: true, order: requesterView(order) });
+    }],
+
+    // Business cards the requester ordered at Vistaprint themselves, paying
+    // with their company Amex: Vistaprint's order number, then the tracking.
+    ["POST", /^\/api\/orders\/([\w-]+)\/cards-ordered$/, "team", async ({ req, res, user, params }) => {
+      const body = await readJson(req);
+      const { order, forward } = await store.mutate((db) => orderOwnCards(db, params[0], body, { requester: user, now: clock() }));
+      notify("forward.sent", order, { forward, byRequester: true });
+      sendJson(res, 201, { ok: true, order: requesterView(order) });
+    }],
+
+    ["POST", /^\/api\/orders\/([\w-]+)\/forwards\/([\w-]+)\/ship$/, "team", async ({ req, res, user, params }) => {
+      const body = await readJson(req);
+      const { order, forward, event } = await store.mutate((db) => shipOwnCards(db, params[0], params[1], body, { requester: user, now: clock() }));
+      if (event) notify(event, order, { forward, byRequester: true });
+      sendJson(res, 200, { ok: true, order: requesterView(order) });
     }],
 
     ["POST", /^\/api\/orders\/([\w-]+)\/cancel$/, "team", async ({ res, user, params }) => {

@@ -18,6 +18,7 @@ import {
 import {
   BRANDS,
   CARD_BOXES_PER_PERSON,
+  CARD_PAYMENT,
   CARD_DEFAULTS,
   CARD_FIELDS,
   CATEGORIES,
@@ -592,7 +593,9 @@ function productCard(item) {
           { class: "price" },
           formatMoney(item.costCents),
           el("small", { text: item.unit === "Each" ? " each" : ` / ${item.unit.toLowerCase()}` }),
-          el("span", { class: "free", text: "Free to you" })
+          customize
+            ? el("span", { class: "free self-paid", text: `On ${CARD_PAYMENT}` })
+            : el("span", { class: "free", text: "Free to you" })
         ),
         el("span", { class: `stock ${availability.tone}`.trim(), text: availability.label })
       ),
@@ -839,6 +842,7 @@ function renderCart() {
 
   let total = 0;
   let units = 0;
+  let selfPaid = 0;
   let blocked = false;
   for (const line of lines) {
     const item = items.find((i) => i.id === line.itemId);
@@ -849,11 +853,18 @@ function renderCart() {
     }
     total += item.costCents * line.quantity;
     units += line.quantity;
+    if (isCardItem(item)) selfPaid += item.costCents * line.quantity;
     if (line.quantity > lineLimit(item, variant, line) || !colorOk(item, line)) blocked = true;
     if (isCardItem(item) && !line.card) blocked = true;
     if (quantityProblem(item, cart.quantityOf(item.id))) blocked = true;
   }
   $("#cart-total").textContent = formatMoney(total);
+  // Business cards are paid for with CARD_PAYMENT; the budget covers the rest.
+  $("#cart-you-pay").textContent = formatMoney(selfPaid);
+  $("#cart-you-pay").classList.toggle("is-due", selfPaid > 0);
+  $("#cart-fine").textContent = selfPaid
+    ? `You pay for business cards with ${CARD_PAYMENT}: once they're approved, you order them at Vistaprint from My orders. The marketing budget covers everything else.`
+    : "Order value is what the items cost Tropical Distillery. It comes out of the marketing budget, never out of your pocket.";
   roiCost = total;
   renderRoi();
   $("#cart-units").textContent = plural(units, "unit");

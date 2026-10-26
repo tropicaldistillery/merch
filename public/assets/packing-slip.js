@@ -1,5 +1,5 @@
 import { addressLines, api, clear, el, formatCalendarDate, formatDate } from "./core.js";
-import { ACCOUNT_TYPES, PURPOSES, activeForwards, forwardLines, inHouseLines, labelFor, optionText } from "./shared.js";
+import { ACCOUNT_TYPES, PURPOSES, activeForwards, cardsToOrder, forwardLines, inHouseLines, labelFor, optionText } from "./shared.js";
 
 const slip = document.getElementById("slip");
 
@@ -56,8 +56,9 @@ function slipContent(order) {
       el(
         "tbody",
         {},
-        // Only what was approved, and not forwarded to someone else, goes in the box.
-        inHouseLines(order).map((line) =>
+        // Only what was approved, and not forwarded to someone else, goes in the
+        // box; business cards come from Vistaprint, ordered by the requester.
+        inHouseLines(order).filter((line) => !cardsToOrder(order).some((c) => c.line === line)).map((line) =>
           el(
             "tr",
             {},
@@ -70,6 +71,13 @@ function slipContent(order) {
         )
       )
     ),
+    cardsToOrder(order).length
+      ? block(
+          "Not in this box: business cards",
+          `${order.requester.name} orders these at Vistaprint`,
+          ...cardsToOrder(order).map(({ line }) => `${line.quantity} × ${line.name}${optionText(line) ? ` (${optionText(line)})` : ""}`)
+        )
+      : null,
     ...activeForwards(order).map((forward) =>
       block(
         `Not in this box: shipping from ${forward.to.name}`,

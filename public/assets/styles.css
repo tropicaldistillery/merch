@@ -2914,6 +2914,12 @@ dialog.confirm .dialog-actions .btn {
   color: var(--ok);
 }
 
+/* Business cards go on the requester's company Amex (CARD_PAYMENT). */
+.price .free.self-paid,
+.totals.you-pay strong.is-due {
+  color: var(--ink-2);
+}
+
 .summary .totals.you-pay {
   margin: -6px 0 16px;
 }
@@ -4230,4 +4236,32 @@ dialog.card-dialog {
 
 .vp-value {
   overflow-wrap: anywhere;
+}
+
+/* My orders: approved business cards for the requester to order */
+.cards-panel {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: var(--blush);
+}
+
+.cards-panel > summary {
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.cards-panel > p {
+  margin: 10px 0 0;
+}
+
+.cards-panel .vistaprint-form {
+  margin-top: 12px;
+  background: var(--surface);
+}
+
+.own-tracking {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
 }

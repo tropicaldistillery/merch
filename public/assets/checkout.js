@@ -13,7 +13,7 @@ import {
   teamApi,
   wireHeader,
 } from "./core.js";
-import { ACCOUNT_TYPES, PURPOSES, US_STATES, formatMoney, imageFor, optionText } from "./shared.js";
+import { ACCOUNT_TYPES, CARD_PAYMENT, PURPOSES, US_STATES, formatMoney, imageFor, isCardItem, optionText } from "./shared.js";
 
 const form = $("#checkout-form");
 const alertBox = $("#checkout-alert");
@@ -165,6 +165,7 @@ function renderSummary() {
   const problems = [];
   let total = 0;
   let units = 0;
+  let selfPaid = 0;
 
   clear(
     $("#summary-lines"),
@@ -181,6 +182,7 @@ function renderSummary() {
       }
       total += item.costCents * line.quantity;
       units += line.quantity;
+      if (isCardItem(item)) selfPaid += item.costCents * line.quantity;
       return el(
         "li",
         {},
@@ -198,6 +200,12 @@ function renderSummary() {
 
   $("#summary-units").textContent = plural(units, "unit");
   $("#summary-total").textContent = formatMoney(total);
+  // Business cards are paid for with CARD_PAYMENT; the budget covers the rest.
+  $("#summary-you-pay").textContent = formatMoney(selfPaid);
+  $("#summary-you-pay").classList.toggle("is-due", selfPaid > 0);
+  $("#summary-fine").textContent = selfPaid
+    ? `Nothing is charged now. Once your business cards are approved, you order them at Vistaprint with ${CARD_PAYMENT}: My orders has the steps. The marketing budget covers everything else.`
+    : "Nothing is charged to you; the marketing budget covers it. You'll see the order's progress under My orders.";
   setAlert(linesAlert, [...new Set(problems)].join(" "));
   placeButton.disabled = !lines.length || problems.length > 0;
 }

@@ -411,6 +411,38 @@ describe("merch store over HTTP", () => {
     ]);
   });
 
+  it("lets the requester order their approved cards at Vistaprint and add the tracking", async () => {
+    const jane = await signedInTeam(app);
+    const sam = await signedInTeam(app, "sam@tropicaldistillery.com", "Sam Rep");
+    const card = { name: "Jane Rep", phone: "305-555-0100" };
+    const body = { ...ACCOUNT_ORDER, lines: [{ itemId: "td-business-cards", variantId: "default", quantity: 1, card }] };
+    const { id, number } = (await jane("/api/orders", { method: "POST", body })).data.order;
+    const ordered = (b, who = jane) => who(`/api/orders/${id}/cards-ordered`, { method: "POST", body: b });
+
+    assert.equal((await ordered({ reference: "VP-1" })).status, 409, "approved first");
+    const admin = await signedInAdmin(app);
+    await admin(`/api/admin/orders/${id}/review`, { method: "POST", body: { decisions: [{ status: "approved" }], notify: false } });
+    assert.equal((await ordered({ reference: "VP-1" }, sam)).status, 404, "only their own order");
+    assert.equal((await ordered({ reference: " " })).data.fieldErrors.reference, "Enter the Vistaprint order number.");
+    const saved = await ordered({ reference: "VP-1" });
+    assert.equal(saved.status, 201, JSON.stringify(saved.data));
+    const [forward] = saved.data.order.forwards;
+    assert.deepEqual([forward.name, forward.vendor, forward.reference, forward.status], ["Vistaprint", "vistaprint", "VP-1", "sent"]);
+    assert.deepEqual(app.notifications.at(-1), { event: "forward.sent", number, to: "" });
+    assert.equal((await ordered({ reference: "VP-2" })).status, 409, "nothing left to order");
+    const full = (await admin(`/api/admin/orders/${id}`)).data.order;
+    assert.equal(full.forwards[0].by, "Jane Rep");
+
+    const ship = (b, who = jane) => who(`/api/orders/${id}/forwards/${forward.id}/ship`, { method: "POST", body: b });
+    assert.equal((await ship({ carrier: "ups", trackingNumber: "1Z" }, sam)).status, 404);
+    assert.ok((await ship({ trackingNumber: "1Z" })).data.fieldErrors.carrier);
+    const shipped = await ship({ carrier: "ups", trackingNumber: "1ZVP" });
+    assert.equal(shipped.status, 200, JSON.stringify(shipped.data));
+    assert.equal(shipped.data.order.status, "shipped", "nothing else to ship");
+    assert.deepEqual(app.notifications.at(-1), { event: "forward.shipped", number, to: "" });
+    assert.equal(app.contexts.at(-1).byRequester, true);
+  });
+
   it("records business cards ordered on Vistaprint's site, and passes their tracking on", async () => {
     const jane = await signedInTeam(app);
     const card = { name: "Jane Rep", title: "Sales", email: "jane@tropicaldistillery.com" };

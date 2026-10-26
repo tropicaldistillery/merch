@@ -11,15 +11,17 @@ import {
   normalizeAccountEdit,
   ordersToCsv,
   placeOrder,
+  orderOwnCards,
   pullBackForward,
   requesterView,
   reviewOrder,
   shipForward,
+  shipOwnCards,
   supplierView,
   updateOrder,
   validateOrderInput,
 } from "../src/orders.mjs";
-import { cardText, inHouseLines, optionText, readCardDetails } from "../public/assets/shared.js";
+import { cardText, cardsToOrder, inHouseLines, optionText, readCardDetails } from "../public/assets/shared.js";
 import { ValidationError } from "../src/validation.mjs";
 
 // 02:00 UTC on 6 Oct is still 5 Oct in New York.
@@ -847,6 +849,58 @@ describe("ordering on a printer's own site", () => {
     assert.equal(pullBackForward(other.db, other.id, placedAgain.forward.id, by).forward.status, "cancelled");
   });
 });
+
+describe("requesters ordering their own business cards", () => {
+  const by = { actor: "Allie", now: NOW };
+  const card = { name: "Jane Rep", phone: "305-555-0100" };
+  const setup = () => {
+    const db = initialState();
+    const placed = place(db, order({
+      lines: [
+        { itemId: "jfh-logo-tee", variantId: "m", quantity: 2 },
+        { itemId: "td-business-cards", variantId: "default", quantity: 1, card },
+      ],
+    }));
+    return { db, id: placed.id, o: placed };
+  };
+
+  it("waits for approval, then takes Vistaprint's order number from the requester", () => {
+    const { db, id, o } = setup();
+    assert.deepEqual(cardsToOrder(o), [], "not before approval");
+    assert.equal(fieldErrorsOr409(() => orderOwnCards(db, id, { reference: "VP-1" }, { requester: JANE, now: NOW })), 409);
+    reviewOrder(db, id, { decisions: [{ status: "approved" }, { status: "approved" }] }, by);
+    assert.deepEqual(cardsToOrder(o).map((c) => c.index), [1]);
+    assert.equal(fieldErrorsOr409(() => orderOwnCards(db, id, { reference: "VP-1" }, { requester: SAM, now: NOW })), 404, "only their own");
+    assert.equal(fieldErrorsOr409(() => orderOwnCards(db, id, { reference: "VP-1", lines: [0] }, { requester: JANE, now: NOW })), 409, "only the cards");
+    const { forward } = orderOwnCards(db, id, { reference: "VP-1" }, { requester: JANE, now: NOW });
+    assert.deepEqual([forward.vendor, forward.reference, forward.by, forward.lines], ["vistaprint", "VP-1", "Jane Rep", [1]]);
+    assert.deepEqual(cardsToOrder(o), []);
+    assert.deepEqual(inHouseLines(o).map((l) => l.itemId), ["jfh-logo-tee"], "the tee is still the merch team's");
+    assert.deepEqual(requesterView(o).forwards.map((f) => [f.name, f.vendor, f.reference]), [["Vistaprint", "vistaprint", "VP-1"]]);
+
+    // The tracking from Vistaprint's email, from them only, for that order only.
+    assert.equal(fieldErrorsOr409(() => shipOwnCards(db, id, forward.id, { carrier: "ups", trackingNumber: "1Z" }, { requester: SAM, now: NOW })), 404);
+    assert.equal(shipOwnCards(db, id, forward.id, { carrier: "ups", trackingNumber: "1ZVP" }, { requester: JANE, now: NOW }).event, "forward.shipped");
+    assert.equal(o.status, "approved", "the tee hasn't shipped yet");
+  });
+
+  it("won't take tracking from the requester for anything the merch team forwards", () => {
+    const { db, id } = setup();
+    reviewOrder(db, id, { decisions: [{ status: "approved" }, { status: "approved" }] }, by);
+    const { forward } = forwardItems(db, id, { toName: "Ten 10", toEmail: "orders@ten10.com", lines: [0] }, by);
+    assert.equal(fieldErrorsOr409(() => shipOwnCards(db, id, forward.id, { carrier: "ups", trackingNumber: "1Z" }, { requester: JANE, now: NOW })), 403);
+  });
+});
+
+function fieldErrorsOr409(fn) {
+  try {
+    fn();
+  } catch (error) {
+    assert.ok(error instanceof ValidationError, `expected ValidationError, got ${error}`);
+    return error.status;
+  }
+  assert.fail("expected a ValidationError");
+}
 
 describe("business cards", () => {
   const ALLIE = {

@@ -3,22 +3,29 @@ import {
   $,
   addressLines,
   clear,
+  clearFieldErrors,
   confirmDialog,
   el,
   formatCalendarDate,
   formatDate,
+  options,
   plural,
+  setAlert,
+  showFieldErrors,
   statusBadge,
   teamApi,
   toast,
   wireHeader,
 } from "./core.js";
+import { vistaprintForm } from "./vistaprint.js";
 import {
   ACCOUNT_TYPES,
   CARD_BOXES_PER_PERSON,
+  CARD_PAYMENT,
   CARRIERS,
   PURPOSES,
   cardHolderKey,
+  cardsToOrder,
   forwardOf,
   formatMoney,
   inHouseLines,
@@ -150,20 +157,26 @@ function shipmentBlock(order) {
   const shipment = order.shipment;
   const forwards = order.forwards ?? [];
   const closed = order.status === "cancelled" || order.status === "declined";
-  const ours = shipment || !forwards.length || inHouseLines(order).length > 0;
+  // Approved business cards come from Vistaprint once the requester orders them.
+  const cardsWaiting = cardsToOrder(order).length > 0;
+  const ours = shipment || inHouseLines(order).some((line) => !cardsWaiting || !line.card) || (!forwards.length && !cardsWaiting);
+  const several = forwards.length + (cardsWaiting ? 1 : 0) + (ours ? 1 : 0) > 1;
   return el(
     "div",
     {},
-    el("p", { class: "kv-label", text: forwards.length && !closed ? "Shipments" : "Shipment" }),
+    el("p", { class: "kv-label", text: several && !closed ? "Shipments" : "Shipment" }),
     closed
       ? el("p", { class: "muted", text: "Won't ship" })
       : [
+          cardsWaiting
+            ? el("div", { class: "address" }, el("div", { class: "cell-main", text: "Business cards" }), el("div", { class: "cell-sub", text: "From Vistaprint once you order them" }))
+            : null,
           ours
             ? el(
                 "div",
                 { class: "address" },
-                forwards.length ? el("div", { class: "cell-main", text: "From the merch team" }) : null,
-                shipment ? shipmentLines(shipment) : el("div", { class: forwards.length ? "cell-sub" : "muted", text: "Not shipped yet" })
+                several ? el("div", { class: "cell-main", text: "From the merch team" }) : null,
+                shipment ? shipmentLines(shipment) : el("div", { class: several ? "cell-sub" : "muted", text: "Not shipped yet" })
               )
             : null,
           forwards.map((forward) =>
@@ -171,13 +184,100 @@ function shipmentBlock(order) {
               "div",
               { class: "address separate-shipment" },
               el("div", { class: "cell-main", text: `From ${forward.name}` }),
+              forward.vendor ? el("div", { class: "cell-sub", text: `Order ${forward.reference}` }) : null,
               forward.status === "shipped" && forward.shipment
                 ? shipmentLines(forward.shipment)
-                : el("div", { class: "cell-sub", text: "Not shipped yet" })
+                : el("div", { class: "cell-sub", text: "Not shipped yet" }),
+              // Cards ordered at Vistaprint: their tracking comes to whoever ordered.
+              forward.vendor && !forward.shipment?.trackingNumber ? ownTrackingButton(order, forward) : null
             )
           ),
         ]
   );
+}
+
+/* --------------------------------------------------------- business cards */
+
+function replaceOrder(updated) {
+  orders = orders.map((o) => (o.id === updated.id ? updated : o));
+  render();
+}
+
+// Approved business cards: the requester orders them at Vistaprint, paying
+// with CARD_PAYMENT, and saves Vistaprint's order number here.
+function cardsPanel(order) {
+  const cards = cardsToOrder(order);
+  if (!cards.length) return null;
+  const whose = [...new Set(cards.map(({ line }) => line.card.name))];
+  const form = vistaprintForm(order, {
+    cards,
+    payWith: CARD_PAYMENT,
+    onSave: async ({ lines, reference }) => {
+      const { order: updated } = await teamApi(`/api/orders/${encodeURIComponent(order.id)}/cards-ordered`, { method: "POST", body: { lines, reference } });
+      replaceOrder(updated);
+      toast("Saved. Add the tracking here when Vistaprint emails it.");
+    },
+  });
+  return el(
+    "details",
+    { class: "cards-panel", open: true },
+    el("summary", {}, el("strong", { text: "Next: order your business cards" }), el("span", { class: "cell-sub", text: ` ${whose.join(", ")}` })),
+    el("p", { text: `They're approved. Order them at Vistaprint and pay with ${CARD_PAYMENT}: Vistaprint can't take orders from the store. Then save Vistaprint's order number below so the merch team can see it.` }),
+    form
+  );
+}
+
+function ownTrackingButton(order, forward) {
+  const area = el("div");
+  const button = el("button", {
+    type: "button",
+    class: "link-button",
+    text: forward.status === "shipped" ? "Add the tracking" : "Shipped? Add the tracking",
+    onclick: () => {
+      button.hidden = true;
+      clear(area, ownTrackingForm(order, forward, () => ((button.hidden = false), clear(area))));
+      area.querySelector("select")?.focus();
+    },
+  });
+  return el("div", {}, button, area);
+}
+
+function ownTrackingForm(order, forward, close) {
+  const id = (name) => `own-${forward.id}-${name}`;
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  const submit = el("button", { type: "submit", class: "btn btn-sm", text: "Save tracking" });
+  const form = el(
+    "form",
+    { class: "own-tracking", novalidate: true },
+    alertBox,
+    el("div", { class: "field" }, el("label", { for: id("carrier"), text: "Shipped with" }), el("select", { id: id("carrier"), name: "carrier" }, options(CARRIERS, { placeholder: "Choose…", selected: forward.shipment?.carrier }))),
+    el("div", { class: "field" }, el("label", { for: id("tracking"), text: "Tracking number" }), el("input", { id: id("tracking"), name: "trackingNumber", type: "text", maxlength: "60", autocomplete: "off" })),
+    el("div", { class: "inline-actions" }, submit, el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Never mind", onclick: close }))
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    const trackingNumber = form.elements.namedItem("trackingNumber").value;
+    if (!trackingNumber.trim()) {
+      showFieldErrors(form, { trackingNumber: "Add the tracking number from Vistaprint's email." });
+      return;
+    }
+    submit.disabled = true;
+    try {
+      const { order: updated } = await teamApi(`/api/orders/${encodeURIComponent(order.id)}/forwards/${encodeURIComponent(forward.id)}/ship`, {
+        method: "POST",
+        body: { carrier: form.elements.namedItem("carrier").value, trackingNumber },
+      });
+      replaceOrder(updated);
+      toast("Tracking saved.");
+    } catch (error) {
+      submit.disabled = false;
+      setAlert(alertBox, error.message);
+      showFieldErrors(form, error.fieldErrors);
+    }
+  });
+  return form;
 }
 
 function orderCard(order) {
@@ -196,7 +296,9 @@ function orderCard(order) {
         el("h2", { id: `order-${order.id}`, text: order.number }),
         el("p", {
           class: "muted",
-          text: `Placed ${formatDate(order.createdAt)} · ${plural(order.totalUnits, "unit")} · ${formatMoney(order.totalCents)} value, free to you`,
+          text: `Placed ${formatDate(order.createdAt)} · ${plural(order.totalUnits, "unit")} · ${formatMoney(order.totalCents)} value, ${
+            order.lines.some((l) => l.card) ? `free to you except business cards (on ${CARD_PAYMENT})` : "free to you"
+          }`,
         })
       ),
       statusBadge(order.status)
@@ -241,6 +343,7 @@ function orderCard(order) {
         )
       )
     ),
+    cardsPanel(order),
     el("div", { class: "order-grid" }, shipToBlock(order), detailsBlock(order), shipmentBlock(order)),
     el(
       "div",

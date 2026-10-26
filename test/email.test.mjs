@@ -128,6 +128,26 @@ describe("order emails", () => {
     assert.match(html, /Print: Allie Mindermann · COO/);
   });
 
+  it("tells the requester to order approved cards at Vistaprint with their company Amex", () => {
+    const card = { name: "Jane Rep", phone: "305-555-0100" };
+    const { db, order } = placed({ lines: [{ itemId: "td-business-cards", variantId: "default", quantity: 1, card }] });
+    updateOrder(db, order.id, { status: "approved" }, by);
+    const [approved] = orderEmails("order.approved", order, { adminTo: ADMINS, baseUrl: BASE });
+    const { text, html } = renderEmail(approved);
+    assert.match(text, /Good news: order TD-1001 is approved\./);
+    assert.doesNotMatch(text, /packed and shipped/);
+    assert.match(text, /Next: order your business cards: Your business cards \(Jane Rep\) are approved\. Order them at Vistaprint and pay with your company Amex/);
+    assert.match(text, /Order your cards from My orders/);
+    assert.match(html, /Nothing is charged to you except business cards, which you order at Vistaprint with your company Amex\./);
+    // Once they've ordered and added the tracking themselves, no one needs an email.
+    const { forward } = forwardItems(db, order.id, { vendor: "vistaprint", reference: "VP-1", lines: [0] }, { ...by, actor: "Jane Rep" });
+    shipForward(db, order.id, forward.id, { carrier: "ups", trackingNumber: "1Z" }, by);
+    assert.deepEqual(orderEmails("forward.shipped", order, { adminTo: ADMINS, forward, byRequester: true }), []);
+    // An order without cards keeps the usual footer.
+    const plain = placed();
+    assert.match(renderEmail(orderEmails("order.created", plain.order, { adminTo: ADMINS })[1]).html, /Nothing is ever charged to you/);
+  });
+
   it("emails no one when cards are ordered on Vistaprint's site, and the requester when they ship", () => {
     const card = { name: "Jane Rep", phone: "305-555-0100" };
     const { db, order } = placed({ lines: [{ itemId: "td-business-cards", variantId: "default", quantity: 1, card }] });

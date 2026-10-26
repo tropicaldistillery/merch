@@ -1,4 +1,5 @@
 import { ART_LABELS, artwork } from "./art.js";
+import { VISTAPRINT, vistaprintForm } from "./vistaprint.js";
 import {
   $,
   $$,
@@ -23,6 +24,7 @@ import {
 import {
   ACCOUNT_TYPES,
   BRANDS,
+  CARD_PAYMENT,
   CARRIERS,
   CATEGORIES,
   COLOR_OPTIONS,
@@ -34,7 +36,6 @@ import {
   TONES,
   TRANSITIONS,
   US_STATES,
-  VENDORS,
   activeForwards,
   byCategory,
   cardText,
@@ -1246,156 +1247,30 @@ function forwardForm(order) {
 
 /* ------------------------------------------------------------ vistaprint */
 
-// Vistaprint has no way for the store to send it orders, so the merch team
-// places them on Vistaprint's site with files made here, and the store keeps
-// Vistaprint's order number as a forward: its tracking reaches the requester
-// like any other.
-const VISTAPRINT = VENDORS.find((v) => v.id === "vistaprint");
+// Requesters order their own approved business cards at Vistaprint, paying
+// with CARD_PAYMENT, from My orders. The merch team can place one for them
+// here: the store keeps Vistaprint's order number as a forward either way.
 
 /** Business cards on the order that nobody is making yet. */
 function vistaprintLines(order) {
   return forwardableLines(order).filter(({ line }) => line.card);
 }
 
-/** 250 cards from 1 × "Box of 250". */
-function cardCount(line) {
-  const perBox = Number(/(\d[\d,]*)/.exec(line.unit ?? "")?.[1]?.replace(/,/g, ""));
-  return perBox ? perBox * line.quantity : null;
-}
-
-async function downloadCardFile(order, line, side, button) {
-  const label = button.textContent;
-  button.disabled = true;
-  button.textContent = "Making…";
-  try {
-    const { cardFileName, cardSidePdf } = await import("./card-files.js");
-    const blob = await cardSidePdf(line.card, side);
-    const link = el("a", { href: URL.createObjectURL(blob), download: cardFileName(order, line.card, side), hidden: true });
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(link.href), 60000);
-  } catch (error) {
-    toast(`Couldn't make the file: ${error.message}`, { tone: "error" });
-  } finally {
-    button.disabled = false;
-    button.textContent = label;
-  }
-}
-
-function vistaprintForm(order) {
-  const form = el("form", { class: "action-form vistaprint-form", novalidate: true });
-  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
-  const s = order.shipTo;
-  const submit = el("button", { type: "submit", class: "btn", text: "Save the Vistaprint order" });
-  const copyRow = (label, value) =>
-    value
-      ? el(
-          "li",
-          {},
-          el("span", { class: "kv-label", text: label }),
-          el("span", { class: "vp-value", text: value }),
-          el("button", { type: "button", class: "link-button", text: "Copy", "aria-label": `Copy ${label.toLowerCase()}`, onclick: () => copyText(value, label) })
-        )
-      : null;
-  const step = (n, title, ...body) => el("li", { class: "vp-step" }, el("h4", {}, el("span", { class: "vp-n", text: String(n) }), title), ...body);
-
-  form.append(
-    alertBox,
-    el("p", { class: "hint", text: "Vistaprint can't take orders from other sites, so place this one on vistaprint.com with the files below, then save its order number here. Add the tracking when it ships and the requester is emailed, as with any forward." }),
-    el(
-      "ol",
-      { class: "vp-steps" },
-      step(
-        1,
-        "Download each card",
-        el(
-          "ul",
-          { class: "vp-cards" },
-          vistaprintLines(order).map(({ line, index }) => {
-            const count = cardCount(line);
-            const button = (side) =>
-              el("button", { type: "button", class: "btn btn-secondary btn-sm", text: side === "front" ? "Front PDF" : "Back PDF", onclick: (event) => downloadCardFile(order, line, side, event.currentTarget) });
-            return el(
-              "li",
-              {},
-              el(
-                "label",
-                { class: "check" },
-                el("input", { type: "checkbox", name: "lines", value: String(index), checked: true }),
-                el(
-                  "span",
-                  {},
-                  el("span", { class: "cell-main", text: line.card.name }),
-                  el("span", { class: "cell-sub", text: [count ? `Quantity ${count.toLocaleString("en-US")}` : `${line.quantity} × ${line.unit}`, line.card.title].filter(Boolean).join(" · ") })
-                )
-              ),
-              el("div", { class: "inline-actions" }, button("front"), button("back"))
-            );
-          })
-        ),
-        el("p", { class: "hint", text: "Each file is 3.61 × 2.11 in at 600 dpi, Vistaprint's full-bleed size for a 3.5 × 2 in card; the edge is trimmed off." })
-      ),
-      step(
-        2,
-        "Order on Vistaprint",
-        el("p", { text: `Open ${VISTAPRINT.product} and choose ${VISTAPRINT.options}. Upload your own design: the front file, then the back. Set the quantity shown above, and repeat for each card.` }),
-        el("a", { class: "btn btn-sm", href: VISTAPRINT.url, target: "_blank", rel: "noopener noreferrer", text: "Open Vistaprint ↗" })
-      ),
-      step(
-        3,
-        "Ship it straight to them",
-        el(
-          "ul",
-          { class: "vp-address" },
-          copyRow("Name", s.attention),
-          copyRow("Company", s.type === "account" ? s.accountName : ""),
-          copyRow("Address", s.address1),
-          copyRow("Apt, suite", s.address2),
-          copyRow("City", s.city),
-          copyRow("State", s.state),
-          copyRow("ZIP", s.postalCode),
-          copyRow("Phone", s.phone)
-        )
-      ),
-      step(
-        4,
-        "Save Vistaprint's order number",
-        el(
-          "div",
-          { class: "field" },
-          el("label", { for: "vp-reference", text: "Vistaprint order number" }),
-          el("input", { id: "vp-reference", name: "reference", type: "text", maxlength: "60", autocomplete: "off", inputmode: "text" })
-        )
-      )
-    ),
-    el("div", { class: "inline-actions" }, submit, el("button", { type: "button", class: "btn btn-secondary", text: "Never mind", onclick: () => form.remove() }))
-  );
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    clearFieldErrors(form);
-    setAlert(alertBox, "");
-    const lines = [...form.querySelectorAll('input[name="lines"]:checked')].map((input) => Number(input.value));
-    if (!lines.length) {
-      setAlert(alertBox, "Tick the cards in this Vistaprint order.");
-      return;
-    }
-    submit.disabled = true;
-    try {
+function orderAtVistaprint(order) {
+  const form = vistaprintForm(order, {
+    cards: vistaprintLines(order),
+    intro: `${order.requester.name} orders these from My orders and pays with ${CARD_PAYMENT.replace(/^your/, "their")}. Use this only to place the order for them; Vistaprint can't take orders from the store.`,
+    onCancel: () => form.remove(),
+    onSave: async ({ lines, reference }) => {
       const { order: updated, forward } = await adminApi(`/api/admin/orders/${encodeURIComponent(order.id)}/forwards`, {
         method: "POST",
-        body: { vendor: VISTAPRINT.id, reference: form.elements.namedItem("reference").value, lines },
+        body: { vendor: VISTAPRINT.id, reference, lines },
       });
       replaceOrder(updated);
       renderOrderDetail(updated);
       detailTitle.focus();
       toast(`Saved Vistaprint order ${forward.reference}. Add its tracking when it ships.`);
-    } catch (error) {
-      submit.disabled = false;
-      setAlert(alertBox, error.message);
-      showFieldErrors(form, error.fieldErrors);
-    }
+    },
   });
   return form;
 }
@@ -1636,6 +1511,12 @@ function renderOrderDetail(order) {
     next.length || order.shipment || decided
       ? section(
           "Update",
+          order.status === "approved" && vistaprintLines(order).length
+            ? el("p", {
+                class: "callout",
+                text: `Waiting for ${order.requester.name} to order ${plural(vistaprintLines(order).length, "set")} of business cards at Vistaprint with ${CARD_PAYMENT.replace(/^your/, "their")}. Vistaprint's order number shows here once they do.`,
+              })
+            : null,
           el(
             "div",
             { class: "action-row" },
@@ -1653,10 +1534,10 @@ function renderOrderDetail(order) {
             order.status === "approved" && vistaprintLines(order).length
               ? el("button", {
                   type: "button",
-                  class: "btn btn-sm",
-                  text: "Order at Vistaprint",
+                  class: "btn btn-secondary btn-sm",
+                  text: "Order at Vistaprint for them",
                   onclick: () => {
-                    clear(actionArea, vistaprintForm(order));
+                    clear(actionArea, orderAtVistaprint(order));
                     $(".vp-step", actionArea)?.scrollIntoView({ block: "nearest" });
                     $("input", actionArea)?.focus();
                   },
