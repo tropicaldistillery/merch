@@ -29,6 +29,7 @@ import {
   applyMinimums,
   applySampleTrim,
   applyBottleAccountLimit,
+  applyCardLimit,
   applyCardPricing,
   applyPoloColors,
   applySeedPhotos,
@@ -43,6 +44,7 @@ import {
   needsMinimums,
   needsSampleTrim,
   needsBottleAccountLimit,
+  needsCardLimit,
   needsCardPricing,
   needsPoloColors,
   needsSeedPhotos,
@@ -360,6 +362,11 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
   if (needsCardPricing(initial)) {
     const changed = await store.mutate((db) => applyCardPricing(db));
     console.log(`[catalog] business cards: ${changed.length ? `set the ${changed.join(" and ")} to Vistaprint's painted-edge cards` : "left as the admin set them"}`);
+    initial = await store.read();
+  }
+  if (needsCardLimit(initial)) {
+    const changed = await store.mutate((db) => applyCardLimit(db));
+    console.log(`[catalog] business cards: ${changed ? "limited to 1 box per order" : "already 1 box per order"}`);
     initial = await store.read();
   }
   const secret = config.sessionSecret || initial.meta.sessionSecret;

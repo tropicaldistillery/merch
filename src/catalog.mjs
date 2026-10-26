@@ -474,7 +474,7 @@ export const SEED_CATALOG = [
     // Printed to order for each person (see the customize dialog in the shop),
     // as Vistaprint's Painted Edge Business Cards: $112.99 for 250.
     customize: "business-card",
-    costCents: 11299, minPerOrder: 1, maxPerOrder: 5, variants: single(null),
+    costCents: 11299, minPerOrder: 1, maxPerOrder: 1, variants: single(null),
   },
   {
     id: "jfh-recipe-cards", name: "Signature Cocktail Recipe Cards",
@@ -1063,6 +1063,19 @@ export function applyCardPricing(db) {
     changed.push("description");
   }
   db.meta.cardPricing = 1;
+  return changed;
+}
+
+/** Business cards: one box per order, once. */
+export function needsCardLimit(db) {
+  return !db.meta?.cardLimit;
+}
+
+export function applyCardLimit(db) {
+  const item = db.catalog.find((i) => i.id === "td-business-cards");
+  const changed = Boolean(item) && item.maxPerOrder !== 1;
+  if (changed) Object.assign(item, { minPerOrder: 1, maxPerOrder: 1, orderIncrement: 1 });
+  db.meta.cardLimit = 1;
   return changed;
 }
 

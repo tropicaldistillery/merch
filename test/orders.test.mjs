@@ -821,7 +821,7 @@ describe("ordering on a printer's own site", () => {
     const placed = place(db, order({
       lines: [
         { itemId: "jfh-logo-tee", variantId: "m", quantity: 2 },
-        { itemId: "td-business-cards", variantId: "default", quantity: 2, card },
+        { itemId: "td-business-cards", variantId: "default", quantity: 1, card },
       ],
     }));
     reviewOrder(db, placed.id, { decisions: [{ status: "approved" }, { status: "approved" }] }, by);
@@ -873,6 +873,7 @@ describe("business cards", () => {
 
   it("keeps each person's cards on their own line, with their details", () => {
     const db = initialState();
+    db.catalog.find((i) => i.id === "td-business-cards").maxPerOrder = 10; // an admin can allow more than 1
     const sam = { name: "Sam Rep", phone: "305-555-0100" };
     const placed = place(db, cards([ALLIE, 1], [sam, 2], [{ ...ALLIE, name: "Allie Mindermann" }, 1]));
     assert.deepEqual(placed.lines.map((l) => [l.card.name, l.quantity]), [["Allie Mindermann", 2], ["Sam Rep", 2]]);
@@ -899,11 +900,11 @@ describe("business cards", () => {
     assert.equal(db.orders.length, 0);
   });
 
-  it("counts every person's boxes toward the per-order limit", () => {
+  it("allows 1 box an order, counting everyone's cards", () => {
     const db = initialState();
-    const max = db.catalog.find((i) => i.id === "td-business-cards").maxPerOrder;
-    assert.ok(fieldErrors(() => place(db, cards([ALLIE, max], [{ name: "Sam", phone: "305" }, 1]))).lines);
-    place(db, cards([ALLIE, max - 1], [{ name: "Sam", phone: "305" }, 1]));
+    assert.match(fieldErrors(() => place(db, cards([ALLIE, 2]))).lines, /Business Cards/);
+    assert.match(fieldErrors(() => place(db, cards([ALLIE, 1], [{ name: "Sam", phone: "305" }, 1]))).lines, /Business Cards/);
+    assert.equal(place(db, cards([ALLIE, 1])).totalUnits, 1);
   });
 
   it("ignores card details sent with anything else", () => {

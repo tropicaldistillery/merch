@@ -398,7 +398,7 @@ export function quantityRuleText(item) {
   const perAccount = maxPerAccount(item);
   // The tighter limit is the one to show.
   if (perAccount && perAccount <= max) parts.push(`up to ${perAccount} per account`);
-  else parts.push(`up to ${max} per order`, ...(perAccount ? [`${perAccount} per account`] : []));
+  else parts.push(max === 1 && min <= 1 ? "1 per order" : `up to ${max} per order`, ...(perAccount ? [`${perAccount} per account`] : []));
   const text = parts.join(" · ");
   return text[0].toUpperCase() + text.slice(1);
 }

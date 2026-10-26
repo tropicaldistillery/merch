@@ -37,6 +37,8 @@ import {
   applyBottleAccountLimit,
   needsCardPricing,
   applyCardPricing,
+  needsCardLimit,
+  applyCardLimit,
   normalizeItem,
   publicItem,
   bulkEditCatalog,
@@ -901,6 +903,21 @@ describe("starter items added to existing stores", () => {
     assert.equal(edited.catalog.find((i) => i.id === "td-business-cards").costCents, 9900, "the admin's price stays");
     assert.deepEqual(applyCardPricing({ meta: {}, catalog: [] }), [], "a store without the cards");
     assert.equal(needsCardPricing(initialState()), false);
+  });
+
+  it("limits business cards to 1 box an order, once", () => {
+    const catalog = structuredClone(SEED_CATALOG);
+    catalog.find((i) => i.id === "td-business-cards").maxPerOrder = 5;
+    const db = { meta: {}, catalog };
+    assert.equal(needsCardLimit(db), true);
+    assert.equal(applyCardLimit(db), true);
+    const cards = db.catalog.find((i) => i.id === "td-business-cards");
+    assert.deepEqual([cards.minPerOrder, cards.maxPerOrder], [1, 1]);
+    assert.equal(quantityRuleText(cards), "1 per order");
+    assert.equal(needsCardLimit(db), false);
+    assert.equal(applyCardLimit({ meta: {}, catalog: [] }), false, "a store without the cards");
+    assert.equal(needsCardLimit(initialState()), false);
+    assert.equal(SEED_CATALOG.find((i) => i.id === "td-business-cards").maxPerOrder, 1);
   });
 
   it("limits each sample bottle to 4 per person for each account, once", () => {
