@@ -470,10 +470,11 @@ export const SEED_CATALOG = [
   {
     id: "td-business-cards", name: "Business Cards",
     brand: "tropical-distillery", category: "Print", tone: "palm", art: "cards", unit: "Box of 250",
-    description: "Two-sided cards with your name, title and contact details over the tropical illustration and brand banner, and TROPICAL DISTILLERY on the navy back. Fill in your details and check the proof before you add them.",
-    // Printed to order for each person (see the customize dialog in the shop).
+    description: "Thick two-sided cards with gold painted edges: your name, title and contact details over the tropical illustration and brand banner, and TROPICAL DISTILLERY on the navy back. Fill in your details and check the proof before you add them.",
+    // Printed to order for each person (see the customize dialog in the shop),
+    // as Vistaprint's Painted Edge Business Cards: $112.99 for 250.
     customize: "business-card",
-    costCents: 2500, minPerOrder: 1, maxPerOrder: 5, variants: single(null),
+    costCents: 11299, minPerOrder: 1, maxPerOrder: 5, variants: single(null),
   },
   {
     id: "jfh-recipe-cards", name: "Signature Cocktail Recipe Cards",
@@ -1036,6 +1037,33 @@ export function applySampleTrim(db) {
   }
   db.meta.sampleTrim = 1;
   return { removed, limited };
+}
+
+/**
+ * Business cards went in at a placeholder $25 a box; they're Vistaprint's
+ * Painted Edge cards with a gold edge, at $112.99 for 250. Set the price and
+ * the description once, where an admin hasn't changed them already.
+ */
+const CARD_PLACEHOLDER = { costCents: 2500, description: "Two-sided cards with your name, title and contact details over the tropical illustration and brand banner, and TROPICAL DISTILLERY on the navy back. Fill in your details and check the proof before you add them." };
+
+export function needsCardPricing(db) {
+  return !db.meta?.cardPricing;
+}
+
+export function applyCardPricing(db) {
+  const seed = SEED_CATALOG.find((i) => i.id === "td-business-cards");
+  const item = db.catalog.find((i) => i.id === seed.id);
+  const changed = [];
+  if (item?.costCents === CARD_PLACEHOLDER.costCents) {
+    item.costCents = seed.costCents;
+    changed.push("price");
+  }
+  if (item?.description === CARD_PLACEHOLDER.description) {
+    item.description = seed.description;
+    changed.push("description");
+  }
+  db.meta.cardPricing = 1;
+  return changed;
 }
 
 /** The sample bottles' limit of 4 per person for each account, once. */

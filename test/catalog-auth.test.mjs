@@ -35,6 +35,8 @@ import {
   applySampleTrim,
   needsBottleAccountLimit,
   applyBottleAccountLimit,
+  needsCardPricing,
+  applyCardPricing,
   normalizeItem,
   publicItem,
   bulkEditCatalog,
@@ -874,6 +876,31 @@ describe("starter items added to existing stores", () => {
     assert.equal(needsSampleTrim(db), false);
     assert.deepEqual(applySampleTrim({ meta: {}, catalog: db.catalog }).limited, [], "nothing more to change");
     assert.equal(needsSampleTrim(initialState()), false, "a new store starts that way");
+  });
+
+  it("prices business cards as Vistaprint's painted-edge cards, once, unless an admin already changed them", () => {
+    const placeholder = () => {
+      const catalog = structuredClone(SEED_CATALOG);
+      Object.assign(catalog.find((i) => i.id === "td-business-cards"), {
+        costCents: 2500,
+        description: "Two-sided cards with your name, title and contact details over the tropical illustration and brand banner, and TROPICAL DISTILLERY on the navy back. Fill in your details and check the proof before you add them.",
+      });
+      return { meta: {}, catalog };
+    };
+    const db = placeholder();
+    assert.equal(needsCardPricing(db), true);
+    assert.deepEqual(applyCardPricing(db), ["price", "description"]);
+    const cards = db.catalog.find((i) => i.id === "td-business-cards");
+    assert.equal(cards.costCents, 11299);
+    assert.match(cards.description, /gold painted edges/);
+    assert.equal(needsCardPricing(db), false);
+
+    const edited = placeholder();
+    Object.assign(edited.catalog.find((i) => i.id === "td-business-cards"), { costCents: 9900 });
+    assert.deepEqual(applyCardPricing(edited), ["description"]);
+    assert.equal(edited.catalog.find((i) => i.id === "td-business-cards").costCents, 9900, "the admin's price stays");
+    assert.deepEqual(applyCardPricing({ meta: {}, catalog: [] }), [], "a store without the cards");
+    assert.equal(needsCardPricing(initialState()), false);
   });
 
   it("limits each sample bottle to 4 per person for each account, once", () => {

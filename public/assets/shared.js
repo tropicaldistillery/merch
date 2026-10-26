@@ -258,12 +258,15 @@ export const FORWARD_STATUSES = [
 
 // Printers the merch team orders from on their own website, having no API to
 // send orders to: the order is kept as a forward to them, with their order
-// number, and nobody is emailed. `url` is where their ordering starts.
+// number, and nobody is emailed. `url` is the product to order, and
+// `options` what to pick on it.
 export const VENDORS = [
   {
     id: "vistaprint",
     label: "Vistaprint",
-    url: "https://www.vistaprint.com/business-cards/standard",
+    product: "Painted Edge Business Cards",
+    url: "https://www.vistaprint.com/business-cards/painted-edge",
+    options: "horizontal, Gold edge (#C48A10), color backside",
   },
 ];
 

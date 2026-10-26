@@ -1334,12 +1334,12 @@ function vistaprintForm(order) {
             );
           })
         ),
-        el("p", { class: "hint", text: "Each file is 3.61 × 2.11 in at 600 dpi, Vistaprint's full-bleed size for a standard card; the edge is trimmed off." })
+        el("p", { class: "hint", text: "Each file is 3.61 × 2.11 in at 600 dpi, Vistaprint's full-bleed size for a 3.5 × 2 in card; the edge is trimmed off." })
       ),
       step(
         2,
         "Order on Vistaprint",
-        el("p", { text: "Choose Standard business cards, horizontal, then upload your own design: the front file, then the back. Set the quantity shown above. Repeat for each card." }),
+        el("p", { text: `Open ${VISTAPRINT.product} and choose ${VISTAPRINT.options}. Upload your own design: the front file, then the back. Set the quantity shown above, and repeat for each card.` }),
         el("a", { class: "btn btn-sm", href: VISTAPRINT.url, target: "_blank", rel: "noopener noreferrer", text: "Open Vistaprint ↗" })
       ),
       step(

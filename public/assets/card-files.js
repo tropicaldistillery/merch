@@ -1,5 +1,5 @@
 // Print-ready business card files for a printer's upload page, such as
-// Vistaprint's: one PDF per side at their full-bleed size for a standard
+// Vistaprint's: one PDF per side at their full-bleed size for a 3.5 x 2 in
 // card (3.61 x 2.11 in: the 3.5 x 2 in card plus 0.055 in all round, which is
 // trimmed off), at 600 dpi. They're made here in the browser from the same
 // drawing as the proof. The artwork has no bleed of its own, so its edges

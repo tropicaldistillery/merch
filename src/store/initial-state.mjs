@@ -23,6 +23,8 @@ export function initialState() {
       // and with no sample cases, and bottles limited to 4 a flavour
       sampleTrim: 1,
       bottleAccountLimit: 1,
+      // and with business cards at Vistaprint's price
+      cardPricing: 1,
     },
     catalog: structuredClone(SEED_CATALOG),
     orders: [],

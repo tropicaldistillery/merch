@@ -29,6 +29,7 @@ import {
   applyMinimums,
   applySampleTrim,
   applyBottleAccountLimit,
+  applyCardPricing,
   applyPoloColors,
   applySeedPhotos,
   applySeedSuppliers,
@@ -42,6 +43,7 @@ import {
   needsMinimums,
   needsSampleTrim,
   needsBottleAccountLimit,
+  needsCardPricing,
   needsPoloColors,
   needsSeedPhotos,
   needsSeedSuppliers,
@@ -353,6 +355,11 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
   if (needsBottleAccountLimit(initial)) {
     const limited = await store.mutate((db) => applyBottleAccountLimit(db));
     console.log(`[catalog] limited ${limited.length} 750 ml bottle(s) to 4 per person for each account`);
+    initial = await store.read();
+  }
+  if (needsCardPricing(initial)) {
+    const changed = await store.mutate((db) => applyCardPricing(db));
+    console.log(`[catalog] business cards: ${changed.length ? `set the ${changed.join(" and ")} to Vistaprint's painted-edge cards` : "left as the admin set them"}`);
     initial = await store.read();
   }
   const secret = config.sessionSecret || initial.meta.sessionSecret;
