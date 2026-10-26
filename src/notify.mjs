@@ -29,7 +29,9 @@ export function orderMessage(event, order, { baseUrl = "", forward = null } = {}
     const ship = forward.shipment ?? {};
     const via = `${ship.carrier ? ` via ${labelFor(CARRIERS, ship.carrier)}` : ""}${ship.trackingNumber ? ` ${ship.trackingNumber}` : ""}`;
     const text = {
-      "forward.sent": `Merch order ${order.number} for ${order.requester.name}: ${items} forwarded to ${forward.to.name} to ship`,
+      "forward.sent": forward.vendor
+        ? `Merch order ${order.number} for ${order.requester.name}: ${items} ordered from ${forward.to.name}${forward.reference ? `, order ${forward.reference}` : ""}`
+        : `Merch order ${order.number} for ${order.requester.name}: ${items} forwarded to ${forward.to.name} to ship`,
       "forward.shipped": `${forward.to.name} shipped ${items} of merch order ${order.number} for ${order.requester.name}${via}`,
       "forward.tracking": `Tracking added to ${forward.to.name}'s shipment of merch order ${order.number}:${via}`,
       "forward.cancelled": `Merch order ${order.number}: ${items} pulled back from ${forward.to.name}`,

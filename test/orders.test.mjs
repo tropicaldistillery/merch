@@ -609,8 +609,8 @@ describe("forwarding items to someone else to ship", () => {
     assert.equal(stock(db, "jfh-led-sign"), signs);
 
     const rows = ordersToCsv(db.orders).trim().split("\r\n");
-    assert.match(rows[0], /,item_note,card_details,fulfilled_by,carrier,tracking_number,/);
-    assert.match(rows[1], /,Ten 10 Design,,,/);
+    assert.match(rows[0], /,item_note,card_details,fulfilled_by,fulfiller_order,carrier,tracking_number,/);
+    assert.match(rows[1], /,Ten 10 Design,,,,/);
     assert.match(rows[3], /,Approved,,,,,/);
 
     // The requester sees who ships what, but not their email, the message or the admin note.
@@ -708,7 +708,7 @@ describe("forwarding items to someone else to ship", () => {
     assert.ok(fieldErrors(() => shipForward(db, id, forward.id, { trackingNumber: "123" }, by)).carrier);
     assert.throws(() => pullBackForward(db, id, forward.id, by), (e) => e.status === 409 && /already shipped/.test(e.message));
     const rows = ordersToCsv(db.orders).trim().split("\r\n");
-    assert.match(rows[1], /,Ten 10 Design,UPS,1Z999,/);
+    assert.match(rows[1], /,Ten 10 Design,,UPS,1Z999,/);
   });
 
   it("marks the order shipped once every forward has gone and nothing is left to pack", () => {
@@ -810,6 +810,41 @@ describe("sample bottles: 4 per person for each account", () => {
       { itemId: "jfh-mango-bottle", variantId: "default", quantity: 1 },
     ] })));
     assert.match(errors.lines, /you can add 2 more/);
+  });
+});
+
+describe("ordering on a printer's own site", () => {
+  const by = { actor: "Allie", now: NOW };
+  const card = { name: "Jane Rep", phone: "305-555-0100" };
+  function setup() {
+    const db = initialState();
+    const placed = place(db, order({
+      lines: [
+        { itemId: "jfh-logo-tee", variantId: "m", quantity: 2 },
+        { itemId: "td-business-cards", variantId: "default", quantity: 2, card },
+      ],
+    }));
+    reviewOrder(db, placed.id, { decisions: [{ status: "approved" }, { status: "approved" }] }, by);
+    return { db, id: placed.id };
+  }
+
+  it("keeps Vistaprint's order number, with no one to email", () => {
+    const { db, id } = setup();
+    assert.deepEqual(fieldErrors(() => forwardItems(db, id, { vendor: "vistaprint", lines: [1], toName: "x" }, by)), { reference: "Enter the Vistaprint order number." });
+    assert.ok(fieldErrors(() => forwardItems(db, id, { vendor: "printful", reference: "9", lines: [1] }, by)).vendor);
+    const { order: o, forward } = forwardItems(db, id, { vendor: "vistaprint", reference: "VP-77", lines: [1], toEmail: "ignored@x.com" }, by);
+    assert.deepEqual([forward.to, forward.vendor, forward.reference, forward.status], [{ name: "Vistaprint", email: "" }, "vistaprint", "VP-77", "sent"]);
+    assert.deepEqual(o.history.at(-1).forward, { id: forward.id, event: "sent", to: "Vistaprint", items: 1, vendor: "vistaprint", reference: "VP-77" });
+    assert.deepEqual(inHouseLines(o).map((l) => l.itemId), ["jfh-logo-tee"]);
+    const rows = ordersToCsv(db.orders).trim().split("\r\n");
+    assert.match(rows[2], /,Vistaprint,VP-77,,,/);
+
+    // Its tracking goes to the requester like any forward's; or it can be taken back.
+    const { event } = shipForward(db, id, forward.id, { carrier: "ups", trackingNumber: "1ZVP" }, by);
+    assert.equal(event, "forward.shipped");
+    const other = setup();
+    const placedAgain = forwardItems(other.db, other.id, { vendor: "vistaprint", reference: "VP-78", lines: [1] }, by);
+    assert.equal(pullBackForward(other.db, other.id, placedAgain.forward.id, by).forward.status, "cancelled");
   });
 });
 

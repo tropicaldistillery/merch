@@ -318,7 +318,8 @@ export function orderEmails(
     }
     case "forward.sent":
     case "forward.cancelled": {
-      if (!forward) break;
+      // An order placed on a printer's own site (forward.vendor) has no one to email.
+      if (!forward?.to.email) break;
       const part = partOf(order, forwardLines(order, forward));
       const these = part.lines.length === 1 ? "this item" : `these ${part.lines.length} items`;
       // The requesters' footer (nothing is charged to you) isn't for a supplier.

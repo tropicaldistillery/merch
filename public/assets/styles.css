@@ -4157,3 +4157,77 @@ dialog.card-dialog {
 .card-details {
   overflow-wrap: anywhere;
 }
+
+/* ----------------------------------------------------- vistaprint orders */
+
+.vp-steps {
+  list-style: none;
+  margin: 14px 0 18px;
+  padding: 0;
+  display: grid;
+  gap: 18px;
+}
+
+.vp-step h4 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.vp-n {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
+}
+
+.vp-step > p {
+  margin-bottom: 10px;
+}
+
+.vp-cards,
+.vp-address {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.vp-cards li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.vp-cards li + li,
+.vp-address li + li {
+  border-top: 1px solid var(--line);
+}
+
+.vp-cards .cell-main,
+.vp-cards .cell-sub {
+  display: block;
+}
+
+.vp-address li {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 14px;
+}
+
+.vp-value {
+  overflow-wrap: anywhere;
+}

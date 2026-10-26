@@ -891,8 +891,10 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
     ["POST", /^\/api\/admin\/orders\/([\w-]+)\/forwards$/, "admin", async ({ req, res, admin, params }) => {
       const body = await readJson(req);
       const { order, forward } = await store.mutate((db) => forwardItems(db, params[0], body, { actor: admin.name, now: clock() }));
-      const emailed = body.notify !== false;
-      if (emailed) notify("forward.sent", order, { forward, shipLink: shipLink(req, forward) });
+      // An order placed on a printer's own site has no one to email; the
+      // webhook still hears about it.
+      const emailed = body.notify !== false && Boolean(forward.to.email);
+      if (emailed || forward.vendor) notify("forward.sent", order, { forward, shipLink: emailed ? shipLink(req, forward) : "" });
       sendJson(res, 201, { ok: true, order, forward, emailed });
     }],
 
@@ -912,8 +914,9 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
     ["POST", /^\/api\/admin\/orders\/([\w-]+)\/forwards\/([\w-]+)\/pull-back$/, "admin", async ({ req, res, admin, params }) => {
       const body = await readJson(req);
       const { order, forward } = await store.mutate((db) => pullBackForward(db, params[0], params[1], { actor: admin.name, now: clock() }));
-      if (body.notify !== false) notify("forward.cancelled", order, { forward });
-      sendJson(res, 200, { ok: true, order, forward, emailed: body.notify !== false });
+      const emailed = body.notify !== false && Boolean(forward.to.email);
+      if (emailed || forward.vendor) notify("forward.cancelled", order, { forward });
+      sendJson(res, 200, { ok: true, order, forward, emailed });
     }],
 
     // Email the forward to whoever has it again.
@@ -922,6 +925,7 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
       const order = find(db.orders, params[0], "order");
       const forward = (order.forwards ?? []).find((f) => f.id === params[1]);
       if (!forward) throw new ValidationError("That forward could not be found.", {}, 404);
+      if (!forward.to.email) throw new ValidationError(`This was ordered on ${forward.to.name}'s site, so there's no one to email.`, {}, 409);
       if (forward.status !== "sent") throw new ValidationError("Only a forward that hasn't shipped can be sent again.", {}, 409);
       notify("forward.sent", order, { forward, shipLink: shipLink(req, forward), resend: String(clock().getTime()) });
       sendJson(res, 200, { ok: true, order, forward });
@@ -933,6 +937,7 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
       const order = find(db.orders, params[0], "order");
       const forward = (order.forwards ?? []).find((f) => f.id === params[1]);
       if (!forward) throw new ValidationError("That forward could not be found.", {}, 404);
+      if (forward.vendor) throw new ValidationError(`This was ordered on ${forward.to.name}'s site, so there's no shipping link.`, {}, 409);
       sendJson(res, 200, { ok: true, url: shipLink(req, forward) }, { "Cache-Control": "no-store" });
     }],
 

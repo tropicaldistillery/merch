@@ -393,7 +393,7 @@ describe("merch store over HTTP", () => {
     assert.deepEqual(app.notifications.at(-1), { event: "forward.cancelled", number, to: "jo@tropicaldistillery.com" });
 
     const csv = (await admin(`/api/admin/orders.csv?ids=${id}`)).data.trim().split("\r\n");
-    assert.match(csv[2], /,Ten 10 Design,FedEx,7778,/);
+    assert.match(csv[2], /,Ten 10 Design,,FedEx,7778,/);
     assert.match(csv[1], /,Approved,,,,,/);
 
     // The sign ships from the merch team, which ships the order.
@@ -409,6 +409,39 @@ describe("merch store over HTTP", () => {
       { event: "order.cancelled", number: other.number },
       { event: "forward.cancelled", number: other.number, to: "orders@ten10.com" },
     ]);
+  });
+
+  it("records business cards ordered on Vistaprint's site, and passes their tracking on", async () => {
+    const jane = await signedInTeam(app);
+    const card = { name: "Jane Rep", title: "Sales", email: "jane@tropicaldistillery.com" };
+    const body = { ...ACCOUNT_ORDER, lines: [ACCOUNT_ORDER.lines[0], { itemId: "td-business-cards", variantId: "default", quantity: 1, card }] };
+    const placed = await jane("/api/orders", { method: "POST", body });
+    assert.equal(placed.status, 201, JSON.stringify(placed.data));
+    const { id, number } = placed.data.order;
+    const admin = await signedInAdmin(app);
+    await admin(`/api/admin/orders/${id}/review`, { method: "POST", body: { decisions: [{ status: "approved" }, { status: "approved" }], notify: false } });
+    const order = (b) => admin(`/api/admin/orders/${id}/forwards`, { method: "POST", body: b });
+
+    assert.deepEqual((await order({ vendor: "vistaprint", lines: [1] })).data.fieldErrors, { reference: "Enter the Vistaprint order number." });
+    assert.ok((await order({ vendor: "moo", reference: "1", lines: [1] })).data.fieldErrors.vendor);
+    const placedAt = await order({ vendor: "vistaprint", reference: " 512 334 901 ", lines: [1] });
+    assert.equal(placedAt.status, 201, JSON.stringify(placedAt.data));
+    const { forward } = placedAt.data;
+    assert.deepEqual([forward.to, forward.vendor, forward.reference, placedAt.data.emailed], [{ name: "Vistaprint", email: "" }, "vistaprint", "512 334 901", false]);
+    // Nobody to email, but the webhook (Slack) hears about it.
+    assert.deepEqual(app.notifications.at(-1), { event: "forward.sent", number, to: "" });
+    assert.equal(app.contexts.at(-1).shipLink, "");
+    assert.equal((await admin(`/api/admin/orders/${id}/forwards/${forward.id}/link`)).status, 409);
+    assert.equal((await admin(`/api/admin/orders/${id}/forwards/${forward.id}/notify`, { method: "POST", body: {} })).status, 409);
+
+    // The requester sees the cards come from Vistaprint, and gets the tracking.
+    const mine = (await jane("/api/orders")).data.orders.find((o) => o.id === id);
+    assert.deepEqual(mine.forwards.map((f) => [f.name, f.lines]), [["Vistaprint", [1]]]);
+    const shipped = await admin(`/api/admin/orders/${id}/forwards/${forward.id}/ship`, { method: "POST", body: { carrier: "ups", trackingNumber: "1ZVP" } });
+    assert.equal(shipped.status, 200, JSON.stringify(shipped.data));
+    assert.deepEqual(app.notifications.at(-1), { event: "forward.shipped", number, to: "" });
+    const csv = (await admin(`/api/admin/orders.csv?ids=${id}`)).data.trim().split("\r\n");
+    assert.match(csv[2], /,Vistaprint,512 334 901,UPS,1ZVP,/);
   });
 
   it("lets a supplier mark forwarded items shipped from their emailed link", async () => {

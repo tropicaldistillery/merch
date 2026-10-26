@@ -256,6 +256,17 @@ export const FORWARD_STATUSES = [
   { id: "cancelled", label: "Pulled back" },
 ];
 
+// Printers the merch team orders from on their own website, having no API to
+// send orders to: the order is kept as a forward to them, with their order
+// number, and nobody is emailed. `url` is where their ordering starts.
+export const VENDORS = [
+  {
+    id: "vistaprint",
+    label: "Vistaprint",
+    url: "https://www.vistaprint.com/business-cards/standard",
+  },
+];
+
 /** Forwards still in play: waiting to ship, or shipped. */
 export function activeForwards(order) {
   return (order.forwards ?? []).filter((f) => f.status !== "cancelled");

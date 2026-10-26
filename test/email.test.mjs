@@ -128,6 +128,19 @@ describe("order emails", () => {
     assert.match(html, /Print: Allie Mindermann · COO/);
   });
 
+  it("emails no one when cards are ordered on Vistaprint's site, and the requester when they ship", () => {
+    const card = { name: "Jane Rep", phone: "305-555-0100" };
+    const { db, order } = placed({ lines: [{ itemId: "td-business-cards", variantId: "default", quantity: 1, card }] });
+    reviewOrder(db, order.id, { decisions: [{ status: "approved" }] }, by);
+    const { forward } = forwardItems(db, order.id, { vendor: "vistaprint", reference: "VP-77", lines: [0] }, by);
+    assert.deepEqual(orderEmails("forward.sent", order, { adminTo: ADMINS, baseUrl: BASE, forward }), []);
+    shipForward(db, order.id, forward.id, { carrier: "ups", trackingNumber: "1ZVP" }, by);
+    const [shipped, ...more] = orderEmails("forward.shipped", order, { adminTo: ADMINS, baseUrl: BASE, forward });
+    assert.equal(more.length, 0);
+    assert.deepEqual(shipped.to, ["jane@tropicaldistillery.com"]);
+    assert.match(renderEmail(shipped).text, /Order TD-1001 shipped from Vistaprint via UPS, tracking number 1ZVP\./);
+  });
+
   it("emails whoever items are forwarded to, and tells the requester when they ship", () => {
     const { db, order } = placed({
       rush: true,

@@ -12,6 +12,7 @@ import {
   STATUSES,
   TRANSITIONS,
   US_STATES,
+  VENDORS,
   activeForwards,
   cardText,
   forwardLines,
@@ -738,7 +739,13 @@ function findForward(order, forwardId) {
 }
 
 function forwardEntry(forward, event, order) {
-  return { id: forward.id, event, to: forward.to.name, items: forwardLines(order, forward).length };
+  return {
+    id: forward.id,
+    event,
+    to: forward.to.name,
+    items: forwardLines(order, forward).length,
+    ...(forward.vendor ? { vendor: forward.vendor, reference: forward.reference } : {}),
+  };
 }
 
 /**
@@ -748,6 +755,10 @@ function forwardEntry(forward, event, order) {
  * emails them the items and where they go. With `restock`, the lines' units
  * go back on the shelf, since they won't come from it; otherwise they stay
  * set aside.
+ *
+ * Or, with { vendor, reference } instead of a name and email, record that
+ * the merch team ordered the lines on a printer's own site (see VENDORS),
+ * under that order number. There's no one to email.
  */
 export function forwardItems(db, orderId, input, { actor, now = new Date() }) {
   const order = findOrder(db, orderId);
@@ -770,16 +781,24 @@ export function forwardItems(db, orderId, input, { actor, now = new Date() }) {
       errors.lines = "Some of those items can't be forwarded any more. Close the order and open it again.";
     }
   }
-  const name = cleanLine(src.toName, 120);
-  const email = cleanLine(src.toEmail, 160).toLowerCase();
-  if (!name) errors.toName = "Who's shipping these? Enter a name or company.";
-  if (!EMAIL_RE.test(email)) errors.toEmail = "Enter their email address, like name@company.com.";
+  const vendor = src.vendor ? VENDORS.find((v) => v.id === src.vendor) : null;
+  if (src.vendor && !vendor) errors.vendor = "That printer isn't one the store orders from.";
+  const name = vendor ? vendor.label : cleanLine(src.toName, 120);
+  const email = vendor ? "" : cleanLine(src.toEmail, 160).toLowerCase();
+  const reference = vendor ? cleanLine(src.reference, 60) : "";
+  if (vendor) {
+    if (!reference) errors.reference = `Enter the ${vendor.label} order number.`;
+  } else if (!src.vendor) {
+    if (!name) errors.toName = "Who's shipping these? Enter a name or company.";
+    if (!EMAIL_RE.test(email)) errors.toEmail = "Enter their email address, like name@company.com.";
+  }
   if (Object.keys(errors).length) throw new ValidationError("Some details need attention.", errors);
 
   const at = now.toISOString();
   const forward = {
     id: randomUUID(),
     to: { name, email },
+    ...(vendor ? { vendor: vendor.id, reference } : {}),
     lines: picked.sort((a, b) => a - b),
     note: cleanText(src.note, MAX_FORWARD_NOTE),
     at,
@@ -1070,6 +1089,7 @@ export const CSV_COLUMNS = [
   ["item_note", (o, l) => l.decision?.reason ?? ""],
   ["card_details", (o, l) => cardText(l.card)],
   ["fulfilled_by", (o, l) => forwardOf(o, l)?.to.name ?? ""],
+  ["fulfiller_order", (o, l) => forwardOf(o, l)?.reference ?? ""],
   ["carrier", (o, l) => labelFor(CARRIERS, lineShipment(o, l)?.carrier ?? "")],
   ["tracking_number", (o, l) => lineShipment(o, l)?.trackingNumber ?? ""],
   ["notes", (o) => o.notes],

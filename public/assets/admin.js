@@ -34,6 +34,7 @@ import {
   TONES,
   TRANSITIONS,
   US_STATES,
+  VENDORS,
   activeForwards,
   byCategory,
   cardText,
@@ -1243,6 +1244,162 @@ function forwardForm(order) {
   return form;
 }
 
+/* ------------------------------------------------------------ vistaprint */
+
+// Vistaprint has no way for the store to send it orders, so the merch team
+// places them on Vistaprint's site with files made here, and the store keeps
+// Vistaprint's order number as a forward: its tracking reaches the requester
+// like any other.
+const VISTAPRINT = VENDORS.find((v) => v.id === "vistaprint");
+
+/** Business cards on the order that nobody is making yet. */
+function vistaprintLines(order) {
+  return forwardableLines(order).filter(({ line }) => line.card);
+}
+
+/** 250 cards from 1 × "Box of 250". */
+function cardCount(line) {
+  const perBox = Number(/(\d[\d,]*)/.exec(line.unit ?? "")?.[1]?.replace(/,/g, ""));
+  return perBox ? perBox * line.quantity : null;
+}
+
+async function downloadCardFile(order, line, side, button) {
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "Making…";
+  try {
+    const { cardFileName, cardSidePdf } = await import("./card-files.js");
+    const blob = await cardSidePdf(line.card, side);
+    const link = el("a", { href: URL.createObjectURL(blob), download: cardFileName(order, line.card, side), hidden: true });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+  } catch (error) {
+    toast(`Couldn't make the file: ${error.message}`, { tone: "error" });
+  } finally {
+    button.disabled = false;
+    button.textContent = label;
+  }
+}
+
+function vistaprintForm(order) {
+  const form = el("form", { class: "action-form vistaprint-form", novalidate: true });
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  const s = order.shipTo;
+  const submit = el("button", { type: "submit", class: "btn", text: "Save the Vistaprint order" });
+  const copyRow = (label, value) =>
+    value
+      ? el(
+          "li",
+          {},
+          el("span", { class: "kv-label", text: label }),
+          el("span", { class: "vp-value", text: value }),
+          el("button", { type: "button", class: "link-button", text: "Copy", "aria-label": `Copy ${label.toLowerCase()}`, onclick: () => copyText(value, label) })
+        )
+      : null;
+  const step = (n, title, ...body) => el("li", { class: "vp-step" }, el("h4", {}, el("span", { class: "vp-n", text: String(n) }), title), ...body);
+
+  form.append(
+    alertBox,
+    el("p", { class: "hint", text: "Vistaprint can't take orders from other sites, so place this one on vistaprint.com with the files below, then save its order number here. Add the tracking when it ships and the requester is emailed, as with any forward." }),
+    el(
+      "ol",
+      { class: "vp-steps" },
+      step(
+        1,
+        "Download each card",
+        el(
+          "ul",
+          { class: "vp-cards" },
+          vistaprintLines(order).map(({ line, index }) => {
+            const count = cardCount(line);
+            const button = (side) =>
+              el("button", { type: "button", class: "btn btn-secondary btn-sm", text: side === "front" ? "Front PDF" : "Back PDF", onclick: (event) => downloadCardFile(order, line, side, event.currentTarget) });
+            return el(
+              "li",
+              {},
+              el(
+                "label",
+                { class: "check" },
+                el("input", { type: "checkbox", name: "lines", value: String(index), checked: true }),
+                el(
+                  "span",
+                  {},
+                  el("span", { class: "cell-main", text: line.card.name }),
+                  el("span", { class: "cell-sub", text: [count ? `Quantity ${count.toLocaleString("en-US")}` : `${line.quantity} × ${line.unit}`, line.card.title].filter(Boolean).join(" · ") })
+                )
+              ),
+              el("div", { class: "inline-actions" }, button("front"), button("back"))
+            );
+          })
+        ),
+        el("p", { class: "hint", text: "Each file is 3.61 × 2.11 in at 600 dpi, Vistaprint's full-bleed size for a standard card; the edge is trimmed off." })
+      ),
+      step(
+        2,
+        "Order on Vistaprint",
+        el("p", { text: "Choose Standard business cards, horizontal, then upload your own design: the front file, then the back. Set the quantity shown above. Repeat for each card." }),
+        el("a", { class: "btn btn-sm", href: VISTAPRINT.url, target: "_blank", rel: "noopener noreferrer", text: "Open Vistaprint ↗" })
+      ),
+      step(
+        3,
+        "Ship it straight to them",
+        el(
+          "ul",
+          { class: "vp-address" },
+          copyRow("Name", s.attention),
+          copyRow("Company", s.type === "account" ? s.accountName : ""),
+          copyRow("Address", s.address1),
+          copyRow("Apt, suite", s.address2),
+          copyRow("City", s.city),
+          copyRow("State", s.state),
+          copyRow("ZIP", s.postalCode),
+          copyRow("Phone", s.phone)
+        )
+      ),
+      step(
+        4,
+        "Save Vistaprint's order number",
+        el(
+          "div",
+          { class: "field" },
+          el("label", { for: "vp-reference", text: "Vistaprint order number" }),
+          el("input", { id: "vp-reference", name: "reference", type: "text", maxlength: "60", autocomplete: "off", inputmode: "text" })
+        )
+      )
+    ),
+    el("div", { class: "inline-actions" }, submit, el("button", { type: "button", class: "btn btn-secondary", text: "Never mind", onclick: () => form.remove() }))
+  );
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    const lines = [...form.querySelectorAll('input[name="lines"]:checked')].map((input) => Number(input.value));
+    if (!lines.length) {
+      setAlert(alertBox, "Tick the cards in this Vistaprint order.");
+      return;
+    }
+    submit.disabled = true;
+    try {
+      const { order: updated, forward } = await adminApi(`/api/admin/orders/${encodeURIComponent(order.id)}/forwards`, {
+        method: "POST",
+        body: { vendor: VISTAPRINT.id, reference: form.elements.namedItem("reference").value, lines },
+      });
+      replaceOrder(updated);
+      renderOrderDetail(updated);
+      detailTitle.focus();
+      toast(`Saved Vistaprint order ${forward.reference}. Add its tracking when it ships.`);
+    } catch (error) {
+      submit.disabled = false;
+      setAlert(alertBox, error.message);
+      showFieldErrors(form, error.fieldErrors);
+    }
+  });
+  return form;
+}
+
 // Mark a forward shipped (tracking optional), or add or fix its tracking.
 function forwardShipForm(order, forward) {
   const shipped = forward.status === "shipped";
@@ -1313,13 +1470,17 @@ function pullBackForm(order, forward) {
   const submit = el("button", { type: "submit", class: "btn btn-danger solid", text: "Pull back" });
   form.append(
     alertBox,
-    el("p", { text: `Take these items back from ${forward.to.name} to ship them yourself?${forward.restocked ? " Their units come off the shelf again." : ""}` }),
-    el(
-      "label",
-      { class: "check" },
-      el("input", { type: "checkbox", name: "notify", checked: true }),
-      el("span", { text: ` Email ${forward.to.name} not to ship them` })
-    ),
+    forward.vendor
+      ? el("p", { text: `Take these back from ${forward.to.name}? Cancel order ${forward.reference} on ${forward.to.name}'s site too: this only updates the store.` })
+      : el("p", { text: `Take these items back from ${forward.to.name} to ship them yourself?${forward.restocked ? " Their units come off the shelf again." : ""}` }),
+    forward.vendor
+      ? null
+      : el(
+          "label",
+          { class: "check" },
+          el("input", { type: "checkbox", name: "notify", checked: true }),
+          el("span", { text: ` Email ${forward.to.name} not to ship them` })
+        ),
     el("div", { class: "inline-actions" }, submit, el("button", { type: "button", class: "btn btn-secondary", text: "Never mind", onclick: () => form.remove() }))
   );
   form.addEventListener("submit", async (event) => {
@@ -1329,7 +1490,7 @@ function pullBackForm(order, forward) {
     try {
       const { order: updated, emailed } = await adminApi(
         `/api/admin/orders/${encodeURIComponent(order.id)}/forwards/${encodeURIComponent(forward.id)}/pull-back`,
-        { method: "POST", body: { notify: form.elements.namedItem("notify").checked } }
+        { method: "POST", body: { notify: Boolean(form.elements.namedItem("notify")?.checked) } }
       );
       replaceOrder(updated);
       renderOrderDetail(updated);
@@ -1379,7 +1540,9 @@ function forwardCard(order, forward) {
       "div",
       { class: "forward-head" },
       el("strong", { text: forward.to.name }),
-      el("a", { href: `mailto:${forward.to.email}?subject=${encodeURIComponent(`Merch order ${order.number}`)}`, text: forward.to.email }),
+      forward.vendor
+        ? el("span", { text: `Order ${forward.reference}` })
+        : el("a", { href: `mailto:${forward.to.email}?subject=${encodeURIComponent(`Merch order ${order.number}`)}`, text: forward.to.email }),
       el("span", { class: `tag forward-${forward.status}`, text: labelFor(FORWARD_STATUSES, forward.status) })
     ),
     el(
@@ -1390,7 +1553,7 @@ function forwardCard(order, forward) {
     el(
       "div",
       { class: "cell-sub" },
-      `Forwarded ${formatDateTime(forward.at)} by ${forward.by}`,
+      `${forward.vendor ? "Ordered" : "Forwarded"} ${formatDateTime(forward.at)} by ${forward.by}`,
       forward.restocked ? " · units put back in stock" : "",
       forward.status === "cancelled" && forward.cancelledAt ? ` · pulled back ${formatDateTime(forward.cancelledAt)}` : ""
     ),
@@ -1413,8 +1576,8 @@ function forwardCard(order, forward) {
           forward.status === "sent"
             ? [
                 el("button", { type: "button", class: "btn btn-sm", text: "Mark shipped", onclick: () => open(forwardShipForm(order, forward)) }),
-                el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Email them again", onclick: () => resendForward(order, forward) }),
-                el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Copy their link", onclick: () => copyForwardLink(order, forward) }),
+                forward.vendor ? null : el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Email them again", onclick: () => resendForward(order, forward) }),
+                forward.vendor ? null : el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Copy their link", onclick: () => copyForwardLink(order, forward) }),
                 el("button", { type: "button", class: "btn btn-danger btn-sm", text: "Pull back", onclick: () => open(pullBackForm(order, forward)) }),
               ]
             : [
@@ -1424,7 +1587,7 @@ function forwardCard(order, forward) {
                   text: ship?.trackingNumber ? "Edit tracking" : "Add tracking",
                   onclick: () => open(forwardShipForm(order, forward)),
                 }),
-                ship?.trackingNumber
+                ship?.trackingNumber || forward.vendor
                   ? null
                   : el("button", { type: "button", class: "btn btn-secondary btn-sm", text: "Copy their link", onclick: () => copyForwardLink(order, forward) }),
               ]
@@ -1434,8 +1597,9 @@ function forwardCard(order, forward) {
 }
 
 function forwardHistoryText(entry) {
-  const { event, to, items } = entry.forward;
+  const { event, to, items, vendor, reference } = entry.forward;
   const what = plural(items, "item");
+  if (event === "sent" && vendor) return `Ordered ${what} from ${to}${reference ? `, order ${reference}` : ""}`;
   if (event === "sent") return `Forwarded ${what} to ${to}`;
   if (event === "shipped") return `${to} shipped ${what}`;
   return `Pulled back ${what} from ${to}`;
@@ -1483,6 +1647,18 @@ function renderOrderDetail(order) {
                   onclick: () => {
                     clear(actionArea, reviewForm(order));
                     $("input:checked", actionArea)?.focus();
+                  },
+                })
+              : null,
+            order.status === "approved" && vistaprintLines(order).length
+              ? el("button", {
+                  type: "button",
+                  class: "btn btn-sm",
+                  text: "Order at Vistaprint",
+                  onclick: () => {
+                    clear(actionArea, vistaprintForm(order));
+                    $(".vp-step", actionArea)?.scrollIntoView({ block: "nearest" });
+                    $("input", actionArea)?.focus();
                   },
                 })
               : null,
@@ -1616,7 +1792,7 @@ function renderOrderDetail(order) {
     order.forwards?.length
       ? section(
           "Forwarded",
-          order.forwards.some((f) => f.status === "sent")
+          order.forwards.some((f) => f.status === "sent" && f.to.email)
             ? el("p", { class: "hint", text: "Their email has a link where they mark it shipped and enter the tracking, and you and the requester are emailed. You can also mark it shipped here." })
             : null,
           order.forwards.map((forward) => forwardCard(order, forward))
