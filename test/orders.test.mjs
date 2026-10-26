@@ -873,13 +873,12 @@ describe("business cards", () => {
 
   it("keeps each person's cards on their own line, with their details", () => {
     const db = initialState();
-    db.catalog.find((i) => i.id === "td-business-cards").maxPerOrder = 10; // an admin can allow more than 1
     const sam = { name: "Sam Rep", phone: "305-555-0100" };
-    const placed = place(db, cards([ALLIE, 1], [sam, 2], [{ ...ALLIE, name: "Allie Mindermann" }, 1]));
-    assert.deepEqual(placed.lines.map((l) => [l.card.name, l.quantity]), [["Allie Mindermann", 2], ["Sam Rep", 2]]);
+    const placed = place(db, cards([ALLIE, 1], [sam, 1]));
+    assert.deepEqual(placed.lines.map((l) => [l.card.name, l.quantity]), [["Allie Mindermann", 1], ["Sam Rep", 1]]);
     assert.deepEqual(placed.lines[1].card, { name: "Sam Rep", title: "", phone: "305-555-0100", email: "", address: "", website: "" });
     assert.equal(optionText(placed.lines[0]), "for Allie Mindermann");
-    assert.equal(placed.totalUnits, 4);
+    assert.equal(placed.totalUnits, 2);
 
     const rows = ordersToCsv(db.orders).trim().split("\r\n");
     const column = rows[0].split(",").indexOf("card_details");
@@ -900,11 +899,18 @@ describe("business cards", () => {
     assert.equal(db.orders.length, 0);
   });
 
-  it("allows 1 box an order, counting everyone's cards", () => {
+  it("allows 1 box per person, and several people's in an order", () => {
     const db = initialState();
-    assert.match(fieldErrors(() => place(db, cards([ALLIE, 2]))).lines, /Business Cards/);
-    assert.match(fieldErrors(() => place(db, cards([ALLIE, 1], [{ name: "Sam", phone: "305" }, 1]))).lines, /Business Cards/);
-    assert.equal(place(db, cards([ALLIE, 1])).totalUnits, 1);
+    const person = (name) => [{ name, phone: "305" }, 1];
+    assert.match(fieldErrors(() => place(db, cards([ALLIE, 2]))).lines, /Business Cards are 1 box per person, and Allie Mindermann has 2 in this order\./);
+    // The same name with other details is still the same person.
+    assert.match(fieldErrors(() => place(db, cards([ALLIE, 1], [{ name: "allie  MINDERMANN", email: "a@b.co" }, 1]))).lines, /1 box per person/);
+    assert.equal(place(db, cards([ALLIE, 1], person("Sam"), person("Jo"))).totalUnits, 3);
+    // up to the item's limit per order
+    const max = db.catalog.find((i) => i.id === "td-business-cards").maxPerOrder;
+    assert.equal(max, 5);
+    const crowd = Array.from({ length: max + 1 }, (_, i) => person(`Rep ${i}`));
+    assert.match(fieldErrors(() => place(db, cards(...crowd))).lines, /up to 5 of Business Cards per order/);
   });
 
   it("ignores card details sent with anything else", () => {

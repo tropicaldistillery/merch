@@ -15,8 +15,10 @@ import {
 } from "./core.js";
 import {
   ACCOUNT_TYPES,
+  CARD_BOXES_PER_PERSON,
   CARRIERS,
   PURPOSES,
+  cardHolderKey,
   forwardOf,
   formatMoney,
   inHouseLines,
@@ -367,7 +369,12 @@ async function reorder(order) {
     const have = cart.quantityOf(item.id);
     const room = Math.floor(Math.min(max - have, stock - cart.quantityOf(item.id, variant.id)) / step) * step;
     const want = Math.ceil(Math.max(line.quantity, min - have) / step) * step;
-    const quantity = Math.min(want, room);
+    // Business cards: no more than each person's share, counting the cart.
+    const holderRoom = card
+      ? CARD_BOXES_PER_PERSON -
+        cart.lines().filter((l) => l.itemId === item.id && l.card && cardHolderKey(l.card) === cardHolderKey(card)).reduce((sum, l) => sum + l.quantity, 0)
+      : Infinity;
+    const quantity = Math.min(want, room, holderRoom);
     if (quantity > 0 && have + quantity >= min) {
       cart.add(item.id, variant.id, quantity, color, card);
       added += 1;

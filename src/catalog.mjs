@@ -474,7 +474,9 @@ export const SEED_CATALOG = [
     // Printed to order for each person (see the customize dialog in the shop),
     // as Vistaprint's Painted Edge Business Cards: $112.99 for 250.
     customize: "business-card",
-    costCents: 11299, minPerOrder: 1, maxPerOrder: 1, variants: single(null),
+    // 1 box for each person on the cards (CARD_BOXES_PER_PERSON), so this is
+    // how many people's cards one order can hold.
+    costCents: 11299, minPerOrder: 1, maxPerOrder: 5, variants: single(null),
   },
   {
     id: "jfh-recipe-cards", name: "Signature Cocktail Recipe Cards",
@@ -1066,16 +1068,21 @@ export function applyCardPricing(db) {
   return changed;
 }
 
-/** Business cards: one box per order, once. */
-export function needsCardLimit(db) {
-  return !db.meta?.cardLimit;
+/**
+ * Business cards were 1 box an order; now they're 1 box for each person on
+ * the cards, so an order can hold several people's, up to the seed's limit.
+ * Once, where the limit is still 1.
+ */
+export function needsCardPerPerson(db) {
+  return !db.meta?.cardPerPerson;
 }
 
-export function applyCardLimit(db) {
-  const item = db.catalog.find((i) => i.id === "td-business-cards");
-  const changed = Boolean(item) && item.maxPerOrder !== 1;
-  if (changed) Object.assign(item, { minPerOrder: 1, maxPerOrder: 1, orderIncrement: 1 });
-  db.meta.cardLimit = 1;
+export function applyCardPerPerson(db) {
+  const seed = SEED_CATALOG.find((i) => i.id === "td-business-cards");
+  const item = db.catalog.find((i) => i.id === seed.id);
+  const changed = item?.maxPerOrder === 1;
+  if (changed) item.maxPerOrder = seed.maxPerOrder;
+  db.meta.cardPerPerson = 1;
   return changed;
 }
 

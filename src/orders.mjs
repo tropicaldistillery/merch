@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import {
   ACCOUNT_TYPES,
+  CARD_BOXES_PER_PERSON,
   CARRIERS,
   LINE_DECISIONS,
   PURPOSES,
@@ -16,6 +17,7 @@ import {
   activeForwards,
   cardText,
   forwardLines,
+  cardHolderKey,
   forwardOf,
   imageFor,
   inHouseLines,
@@ -111,6 +113,7 @@ function readLines(rawLines, catalog, errors) {
   const problems = [];
   const perItem = new Map();
   const perVariant = new Map();
+  const perCardHolder = new Map();
   const lines = [];
 
   for (const { itemId, variantId, color, card, quantity } of merged.values()) {
@@ -137,6 +140,10 @@ function readLines(rawLines, catalog, errors) {
         continue;
       }
       details = value;
+      const holderKey = `${item.id}::${cardHolderKey(value)}`;
+      const holder = perCardHolder.get(holderKey) ?? { item, name: value.name, total: 0 };
+      holder.total += quantity;
+      perCardHolder.set(holderKey, holder);
     }
     perItem.set(item.id, (perItem.get(item.id) ?? 0) + quantity);
     // Stock is counted per option, whatever colours it is ordered in.
@@ -176,6 +183,12 @@ function readLines(rawLines, catalog, errors) {
     const item = catalog.find((entry) => entry.id === itemId);
     const problem = quantityProblem(item, total);
     if (problem) problems.push(problem);
+  }
+
+  for (const { item, name, total } of perCardHolder.values()) {
+    if (total > CARD_BOXES_PER_PERSON) {
+      problems.push(`${item.name} are ${CARD_BOXES_PER_PERSON} box per person, and ${name} has ${total} in this order.`);
+    }
   }
 
   if (problems.length) errors.lines = problems.join(" ");

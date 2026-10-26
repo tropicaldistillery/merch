@@ -37,8 +37,8 @@ import {
   applyBottleAccountLimit,
   needsCardPricing,
   applyCardPricing,
-  needsCardLimit,
-  applyCardLimit,
+  needsCardPerPerson,
+  applyCardPerPerson,
   normalizeItem,
   publicItem,
   bulkEditCatalog,
@@ -905,19 +905,22 @@ describe("starter items added to existing stores", () => {
     assert.equal(needsCardPricing(initialState()), false);
   });
 
-  it("limits business cards to 1 box an order, once", () => {
+  it("moves business cards from 1 box an order to 1 per person, once", () => {
     const catalog = structuredClone(SEED_CATALOG);
-    catalog.find((i) => i.id === "td-business-cards").maxPerOrder = 5;
+    catalog.find((i) => i.id === "td-business-cards").maxPerOrder = 1; // the live store's limit before
     const db = { meta: {}, catalog };
-    assert.equal(needsCardLimit(db), true);
-    assert.equal(applyCardLimit(db), true);
+    assert.equal(needsCardPerPerson(db), true);
+    assert.equal(applyCardPerPerson(db), true);
     const cards = db.catalog.find((i) => i.id === "td-business-cards");
-    assert.deepEqual([cards.minPerOrder, cards.maxPerOrder], [1, 1]);
-    assert.equal(quantityRuleText(cards), "1 per order");
-    assert.equal(needsCardLimit(db), false);
-    assert.equal(applyCardLimit({ meta: {}, catalog: [] }), false, "a store without the cards");
-    assert.equal(needsCardLimit(initialState()), false);
-    assert.equal(SEED_CATALOG.find((i) => i.id === "td-business-cards").maxPerOrder, 1);
+    assert.equal(cards.maxPerOrder, 5);
+    assert.equal(quantityRuleText(cards), "1 per person · up to 5 per order");
+    assert.equal(needsCardPerPerson(db), false);
+    const own = structuredClone(SEED_CATALOG);
+    own.find((i) => i.id === "td-business-cards").maxPerOrder = 3; // an admin's own limit stays
+    assert.equal(applyCardPerPerson({ meta: {}, catalog: own }), false);
+    assert.equal(applyCardPerPerson({ meta: {}, catalog: [] }), false, "a store without the cards");
+    assert.equal(needsCardPerPerson(initialState()), false);
+    assert.equal(quantityRuleText({ maxPerOrder: 1 }), "1 per order");
   });
 
   it("limits each sample bottle to 4 per person for each account, once", () => {

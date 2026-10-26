@@ -72,6 +72,14 @@ export function isCardItem(item) {
   return item?.customize === "business-card";
 }
 
+/** Business cards: how many boxes each person on the cards can have in an order. */
+export const CARD_BOXES_PER_PERSON = 1;
+
+/** Whose cards a line holds, to count them by: the name, whatever its case and spacing. */
+export function cardHolderKey(card) {
+  return String(card?.name ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 /** Card details tidied up (spaces, lengths), and what's wrong with them by field. */
 export function readCardDetails(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
@@ -392,6 +400,7 @@ export function quantityProblem(item, total) {
 /** "Sold in 6s · up to 24 per order", for the shop and the console. */
 export function quantityRuleText(item) {
   const { min, max, step } = orderRule(item);
+  if (isCardItem(item)) return `${CARD_BOXES_PER_PERSON} per person · up to ${max} per order`;
   const parts = [];
   if (step > 1) parts.push(`Sold in ${step}s`);
   if (min > step) parts.push(`min ${min}`);

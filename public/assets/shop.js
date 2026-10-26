@@ -17,11 +17,13 @@ import {
 } from "./core.js";
 import {
   BRANDS,
+  CARD_BOXES_PER_PERSON,
   CARD_DEFAULTS,
   CARD_FIELDS,
   CATEGORIES,
   COLOR_OPTIONS,
   PROFIT_PER_CASE_CENTS,
+  cardHolderKey,
   formatMoney,
   imageFor,
   isCardItem,
@@ -81,7 +83,18 @@ function roomFor(item, variant) {
 function lineLimit(item, variant, line) {
   const othersOfItem = cart.quantityOf(item.id) - line.quantity;
   const othersOfVariant = cart.quantityOf(item.id, variant.id) - line.quantity;
-  return Math.min(orderRule(item).max - othersOfItem, variantStock(variant) - othersOfVariant);
+  const limit = Math.min(orderRule(item).max - othersOfItem, variantStock(variant) - othersOfVariant);
+  // Business cards: a set number of boxes for each person on them.
+  return line.card ? Math.min(limit, CARD_BOXES_PER_PERSON - (cardBoxesFor(item, line.card) - line.quantity)) : limit;
+}
+
+/** Boxes of business cards in the cart for this person, on any line. */
+function cardBoxesFor(item, card) {
+  const key = cardHolderKey(card);
+  return cart
+    .lines()
+    .filter((l) => l.itemId === item.id && l.card && cardHolderKey(l.card) === key)
+    .reduce((sum, l) => sum + l.quantity, 0);
 }
 
 // A cart line's colour is fine if the item is still offered in it.
@@ -227,9 +240,13 @@ const CARD_OPTIONAL = new Set(["title", "address", "website"]);
 
 // Filling in a card: the fields on one side, the proof on the other, updated
 // as they type. Adds `quantity` boxes to the order, or, given `line`, changes
-// the details on a card already in it.
+// the details on a card already in it. Each person gets CARD_BOXES_PER_PERSON.
 function cardDialog(item, { variant, quantity = 1, line = null, onAdded } = {}) {
-  const start = line?.card ?? rememberedCard();
+  // A new card for someone else starts from just the shared address and website.
+  const remembered = rememberedCard();
+  const start =
+    line?.card ??
+    (cardBoxesFor(item, remembered) ? { address: remembered.address ?? "", website: remembered.website ?? "" } : remembered);
   const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
   const inputs = CARD_FIELDS.map((field) =>
     el("input", {
@@ -303,6 +320,11 @@ function cardDialog(item, { variant, quantity = 1, line = null, onAdded } = {}) 
     clearFieldErrors(form);
     setAlert(alertBox, "");
     const { value, errors } = read();
+    // Someone else's cards in the order for this name (not the line being edited).
+    const already = cardBoxesFor(item, value) - (line && cardHolderKey(line.card) === cardHolderKey(value) ? line.quantity : 0);
+    if (already + (line?.quantity ?? quantity) > CARD_BOXES_PER_PERSON && !errors.name) {
+      errors.name = `${value.name}'s cards are already in your order. It's ${CARD_BOXES_PER_PERSON} box per person.`;
+    }
     if (Object.keys(errors).length) {
       showFieldErrors(form, errors);
       return;
@@ -488,7 +510,8 @@ function productCard(item) {
     const need = stillNeeded(item);
     const left = variant ? variantStock(variant) - cart.quantityOf(item.id, variant.id) : Infinity;
     requesting = availability.available === 0 || left < need;
-    stepper.element.hidden = requesting;
+    // One box per person for business cards, so no quantity to pick.
+    stepper.element.hidden = requesting || customize;
     addButton.classList.toggle("btn-secondary", requesting);
     if (requesting) {
       addButton.disabled = false;
@@ -533,7 +556,7 @@ function productCard(item) {
       );
       return;
     }
-    const quantity = Math.min(stepper.value, room);
+    const quantity = customize ? CARD_BOXES_PER_PERSON : Math.min(stepper.value, room);
     if (quantity < stillNeeded(item)) {
       toast(`There aren't enough ${item.name} left to make up a full order quantity.`, { tone: "error" });
       return;
@@ -700,7 +723,12 @@ function cartLine(line) {
         : line.quantity > limit
         ? el("p", {
             class: "warn",
-            text: limit <= 0 ? "No longer available in this quantity — remove it." : `Only ${limit} can be ordered — lower the quantity.`,
+            text:
+              customize && line.card && cardBoxesFor(item, line.card) > CARD_BOXES_PER_PERSON
+                ? `It's ${CARD_BOXES_PER_PERSON} box per person, and ${line.card.name} has more — ${limit <= 0 ? "remove this one" : "lower the quantity"}.`
+                : limit <= 0
+                  ? "No longer available in this quantity — remove it."
+                  : `Only ${limit} can be ordered — lower the quantity.`,
           })
         : problem
           ? el("p", { class: "warn", text: problem })
