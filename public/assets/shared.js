@@ -64,6 +64,21 @@ export const CARD_FIELDS = [
   { id: "cocktail", label: "Favorite cocktail", max: 40 },
 ];
 
+// The favorite cocktails to pick from on a business card, each made with a
+// J.F. Haden's liqueur; anything else can be typed in.
+export const CARD_COCKTAILS = [
+  { name: "Espresso Martini", liqueur: "Espresso Liqueur" },
+  { name: "Key Lime Pie Martini", liqueur: "Key Lime Pie Liqueur" },
+  { name: "Key Lime Pie Colada", liqueur: "Key Lime Pie Liqueur" },
+  { name: "Lychee Martini", liqueur: "Lychee Liqueur" },
+  { name: "Orange Martini", liqueur: "Orange Liqueur" },
+  { name: "Spicy Mango Margarita", liqueur: "Mango Liqueur" },
+  { name: "Mango Mule", liqueur: "Mango Liqueur" },
+  { name: "Cosmopolitan", liqueur: "Orange Liqueur" },
+  { name: "Citrus Drop Martini", liqueur: "Citrus Liqueur" },
+  { name: "Iced Coffee", liqueur: "Espresso Liqueur" },
+];
+
 export const CARD_DEFAULTS = {
   address: "2141 NW 10th Ave, Miami, FL 33127",
   website: "http://www.tropicaldistillery.com",

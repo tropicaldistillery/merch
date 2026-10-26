@@ -41,10 +41,10 @@ const CONTACT = {
   website: { size: 64, spacing: "0.01em", gap: 71 },
 };
 // The favourite cocktail sits in the bottom right corner, level with the
-// last contact line, under a small FAVORITE COCKTAIL label; a size up from
-// the contact lines so it stands out.
-const COCKTAIL = { size: 84, spacing: "0.01em", maxWidth: 900 };
-const COCKTAIL_LABEL = { size: 40, spacing: "0.16em", above: 86 };
+// last contact line, under a small FAVORITE COCKTAIL label: in capitals in
+// the name's font, so it answers the name on the left.
+const COCKTAIL = { size: 70, font: "Card Name", spacing: "-0.01em", maxWidth: 900 };
+const COCKTAIL_LABEL = { size: 40, spacing: "0.16em", above: 80 };
 
 function node(tag, attrs = {}, text) {
   const n = document.createElementNS(SVG, tag);
@@ -116,7 +116,7 @@ export function cardFront(details = {}, { print = false, label = "", accent = AC
   if (d.cocktail) {
     svg.append(
       line("Favorite cocktail", { y: y - COCKTAIL_LABEL.above, size: COCKTAIL_LABEL.size, spacing: COCKTAIL_LABEL.spacing, upper: true, right: true }),
-      line(d.cocktail, { y, size: COCKTAIL.size, spacing: COCKTAIL.spacing, right: true })
+      line(d.cocktail, { y, size: COCKTAIL.size, font: COCKTAIL.font, spacing: COCKTAIL.spacing, upper: true, right: true })
     );
   }
   return svg;

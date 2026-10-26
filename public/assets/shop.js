@@ -18,6 +18,7 @@ import {
 import {
   BRANDS,
   CARD_BOXES_PER_PERSON,
+  CARD_COCKTAILS,
   CARD_PAYMENT,
   CARD_DEFAULTS,
   CARD_FIELDS,
@@ -235,7 +236,7 @@ function rememberedCard() {
 const CARD_HINTS = {
   name: "Prints in capitals.",
   phone: "Add a phone number, an email, or both.",
-  cocktail: "Prints small in the bottom right corner.",
+  cocktail: "Prints in capitals in the bottom right corner.",
 };
 
 const CARD_INPUT_TYPES = { phone: "tel", email: "email" };
@@ -258,19 +259,54 @@ function cardDialog(item, { variant, quantity = 1, line = null, onAdded } = {}) 
       type: CARD_INPUT_TYPES[field.id] ?? "text",
       maxlength: String(field.max),
       autocomplete: { name: "name", title: "organization-title", phone: "tel", email: "email", address: "street-address", website: "url", cocktail: "off" }[field.id],
-      ...(field.id === "cocktail" ? { placeholder: "Key Lime Pie Colada" } : {}),
+      ...(field.id === "cocktail" ? { placeholder: "Type your favorite", "aria-label": "Your favorite cocktail" } : {}),
       value: field.id === "website" ? formatWebsite(start.website) : start[field.id] ?? "",
       spellcheck: field.id === "name" || field.id === "title" ? "true" : "false",
     })
   );
+  // The favorite cocktail is picked from J.F. Haden's cocktails, or typed in
+  // under "Something else"; the text box holds what prints either way.
+  const cocktailInput = inputs.find((input) => input.name === "cocktail");
+  const listed = (name) => CARD_COCKTAILS.find((c) => c.name.toLowerCase() === String(name ?? "").trim().toLowerCase());
+  const cocktailHint = el("p", { class: "hint", id: "card-cocktail-made" });
+  const cocktailSelect = el(
+    "select",
+    { id: "card-cocktail-pick", "aria-describedby": "card-cocktail-hint card-cocktail-made" },
+    el("option", { value: "", text: "None" }),
+    CARD_COCKTAILS.map((c) => el("option", { value: c.name, text: c.name })),
+    el("option", { value: "other", text: "Something else…" })
+  );
+  function showCocktail() {
+    const pick = cocktailSelect.value;
+    cocktailInput.hidden = pick !== "other";
+    const made = listed(pick);
+    cocktailHint.textContent = made ? `Made with J.F. Haden's ${made.liqueur}.` : "";
+    cocktailHint.hidden = !made;
+  }
+  cocktailSelect.value = listed(start.cocktail)?.name ?? (start.cocktail ? "other" : "");
+  if (listed(start.cocktail)) cocktailInput.value = listed(start.cocktail).name;
+  cocktailSelect.addEventListener("change", () => {
+    if (cocktailSelect.value === "other") {
+      if (listed(cocktailInput.value) || !cocktailInput.value) cocktailInput.value = "";
+    } else {
+      cocktailInput.value = cocktailSelect.value;
+    }
+    showCocktail();
+    draw();
+    if (cocktailSelect.value === "other") cocktailInput.focus();
+  });
+  showCocktail();
+
   const fields = CARD_FIELDS.map((field, i) => {
     const hintId = CARD_HINTS[field.id] ? `card-${field.id}-hint` : null;
-    if (hintId) inputs[i].setAttribute("aria-describedby", hintId);
+    if (hintId && field.id !== "cocktail") inputs[i].setAttribute("aria-describedby", hintId);
+    const control = field.id === "cocktail" ? cocktailSelect : inputs[i];
     return el(
       "div",
       { class: "field" },
-      el("label", { for: inputs[i].id }, field.label, CARD_OPTIONAL.has(field.id) ? el("span", { class: "optional", text: " (optional)" }) : null),
-      inputs[i],
+      el("label", { for: control.id }, field.label, CARD_OPTIONAL.has(field.id) ? el("span", { class: "optional", text: " (optional)" }) : null),
+      control,
+      field.id === "cocktail" ? [inputs[i], cocktailHint] : null,
       hintId ? el("p", { class: "hint", id: hintId, text: CARD_HINTS[field.id] }) : null
     );
   });
