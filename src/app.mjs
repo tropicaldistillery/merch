@@ -141,6 +141,7 @@ const MIME = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".ico": "image/x-icon",
+  ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".txt": "text/plain; charset=utf-8",
 };
@@ -156,6 +157,7 @@ const PAGES = {
   "/welcome": { file: "welcome.html" },
   "/packing-slip": { file: "packing-slip.html" },
   "/ship": { file: "ship.html" },
+  "/business-card": { file: "business-card.html" },
 };
 
 /* ----------------------------------------------------------------- helpers */

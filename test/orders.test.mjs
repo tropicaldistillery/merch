@@ -19,7 +19,7 @@ import {
   updateOrder,
   validateOrderInput,
 } from "../src/orders.mjs";
-import { inHouseLines } from "../public/assets/shared.js";
+import { cardText, inHouseLines, optionText, readCardDetails } from "../public/assets/shared.js";
 import { ValidationError } from "../src/validation.mjs";
 
 // 02:00 UTC on 6 Oct is still 5 Oct in New York.
@@ -609,7 +609,7 @@ describe("forwarding items to someone else to ship", () => {
     assert.equal(stock(db, "jfh-led-sign"), signs);
 
     const rows = ordersToCsv(db.orders).trim().split("\r\n");
-    assert.match(rows[0], /,item_note,fulfilled_by,carrier,tracking_number,/);
+    assert.match(rows[0], /,item_note,card_details,fulfilled_by,carrier,tracking_number,/);
     assert.match(rows[1], /,Ten 10 Design,,,/);
     assert.match(rows[3], /,Approved,,,,,/);
 
@@ -810,5 +810,70 @@ describe("sample bottles: 4 per person for each account", () => {
       { itemId: "jfh-mango-bottle", variantId: "default", quantity: 1 },
     ] })));
     assert.match(errors.lines, /you can add 2 more/);
+  });
+});
+
+describe("business cards", () => {
+  const ALLIE = {
+    name: "  Allie   Mindermann ",
+    title: "COO",
+    phone: "(954) 600-3005",
+    email: "allie@tropicaldistillery.com",
+    address: "2141 NW 10th Ave, Miami, FL 33127",
+    website: "tropicaldistillery.com",
+  };
+  const cards = (...lines) => order({ lines: lines.map(([card, quantity = 1]) => ({ itemId: "td-business-cards", variantId: "default", quantity, card })) });
+
+  it("tidies the details and says what's missing", () => {
+    const { value, errors } = readCardDetails({ ...ALLIE, title: "x".repeat(80), extra: "ignored" });
+    assert.equal(value.name, "Allie Mindermann");
+    assert.equal(value.title.length, 60);
+    assert.equal("extra" in value, false);
+    assert.deepEqual(errors, {});
+    assert.deepEqual(Object.keys(readCardDetails({ name: " ", title: "COO" }).errors), ["name", "phone"]);
+    assert.deepEqual(readCardDetails({ name: "Sam", email: "sam@" }).errors, { email: "Enter an email like name@tropicaldistillery.com." });
+    assert.deepEqual(readCardDetails({ name: "Sam", phone: "305 555 0100" }).errors, {}, "a phone number is enough");
+    assert.equal(cardText(value), `Allie Mindermann · ${"x".repeat(60)} · (954) 600-3005 · allie@tropicaldistillery.com · 2141 NW 10th Ave, Miami, FL 33127 · tropicaldistillery.com`);
+  });
+
+  it("keeps each person's cards on their own line, with their details", () => {
+    const db = initialState();
+    const sam = { name: "Sam Rep", phone: "305-555-0100" };
+    const placed = place(db, cards([ALLIE, 1], [sam, 2], [{ ...ALLIE, name: "Allie Mindermann" }, 1]));
+    assert.deepEqual(placed.lines.map((l) => [l.card.name, l.quantity]), [["Allie Mindermann", 2], ["Sam Rep", 2]]);
+    assert.deepEqual(placed.lines[1].card, { name: "Sam Rep", title: "", phone: "305-555-0100", email: "", address: "", website: "" });
+    assert.equal(optionText(placed.lines[0]), "for Allie Mindermann");
+    assert.equal(placed.totalUnits, 4);
+
+    const rows = ordersToCsv(db.orders).trim().split("\r\n");
+    const column = rows[0].split(",").indexOf("card_details");
+    assert.ok(column > 0);
+    assert.match(rows[2], /Sam Rep · 305-555-0100/);
+
+    // Forwarded to a printer, they see what goes on each card.
+    reviewOrder(db, placed.id, { decisions: [{ status: "approved" }, { status: "approved" }] }, { actor: "Allie", now: NOW });
+    const { order: o, forward } = forwardItems(db, placed.id, { toName: "Print Shop", toEmail: "orders@printshop.com", lines: [0, 1] }, { actor: "Allie", now: NOW });
+    assert.deepEqual(supplierView(o, forward).forward.items.map((i) => i.card.name), ["Allie Mindermann", "Sam Rep"]);
+  });
+
+  it("won't take cards without a name, or without a phone or email", () => {
+    const db = initialState();
+    assert.match(fieldErrors(() => place(db, cards([{ title: "COO", phone: "305" }]))).lines, /Business Cards: Enter the name for the card\./);
+    assert.match(fieldErrors(() => place(db, cards([{ name: "Allie" }]))).lines, /Add a phone number or an email\./);
+    assert.match(fieldErrors(() => place(db, cards([null]))).lines, /Enter the name for the card\./);
+    assert.equal(db.orders.length, 0);
+  });
+
+  it("counts every person's boxes toward the per-order limit", () => {
+    const db = initialState();
+    const max = db.catalog.find((i) => i.id === "td-business-cards").maxPerOrder;
+    assert.ok(fieldErrors(() => place(db, cards([ALLIE, max], [{ name: "Sam", phone: "305" }, 1]))).lines);
+    place(db, cards([ALLIE, max - 1], [{ name: "Sam", phone: "305" }, 1]));
+  });
+
+  it("ignores card details sent with anything else", () => {
+    const db = initialState();
+    const placed = place(db, order({ lines: [{ itemId: "jfh-logo-tee", variantId: "m", quantity: 2, card: ALLIE }] }));
+    assert.equal("card" in placed.lines[0], false);
   });
 });

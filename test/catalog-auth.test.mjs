@@ -378,7 +378,7 @@ describe("automatic SKUs", () => {
     assert.equal(item("td-team-polo").sku, "TD-APP-001", "the next free TD apparel number");
     assert.equal(item("td-tumbler").sku, "TD-GIV-001");
     assert.equal(item("td-shaker-set").sku, "TD-BAR-003", "after the cobbler shaker's 002");
-    assert.equal(item("td-booklet").sku, "TD-PRI-002");
+    assert.equal(item("td-booklet").sku, "TD-PRI-004", "the next free TD print number (the business cards have 003)");
     assert.equal(item("td-sell-sheets").sku, kept, "TD SKUs untouched");
     assert.equal(jfhTee.sku, "MY-OWN-TEE", "other brands keep typed-in SKUs");
     assert.ok(db.catalog.filter((i) => i.brand === "tropical-distillery").every((i) => /^TD-[A-Z]{3,4}-\d{3}$/.test(i.sku)));
@@ -827,6 +827,31 @@ describe("starter items added to existing stores", () => {
     assert.deepEqual(tee.variants.map((v) => v.stock), [0, 0, 0, 0, 0, 0]);
     assert.equal(needsAddedItems(db), false);
     assert.deepEqual(applyAddedItems(db), [], "only once");
+  });
+
+  it("adds the customizable business cards once, after the booklet, made to order", () => {
+    const catalog = structuredClone(SEED_CATALOG).filter((i) => i.id !== "td-business-cards");
+    const db = {
+      meta: { ...BEFORE_SPIRITS, samplesDrop: 1, spiritsDrop: 1, gameDayTee: 1, sundayFunday: 1, tdShaker: 1, stirrers: 1, sampleCups: 1, leatherCoasters: 1, twinpLeatherCoasters: 1, banners2026: 1, talkers2026: 1, jfhGameDayTee: 1 },
+      catalog,
+    };
+    assert.deepEqual(applyAddedItems(db).map((i) => i.id), ["td-business-cards"]);
+    const ids = db.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("td-booklet") + 1], "td-business-cards");
+    const cards = db.catalog.find((i) => i.id === "td-business-cards");
+    assert.deepEqual([cards.category, cards.unit, cards.customize], ["Print", "Box of 250", "business-card"]);
+    assert.match(cards.sku, /^TD-PRI-\d{3}$/);
+    assert.equal(new Set(db.catalog.map((i) => i.sku)).size, db.catalog.length);
+    assert.equal(cards.image, "/assets/merch/td-business-cards.jpg");
+    assert.deepEqual(cards.variants.map((v) => v.stock), [null], "made to order");
+    assert.equal(publicItem(cards).customize, "business-card");
+    assert.equal(needsAddedItems(db), false);
+    assert.deepEqual(applyAddedItems(db), [], "only once");
+
+    // An admin's edit keeps it customizable; it isn't a field they set.
+    const edited = normalizeItem({ ...publicItem(cards), name: "Business Cards (250)", customize: undefined }, { catalog: db.catalog, existing: cards });
+    assert.equal(edited.customize, "business-card");
+    assert.equal(normalizeItem(VALID, { catalog: SEED_CATALOG }).customize, undefined);
   });
 
   it("takes the sample cases out once, and limits each bottle to 4 per order", () => {

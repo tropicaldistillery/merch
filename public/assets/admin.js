@@ -36,6 +36,7 @@ import {
   US_STATES,
   activeForwards,
   byCategory,
+  cardText,
   distributorCodeFor,
   formatMoney,
   forwardLines,
@@ -976,6 +977,7 @@ function reviewForm(order) {
         { class: "review-item" },
         el("div", { class: "cell-main", text: `${line.quantity} × ${line.name}` }),
         el("div", { class: "cell-sub", text: [line.sku, line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") }),
+        line.card ? el("div", { class: "cell-sub card-details", text: cardText(line.card) }) : null,
         forward ? el("div", { class: "cell-sub", text: `Forwarded to ${forward.to.name}. Pull it back to deny it.` }) : null
       ),
       el("div", { class: "review-choices", role: "radiogroup", "aria-label": `Decision for ${line.name}` }, choice("approved", "Approve"), choice("denied", "Deny")),
@@ -1580,12 +1582,19 @@ function renderOrderDetail(order) {
           el(
             "tbody",
             {},
-            order.lines.map((line) =>
+            order.lines.map((line, index) =>
               el(
                 "tr",
                 { class: isDenied(line) ? "line-denied" : "" },
                 el("td", { text: line.sku }),
-                el("td", {}, el("div", { class: "cell-main", text: line.name }), el("div", { class: "cell-sub", text: [line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") }), supplierLine(catalog.find((i) => i.id === line.itemId))),
+                el(
+                  "td",
+                  {},
+                  el("div", { class: "cell-main", text: line.name }),
+                  el("div", { class: "cell-sub", text: [line.color, line.variantLabel, line.unit].filter(Boolean).join(" · ") }),
+                  line.card ? cardDetails(order, line, index) : null,
+                  supplierLine(catalog.find((i) => i.id === line.itemId))
+                ),
                 el("td", {}, decisionCell(order, line)),
                 el("td", { class: "num", text: String(line.quantity) }),
                 el("td", { class: "num", text: formatMoney(line.lineTotalCents) })
@@ -1902,6 +1911,23 @@ function stockSummary(item) {
       i ? " · " : "",
       el("span", { class: Number.isInteger(v.stock) && v.stock <= 5 ? "low-text" : "", text: `${v.label} ${Number.isInteger(v.stock) ? v.stock : "—"}` }),
     ])
+  );
+}
+
+/** What goes on a business card, and its print proof. */
+function cardDetails(order, line, index) {
+  return el(
+    "div",
+    { class: "cell-sub card-details" },
+    cardText(line.card),
+    " · ",
+    el("a", {
+      href: `/business-card?order=${encodeURIComponent(order.id)}&line=${index}`,
+      target: "_blank",
+      rel: "noopener",
+      text: "Print proof ↗",
+      "aria-label": `Print proof of the card for ${line.card.name} (opens in a new tab)`,
+    })
   );
 }
 

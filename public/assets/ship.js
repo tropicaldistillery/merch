@@ -4,7 +4,7 @@
 // it's sent back in the body of each request.
 
 import { addressLines, api, clear, clearFieldErrors, el, formatCalendarDate, formatDate, options, setAlert, showFieldErrors } from "./core.js";
-import { CARRIERS, labelFor, optionText, trackingUrl } from "./shared.js";
+import { CARRIERS, cardText, labelFor, optionText, trackingUrl } from "./shared.js";
 
 const root = document.getElementById("ship");
 const token = decodeURIComponent(location.hash.slice(1));
@@ -128,7 +128,7 @@ function render(view, { thanks = false } = {}) {
     el(
       "ul",
       { class: "ship-items", "aria-label": "Items to ship" },
-      f.items.map((item) =>
+      f.items.map((item, index) =>
         el(
           "li",
           {},
@@ -137,7 +137,17 @@ function render(view, { thanks = false } = {}) {
             "span",
             {},
             el("span", { class: "cell-main", text: item.name }),
-            el("span", { class: "cell-sub", text: [optionText(item), item.unit, `SKU ${item.sku}`].filter(Boolean).join(" · ") })
+            el("span", { class: "cell-sub", text: [optionText(item), item.unit, `SKU ${item.sku}`].filter(Boolean).join(" · ") }),
+            // Business cards: what to print on them, and the proof to print from.
+            item.card
+              ? el(
+                  "span",
+                  { class: "cell-sub card-details" },
+                  cardText(item.card),
+                  " · ",
+                  el("a", { href: `/business-card?line=${index}#${encodeURIComponent(token)}`, target: "_blank", rel: "noopener", text: "Print proof ↗" })
+                )
+              : null
           )
         )
       )

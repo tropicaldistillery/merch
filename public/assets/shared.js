@@ -46,9 +46,47 @@ export function imageFor(item, color = "") {
   return (color && images.find((i) => i.color === color)?.url) || images[0]?.url || "";
 }
 
-/** "Navy · L" for an order line or cart line. */
+/** "Navy · L" for an order line or cart line; "for Allie Mindermann" for business cards. */
 export function optionText(line) {
-  return [line.color, line.variantLabel].filter(Boolean).join(" · ");
+  return [line.color, line.variantLabel, line.card?.name ? `for ${line.card.name}` : ""].filter(Boolean).join(" · ");
+}
+
+// Business cards are made to order with each person's own details: the
+// item says so with `customize: "business-card"`, and each cart and order
+// line carries the details as `card`.
+export const CARD_FIELDS = [
+  { id: "name", label: "Name", max: 40 },
+  { id: "title", label: "Title", max: 60 },
+  { id: "phone", label: "Phone", max: 30 },
+  { id: "email", label: "Email", max: 80 },
+  { id: "address", label: "Address", max: 90 },
+  { id: "website", label: "Website", max: 60 },
+];
+
+export const CARD_DEFAULTS = {
+  address: "2141 NW 10th Ave, Miami, FL 33127",
+  website: "tropicaldistillery.com",
+};
+
+export function isCardItem(item) {
+  return item?.customize === "business-card";
+}
+
+/** Card details tidied up (spaces, lengths), and what's wrong with them by field. */
+export function readCardDetails(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const value = {};
+  for (const field of CARD_FIELDS) value[field.id] = String(src[field.id] ?? "").replace(/\s+/g, " ").trim().slice(0, field.max);
+  const errors = {};
+  if (!value.name) errors.name = "Enter the name for the card.";
+  if (!value.phone && !value.email) errors.phone = "Add a phone number or an email.";
+  if (value.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.email)) errors.email = "Enter an email like name@tropicaldistillery.com.";
+  return { value, errors };
+}
+
+/** Every detail on one line, for exports and the printer: "Allie Mindermann · COO · (954)…". */
+export function cardText(card) {
+  return CARD_FIELDS.map((field) => card?.[field.id]).filter(Boolean).join(" · ");
 }
 
 /** The first three letters of a name, in capitals: "J.F. Haden's" → JFH. */

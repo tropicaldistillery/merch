@@ -13,15 +13,18 @@ import {
   TRANSITIONS,
   US_STATES,
   activeForwards,
+  cardText,
   forwardLines,
   forwardOf,
   imageFor,
   inHouseLines,
+  isCardItem,
   isDenied,
   labelFor,
   maxPerAccount,
   optionText,
   quantityProblem,
+  readCardDetails,
 } from "../public/assets/shared.js";
 import {
   ValidationError,
@@ -97,9 +100,11 @@ function readLines(rawLines, catalog, errors) {
       errors.lines = `Quantities must be whole numbers from 1 to ${MAX_QUANTITY}.`;
       return [];
     }
-    const key = `${itemId}::${variantId}::${color}`;
+    // Business cards for different people are different lines.
+    const card = raw?.card && typeof raw.card === "object" ? readCardDetails(raw.card).value : null;
+    const key = `${itemId}::${variantId}::${color}::${card ? JSON.stringify(card) : ""}`;
     const prior = merged.get(key);
-    merged.set(key, { itemId, variantId, color, quantity: (prior?.quantity ?? 0) + quantity });
+    merged.set(key, { itemId, variantId, color, card, quantity: (prior?.quantity ?? 0) + quantity });
   }
 
   const problems = [];
@@ -107,7 +112,7 @@ function readLines(rawLines, catalog, errors) {
   const perVariant = new Map();
   const lines = [];
 
-  for (const { itemId, variantId, color, quantity } of merged.values()) {
+  for (const { itemId, variantId, color, card, quantity } of merged.values()) {
     const item = catalog.find((entry) => entry.id === itemId && entry.active);
     if (!item) {
       problems.push("An item in your cart is no longer available. Remove it and try again.");
@@ -122,6 +127,15 @@ function readLines(rawLines, catalog, errors) {
     if (colors.length && !colors.includes(color)) {
       problems.push(`Choose a color for ${item.name}.`);
       continue;
+    }
+    let details = null;
+    if (isCardItem(item)) {
+      const { value, errors } = readCardDetails(card);
+      if (Object.keys(errors).length) {
+        problems.push(`${item.name}: ${Object.values(errors).join(" ")}`);
+        continue;
+      }
+      details = value;
     }
     perItem.set(item.id, (perItem.get(item.id) ?? 0) + quantity);
     // Stock is counted per option, whatever colours it is ordered in.
@@ -140,6 +154,7 @@ function readLines(rawLines, catalog, errors) {
       tone: item.tone,
       art: item.art,
       image: imageFor(item, colors.length ? color : ""),
+      ...(details ? { card: details } : {}),
       quantity,
       unitCostCents: item.costCents,
       lineTotalCents: item.costCents * quantity,
@@ -867,6 +882,7 @@ export function supplierView(order, forward) {
         variantLabel: l.variantLabel,
         unit: l.unit,
         quantity: l.quantity,
+        ...(l.card ? { card: l.card } : {}),
       })),
     },
     // Tracking can be added or fixed until the order is delivered.
@@ -1052,6 +1068,7 @@ export const CSV_COLUMNS = [
   ["line_cost", (o, l) => (l.lineTotalCents / 100).toFixed(2)],
   ["item_status", (o, l) => (l.decision ? labelFor(LINE_DECISIONS, l.decision.status) : "")],
   ["item_note", (o, l) => l.decision?.reason ?? ""],
+  ["card_details", (o, l) => cardText(l.card)],
   ["fulfilled_by", (o, l) => forwardOf(o, l)?.to.name ?? ""],
   ["carrier", (o, l) => labelFor(CARRIERS, lineShipment(o, l)?.carrier ?? "")],
   ["tracking_number", (o, l) => lineShipment(o, l)?.trackingNumber ?? ""],

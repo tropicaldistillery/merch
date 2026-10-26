@@ -1,0 +1,109 @@
+/* The business card proof: on screen, each card's front and back with its
+   details; printed, one side per 3.5 x 2 in page, edge to edge, for the
+   printer. Only this page loads it, so the page size stays its own. */
+
+@page {
+  size: 3.5in 2in;
+  margin: 0;
+}
+
+.proof-main {
+  max-width: 820px;
+  margin: 18px auto 48px;
+  padding: 0 24px;
+}
+
+.proof-intro {
+  margin-bottom: 20px;
+}
+
+.proof-intro h1 {
+  font-size: 28px;
+  margin-bottom: 6px;
+}
+
+.proof-card {
+  padding: 24px;
+  margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.proof-card h2 {
+  font-size: 20px;
+}
+
+.proof-card .cell-sub {
+  margin: 4px 0 16px;
+  overflow-wrap: anywhere;
+}
+
+.proof-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.proof-sides figure {
+  margin: 0;
+}
+
+.proof-sides figcaption {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+@media (max-width: 640px) {
+  .proof-sides {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  .proof-main {
+    margin: 0;
+    padding: 0;
+    max-width: none;
+  }
+
+  .proof-intro,
+  .proof-card > :not(.proof-sides),
+  .proof-sides figcaption {
+    display: none;
+  }
+
+  .proof-card,
+  .proof-sides,
+  .proof-sides figure {
+    display: block;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  .proof-sides .bcard {
+    width: 3.5in;
+    height: 2in;
+    border-radius: 0;
+    box-shadow: none;
+    break-after: page;
+  }
+
+  .proof-card:last-child figure:last-child .bcard {
+    break-after: auto;
+  }
+}

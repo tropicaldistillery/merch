@@ -1,4 +1,5 @@
 import { artwork } from "./art.js";
+import { cardBack, cardFront, fitCard } from "./card.js";
 import {
   $,
   clear,
@@ -16,17 +17,21 @@ import {
 } from "./core.js";
 import {
   BRANDS,
+  CARD_DEFAULTS,
+  CARD_FIELDS,
   CATEGORIES,
   COLOR_OPTIONS,
   PROFIT_PER_CASE_CENTS,
   formatMoney,
   imageFor,
+  isCardItem,
   itemImages,
   labelFor,
   optionText,
   orderRule,
   quantityProblem,
   quantityRuleText,
+  readCardDetails,
   roiFor,
 } from "./shared.js";
 
@@ -197,6 +202,137 @@ function requestDialog(item, { variantId = "", color = "" } = {}) {
   (variantSelect && !variantSelect.value ? variantSelect : quantity).focus();
 }
 
+/* --------------------------------------------------------- business cards */
+
+// The last details someone put on a card, so the next box starts from them.
+const CARD_KEY = `tdmerch:card-details:${user.email}`;
+
+function rememberedCard() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CARD_KEY) ?? "null");
+    if (saved && typeof saved === "object") return saved;
+  } catch {
+    // storage unavailable or unreadable: start from the account
+  }
+  return { name: user.name ?? "", email: user.email ?? "", ...CARD_DEFAULTS };
+}
+
+const CARD_HINTS = {
+  name: "Prints in capitals.",
+  phone: "Add a phone number, an email, or both.",
+};
+
+const CARD_INPUT_TYPES = { phone: "tel", email: "email" };
+const CARD_OPTIONAL = new Set(["title", "address", "website"]);
+
+// Filling in a card: the fields on one side, the proof on the other, updated
+// as they type. Adds `quantity` boxes to the order, or, given `line`, changes
+// the details on a card already in it.
+function cardDialog(item, { variant, quantity = 1, line = null, onAdded } = {}) {
+  const start = line?.card ?? rememberedCard();
+  const alertBox = el("div", { class: "form-alert", role: "alert", hidden: true });
+  const inputs = CARD_FIELDS.map((field) =>
+    el("input", {
+      id: `card-${field.id}`,
+      name: field.id,
+      type: CARD_INPUT_TYPES[field.id] ?? "text",
+      maxlength: String(field.max),
+      autocomplete: { name: "name", title: "organization-title", phone: "tel", email: "email", address: "street-address", website: "url" }[field.id],
+      value: start[field.id] ?? "",
+      spellcheck: field.id === "name" || field.id === "title" ? "true" : "false",
+    })
+  );
+  const fields = CARD_FIELDS.map((field, i) => {
+    const hintId = CARD_HINTS[field.id] ? `card-${field.id}-hint` : null;
+    if (hintId) inputs[i].setAttribute("aria-describedby", hintId);
+    return el(
+      "div",
+      { class: "field" },
+      el("label", { for: inputs[i].id }, field.label, CARD_OPTIONAL.has(field.id) ? el("span", { class: "optional", text: " (optional)" }) : null),
+      inputs[i],
+      hintId ? el("p", { class: "hint", id: hintId, text: CARD_HINTS[field.id] }) : null
+    );
+  });
+
+  const front = el("div", { class: "card-proof-side" });
+  const preview = el(
+    "div",
+    { class: "card-proof", "aria-label": "Proof" },
+    el("p", { class: "card-proof-label", text: "Front" }),
+    front,
+    el("p", { class: "card-proof-label", text: "Back" }),
+    el("div", { class: "card-proof-side" }, cardBack()),
+    el("p", { class: "hint", text: "Cards print exactly as shown here, so check the spelling." })
+  );
+
+  const read = () => readCardDetails(Object.fromEntries(inputs.map((input) => [input.name, input.value])));
+  let drawn = "";
+  function draw() {
+    const { value } = read();
+    const key = JSON.stringify(value);
+    if (key === drawn) return;
+    drawn = key;
+    const svg = cardFront(value);
+    clear(front, svg);
+    fitCard(svg);
+  }
+
+  const submitLabel = line ? "Save changes" : quantity === 1 ? "Add to order" : `Add ${quantity} to order`;
+  const form = el(
+    "form",
+    { class: "card-form", novalidate: true },
+    el("h2", { id: "card-dialog-title", text: line ? "Edit card details" : `Customize ${item.name}` }),
+    el("p", {
+      class: "muted",
+      text: line ? "Change anything below; the proof updates as you type." : "Fill in what goes on the card and check the proof before you add it.",
+    }),
+    alertBox,
+    el("div", { class: "card-form-fields" }, fields),
+    el(
+      "div",
+      { class: "dialog-actions" },
+      el("button", { type: "button", class: "btn btn-secondary", text: "Cancel", onclick: () => dialog.close() }),
+      el("button", { type: "submit", class: "btn", text: submitLabel })
+    )
+  );
+  const dialog = el("dialog", { class: "confirm card-dialog", "aria-labelledby": "card-dialog-title" }, el("div", { class: "card-dialog-body" }, form, preview));
+
+  form.addEventListener("input", draw);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearFieldErrors(form);
+    setAlert(alertBox, "");
+    const { value, errors } = read();
+    if (Object.keys(errors).length) {
+      showFieldErrors(form, errors);
+      return;
+    }
+    try {
+      localStorage.setItem(CARD_KEY, JSON.stringify(value));
+    } catch {
+      // storage unavailable: nothing to remember
+    }
+    dialog.close();
+    if (line) {
+      if (JSON.stringify(value) === JSON.stringify(line.card)) return;
+      cart.remove(line.itemId, line.variantId, line.color, line.card);
+      cart.add(line.itemId, line.variantId, line.quantity, line.color, value);
+      toast(`Updated the card for ${value.name}.`);
+      return;
+    }
+    cart.add(item.id, variant.id, quantity, "", value);
+    onAdded?.();
+    toast(`Added ${quantity} × ${item.name} for ${value.name}`, {
+      action: { label: "View order", onClick: () => openCart() },
+    });
+  });
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  draw();
+  inputs[0].focus();
+}
+
 /* --------------------------------------------------------------- catalog */
 
 function matches(item) {
@@ -332,7 +468,10 @@ function productCard(item) {
     : null;
 
   const stepper = quantityStepper({ value: stillNeeded(item), min: stillNeeded(item), max: orderRule(item).max, step: orderRule(item).step, label: `Quantity of ${item.name}` });
-  const addButton = el("button", { type: "button", class: "btn", text: "Add" });
+  // Business cards are filled in before they go in the order.
+  const customize = isCardItem(item);
+  const addLabel = customize ? "Customize" : "Add";
+  const addButton = el("button", { type: "button", class: "btn", text: addLabel });
   // Out of stock, or too few left for even the smallest order: the button
   // asks for it instead.
   let requesting = false;
@@ -361,7 +500,7 @@ function productCard(item) {
     // Too few allowed per order to make up the minimum counts as unavailable.
     const short = room > 0 && room < need;
     addButton.disabled = room === 0 || short;
-    addButton.textContent = short ? "Not enough left" : room === 0 && variant ? "Limit reached" : "Add";
+    addButton.textContent = short ? "Not enough left" : room === 0 && variant ? "Limit reached" : addLabel;
   }
 
   select?.addEventListener("change", () => {
@@ -397,6 +536,10 @@ function productCard(item) {
     const quantity = Math.min(stepper.value, room);
     if (quantity < stillNeeded(item)) {
       toast(`There aren't enough ${item.name} left to make up a full order quantity.`, { tone: "error" });
+      return;
+    }
+    if (customize) {
+      cardDialog(item, { variant, quantity, onAdded: () => stepper.setValue(stillNeeded(item)) });
       return;
     }
     cart.add(item.id, variant.id, quantity, color);
@@ -481,7 +624,7 @@ function renderGrid() {
 function cartLine(line) {
   const item = items.find((i) => i.id === line.itemId);
   const variant = item?.variants.find((v) => v.id === line.variantId);
-  const key = `${line.itemId}::${line.variantId}::${line.color}`;
+  const key = `${line.itemId}::${line.variantId}::${line.color}::${line.card ? JSON.stringify(line.card) : ""}`;
 
   if (!item || !variant) {
     return el(
@@ -498,7 +641,7 @@ function cartLine(line) {
           class: "link-button",
           text: "Remove",
           dataset: { role: "remove" },
-          onclick: () => cart.remove(line.itemId, line.variantId, line.color),
+          onclick: () => cart.remove(line.itemId, line.variantId, line.color, line.card),
         })
       )
     );
@@ -517,9 +660,10 @@ function cartLine(line) {
     step,
     max: Math.max(1, Math.max(limit, line.quantity)),
     label: `Quantity of ${item.name}`,
-    onChange: (n) => cart.set(item.id, variant.id, n, line.color),
+    onChange: (n) => cart.set(item.id, variant.id, n, line.color, line.card),
   });
-  const chosen = optionText({ color: line.color, variantLabel: variant.label });
+  const chosen = optionText({ color: line.color, variantLabel: variant.label, card: line.card });
+  const customize = isCardItem(item);
 
   return el(
     "div",
@@ -533,7 +677,25 @@ function cartLine(line) {
         class: "cart-line-sub",
         text: [chosen, item.unit, `${formatMoney(item.costCents)} each`].filter(Boolean).join(" · "),
       }),
-      !colorOk(item, line)
+      customize && line.card
+        ? el(
+            "p",
+            { class: "cart-line-card" },
+            [line.card.title, line.card.phone, line.card.email].filter(Boolean).join(" · "),
+            " ",
+            el("button", {
+              type: "button",
+              class: "link-button",
+              text: "Edit details",
+              dataset: { role: "edit" },
+              "aria-label": `Edit the card details for ${line.card.name}`,
+              onclick: () => cardDialog(item, { line }),
+            })
+          )
+        : null,
+      customize && !line.card
+        ? el("p", { class: "warn", text: "The card details are missing — remove it and customize it again." })
+        : !colorOk(item, line)
         ? el("p", { class: "warn", text: `No longer offered in ${line.color || "this color"} — remove it and choose another.` })
         : line.quantity > limit
         ? el("p", {
@@ -554,7 +716,7 @@ function cartLine(line) {
           text: "Remove",
           dataset: { role: "remove" },
           "aria-label": `Remove ${item.name}${chosen ? ` (${chosen})` : ""}`,
-          onclick: () => cart.remove(item.id, variant.id, line.color),
+          onclick: () => cart.remove(item.id, variant.id, line.color, line.card),
         })
       )
     )
@@ -660,6 +822,7 @@ function renderCart() {
     total += item.costCents * line.quantity;
     units += line.quantity;
     if (line.quantity > lineLimit(item, variant, line) || !colorOk(item, line)) blocked = true;
+    if (isCardItem(item) && !line.card) blocked = true;
     if (quantityProblem(item, cart.quantityOf(item.id))) blocked = true;
   }
   $("#cart-total").textContent = formatMoney(total);

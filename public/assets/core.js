@@ -95,7 +95,8 @@ export async function teamApi(path, options) {
 /* ------------------------------------------------------------------- cart */
 
 // The cart lives in this browser only, one per signed-in email, and holds just
-// ids and quantities. Names, costs and stock always come fresh from the server.
+// ids and quantities (and, for business cards, the details to print). Names,
+// costs and stock always come fresh from the server.
 export function createCart(email) {
   const key = `tdmerch:cart:v1:${email}`;
   const listeners = new Set();
@@ -106,7 +107,11 @@ export function createCart(email) {
       return Array.isArray(raw)
         ? raw
             .filter((l) => l && typeof l.itemId === "string" && Number.isInteger(l.quantity) && l.quantity > 0)
-            .map((l) => ({ ...l, color: typeof l.color === "string" ? l.color : "" }))
+            .map((l) => ({
+              ...l,
+              color: typeof l.color === "string" ? l.color : "",
+              card: l.card && typeof l.card === "object" ? l.card : null,
+            }))
         : [];
     } catch {
       return [];
@@ -124,9 +129,12 @@ export function createCart(email) {
     listeners.forEach((fn) => fn());
   }
 
-  // A line is one item in one option and one colour.
-  const same = (l, itemId, variantId, color) => l.itemId === itemId && l.variantId === variantId && l.color === color;
-  const find = (itemId, variantId, color) => lines.find((l) => same(l, itemId, variantId, color));
+  // A line is one item in one option and one colour (and for business cards,
+  // one person's details).
+  const cardKey = (card) => (card ? JSON.stringify(card) : "");
+  const same = (l, itemId, variantId, color, card) =>
+    l.itemId === itemId && l.variantId === variantId && l.color === color && cardKey(l.card) === cardKey(card);
+  const find = (itemId, variantId, color, card) => lines.find((l) => same(l, itemId, variantId, color, card));
 
   window.addEventListener("storage", (event) => {
     if (event.key === key) {
@@ -142,21 +150,21 @@ export function createCart(email) {
       lines
         .filter((l) => l.itemId === itemId && (variantId === undefined || l.variantId === variantId))
         .reduce((sum, l) => sum + l.quantity, 0),
-    add(itemId, variantId, quantity, color = "") {
-      const line = find(itemId, variantId, color);
+    add(itemId, variantId, quantity, color = "", card = null) {
+      const line = find(itemId, variantId, color, card);
       if (line) line.quantity += quantity;
-      else lines.push({ itemId, variantId, color, quantity });
+      else lines.push({ itemId, variantId, color, card, quantity });
       save();
     },
-    set(itemId, variantId, quantity, color = "") {
-      const line = find(itemId, variantId, color);
+    set(itemId, variantId, quantity, color = "", card = null) {
+      const line = find(itemId, variantId, color, card);
       if (!line) return;
       if (quantity <= 0) lines = lines.filter((l) => l !== line);
       else line.quantity = quantity;
       save();
     },
-    remove(itemId, variantId, color = "") {
-      lines = lines.filter((l) => !same(l, itemId, variantId, color));
+    remove(itemId, variantId, color = "", card = null) {
+      lines = lines.filter((l) => !same(l, itemId, variantId, color, card));
       save();
     },
     clear() {

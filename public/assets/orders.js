@@ -20,6 +20,7 @@ import {
   forwardOf,
   formatMoney,
   inHouseLines,
+  isCardItem,
   isDenied,
   labelFor,
   optionText,
@@ -354,7 +355,9 @@ async function reorder(order) {
     const variant = item?.variants.find((v) => v.id === line.variantId);
     const colors = item?.colors ?? [];
     const color = colors.includes(line.color) ? line.color : "";
-    if (!item || !variant || (colors.length && !color)) {
+    // A business card goes back in with the same details, to edit there.
+    const card = isCardItem(item) ? line.card ?? null : null;
+    if (!item || !variant || (colors.length && !color) || (isCardItem(item) && !card)) {
       skipped += 1;
       continue;
     }
@@ -366,7 +369,7 @@ async function reorder(order) {
     const want = Math.ceil(Math.max(line.quantity, min - have) / step) * step;
     const quantity = Math.min(want, room);
     if (quantity > 0 && have + quantity >= min) {
-      cart.add(item.id, variant.id, quantity, color);
+      cart.add(item.id, variant.id, quantity, color, card);
       added += 1;
     }
     if (quantity < line.quantity) skipped += 1;

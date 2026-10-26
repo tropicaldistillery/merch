@@ -433,6 +433,10 @@ describe("merch store over HTTP", () => {
     const page = await supplier("/ship");
     assert.equal(page.status, 200);
     assert.match(page.data, /assets\/ship\.js/);
+    // The business card proof is open to them too; it asks for its data with the same token.
+    const proof = await supplier("/business-card");
+    assert.equal(proof.status, 200);
+    assert.match(proof.data, /assets\/business-card\.js/);
     const view = await supplier("/api/ship/view", { method: "POST", body: { token } });
     assert.equal(view.status, 200, JSON.stringify(view.data));
     assert.equal(view.headers.get("cache-control"), "no-store");

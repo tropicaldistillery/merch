@@ -85,6 +85,7 @@ export const SEED_PHOTOS = {
   "twinp-sunday-funday-tee": one("twinp-sunday-funday-tee"),
   // printed on the back
   "jfh-game-day-tee": one("jfh-game-day-tee"),
+  "td-business-cards": one("td-business-cards"),
   "twinp-sunday-funday-hat": one("twinp-sunday-funday-hat"),
   "twinp-sunday-funday-tote": one("twinp-sunday-funday-tote"),
   "jfh-bar-mat": one("jfh-bar-mat"),
@@ -465,6 +466,14 @@ export const SEED_CATALOG = [
     brand: "tropical-distillery", category: "Print", tone: "palm", art: "sheets", unit: "Each",
     description: "Saddle-stitched booklet with the Tropical Distillery portfolio, J.F. Haden's liqueurs and Twin P Whiskey, to leave with accounts. Ordered in tens. Printed to order.",
     costCents: 250, minPerOrder: 10, maxPerOrder: 100, orderIncrement: 10, variants: single(null),
+  },
+  {
+    id: "td-business-cards", name: "Business Cards",
+    brand: "tropical-distillery", category: "Print", tone: "palm", art: "cards", unit: "Box of 250",
+    description: "Two-sided cards with your name, title and contact details over the tropical illustration and brand banner, and TROPICAL DISTILLERY on the navy back. Fill in your details and check the proof before you add them.",
+    // Printed to order for each person (see the customize dialog in the shop).
+    customize: "business-card",
+    costCents: 2500, minPerOrder: 1, maxPerOrder: 5, variants: single(null),
   },
   {
     id: "jfh-recipe-cards", name: "Signature Cocktail Recipe Cards",
@@ -865,6 +874,7 @@ const ADDED_ITEMS = [
   { flag: "talkers2026", id: "twinp-talker-legacy", after: "twinp-talker-logo" },
   { flag: "talkers2026", id: "twinp-talker-game-day", after: "twinp-talker-legacy" },
   { flag: "jfhGameDayTee", id: "jfh-game-day-tee", after: ["jfh-gradient-crop", "jfh-gradient-tee", "jfh-martini-tee"] },
+  { flag: "businessCards", id: "td-business-cards", after: ["td-booklet", "td-sell-sheets"] },
   ...SPIRITS.map(({ id }, i) => ({ flag: "spiritsDrop", id, after: i ? SPIRITS[i - 1].id : ["td-sample-cups", "td-tasting-kit"] })),
 ];
 
@@ -1585,6 +1595,8 @@ export function normalizeItem(input, { catalog, existing = null }) {
     variants,
     supplier,
     active: src.active !== false,
+    // Set on starter items (the business cards); the editor never changes it.
+    ...(existing?.customize ? { customize: existing.customize } : {}),
   };
 }
 
@@ -1608,6 +1620,7 @@ export function publicItem(item) {
     maxPerOrder: item.maxPerOrder,
     maxPerAccount: item.maxPerAccount ?? null,
     orderIncrement: item.orderIncrement ?? 1,
+    customize: item.customize ?? null,
     variants: item.variants.map((v) => ({ id: v.id, label: v.label, stock: v.stock })),
   };
 }

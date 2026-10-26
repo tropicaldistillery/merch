@@ -26,6 +26,7 @@ import {
   CARRIERS,
   PURPOSES,
   activeForwards,
+  cardText,
   forwardLines,
   formatMoney,
   inHouseLines,
@@ -489,7 +490,9 @@ function htmlBlock(b) {
         const rows = b.order.lines
           .map((l) => {
             const detail = [optionText(l), l.unit, `SKU ${l.sku}`].filter(Boolean).join(" · ");
-            return `<tr><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px;vertical-align:top;width:52px"><strong>${l.quantity}×</strong></td><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px"><div style="font-weight:600">${escapeHtml(l.name)}</div><div style="color:${MUTED};font-size:13px">${escapeHtml(detail)}</div></td></tr>`;
+            // Business cards: exactly what to print (the proof is on their shipping page).
+            const card = l.card ? `<div style="margin-top:3px;font-size:13px">Print: ${escapeHtml(cardText(l.card))}</div>` : "";
+            return `<tr><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px;vertical-align:top;width:52px"><strong>${l.quantity}×</strong></td><td style="padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px"><div style="font-weight:600">${escapeHtml(l.name)}</div><div style="color:${MUTED};font-size:13px">${escapeHtml(detail)}</div>${card}</td></tr>`;
           })
           .join("");
         return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;border-collapse:collapse">${rows}</table>`;
@@ -533,7 +536,9 @@ function textBlock(b) {
       return `${b.label}: ${b.text}`;
     case "items": {
       if (b.forFulfiller) {
-        return b.order.lines.map((l) => `${l.quantity} × ${l.name}${optionText(l) ? ` (${optionText(l)})` : ""}, SKU ${l.sku}`).join("\n");
+        return b.order.lines
+          .map((l) => `${l.quantity} × ${l.name}${optionText(l) ? ` (${optionText(l)})` : ""}, SKU ${l.sku}${l.card ? `\n    Print: ${cardText(l.card)}` : ""}`)
+          .join("\n");
       }
       const { units, cents, label } = itemTotals(b.order);
       return [

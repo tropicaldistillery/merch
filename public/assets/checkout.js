@@ -13,7 +13,7 @@ import {
   teamApi,
   wireHeader,
 } from "./core.js";
-import { ACCOUNT_TYPES, PURPOSES, US_STATES, formatMoney, imageFor } from "./shared.js";
+import { ACCOUNT_TYPES, PURPOSES, US_STATES, formatMoney, imageFor, optionText } from "./shared.js";
 
 const form = $("#checkout-form");
 const alertBox = $("#checkout-alert");
@@ -189,7 +189,7 @@ function renderSummary() {
           "div",
           { class: "line-info" },
           el("div", { class: "cell-main", text: item.name }),
-          el("div", { class: "cell-sub", text: [line.color, variant.label, `Qty ${line.quantity}`].filter(Boolean).join(" · ") })
+          el("div", { class: "cell-sub", text: [optionText({ color: line.color, variantLabel: variant.label, card: line.card }), `Qty ${line.quantity}`].filter(Boolean).join(" · ") })
         ),
         el("span", { text: formatMoney(item.costCents * line.quantity) })
       );

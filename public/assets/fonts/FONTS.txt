@@ -1,0 +1,13 @@
+Business card fonts (subsets, served with the store)
+
+card-name-jost-600.woff   Jost SemiBold
+  Copyright 2020 The Jost Project Authors (https://github.com/indestructible-type/Jost)
+
+card-text-inter-400.woff  Inter Regular
+  Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+
+Both are licensed under the SIL Open Font License, Version 1.1:
+https://openfontlicense.org/open-font-license-official-text/
+
+They stand in for the designer's LEMON MILK Medium and SF Pro Display,
+which can't be served on the web.

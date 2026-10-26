@@ -117,6 +117,17 @@ describe("order emails", () => {
     assert.ok(!text.includes("No reason was given"));
   });
 
+  it("tells whoever prints business cards exactly what goes on them", () => {
+    const card = { name: "Allie Mindermann", title: "COO", phone: "(954) 600-3005", email: "allie@tropicaldistillery.com" };
+    const { db, order } = placed({ lines: [{ itemId: "td-business-cards", variantId: "default", quantity: 1, card }] });
+    reviewOrder(db, order.id, { decisions: [{ status: "approved" }] }, by);
+    const { forward } = forwardItems(db, order.id, { toName: "Print Shop", toEmail: "orders@printshop.com", lines: [0] }, by);
+    const [sent] = orderEmails("forward.sent", order, { adminTo: ADMINS, baseUrl: BASE, forward });
+    const { text, html } = renderEmail(sent);
+    assert.match(text, /1 × Business Cards \(for Allie Mindermann\), SKU TD-PRI-\d{3}\n {4}Print: Allie Mindermann · COO · \(954\) 600-3005 · allie@tropicaldistillery\.com/);
+    assert.match(html, /Print: Allie Mindermann · COO/);
+  });
+
   it("emails whoever items are forwarded to, and tells the requester when they ship", () => {
     const { db, order } = placed({
       rush: true,
