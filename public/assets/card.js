@@ -40,11 +40,14 @@ const CONTACT = {
   address: { size: 64, spacing: "0.01em", gap: 71 },
   website: { size: 64, spacing: "0.01em", gap: 71 },
 };
-// The favourite cocktail sits in the bottom right corner, level with the
-// last contact line, under a small FAVORITE COCKTAIL label: in capitals in
-// the name's font, so it answers the name on the left.
-const COCKTAIL = { size: 70, font: "Card Name", spacing: "-0.01em", maxWidth: 900 };
-const COCKTAIL_LABEL = { size: 40, spacing: "0.16em", above: 80 };
+// The favourite cocktail has its own area in the bottom right corner: a
+// white panel outlined in the gradient, with a small FAVORITE COCKTAIL label
+// over the drink in capitals in the name's font, on two lines when it's long.
+// Contact lines beside the panel keep clear of it.
+const PANEL = { left: 1430, right: RIGHT, bottom: 1120, radius: 36, stroke: 6, pad: 40, clear: 60 };
+const COCKTAIL = { size: 62, font: "Card Name", spacing: "-0.01em", lineGap: 70 };
+const COCKTAIL_LABEL = { size: 36, spacing: "0.16em" };
+const PANEL_CENTER = (PANEL.left + PANEL.right) / 2;
 
 function node(tag, attrs = {}, text) {
   const n = document.createElementNS(SVG, tag);
@@ -53,13 +56,13 @@ function node(tag, attrs = {}, text) {
   return n;
 }
 
-function line(text, { x = LEFT, y, size, font = "Card Text", spacing = "0", upper = false, fill = INK, right = false }) {
+function line(text, { x = LEFT, y, size, font = "Card Text", spacing = "0", upper = false, fill = INK, anchor = "start" }) {
   return node(
     "text",
     {
-      x: right ? RIGHT : x,
+      x,
       y,
-      ...(right ? { "text-anchor": "end", "data-right": "" } : {}),
+      ...(anchor === "start" ? {} : { "text-anchor": anchor }),
       "font-family": `"${font}", Jost, Futura, system-ui, sans-serif`,
       "font-size": size,
       "letter-spacing": spacing,
@@ -114,12 +117,32 @@ export function cardFront(details = {}, { print = false, label = "", accent = AC
     first = false;
   }
   if (d.cocktail) {
-    svg.append(
-      line("Favorite cocktail", { y: y - COCKTAIL_LABEL.above, size: COCKTAIL_LABEL.size, spacing: COCKTAIL_LABEL.spacing, upper: true, right: true }),
-      line(d.cocktail, { y, size: COCKTAIL.size, font: COCKTAIL.font, spacing: COCKTAIL.spacing, upper: true, right: true })
+    const panel = node("g", { "data-cocktail": d.cocktail.toUpperCase() });
+    const name = { x: PANEL_CENTER, size: COCKTAIL.size, font: COCKTAIL.font, spacing: COCKTAIL.spacing, anchor: "middle" };
+    panel.append(
+      node("rect", { x: PANEL.left, width: PANEL.right - PANEL.left, rx: PANEL.radius, fill: "#ffffff", "fill-opacity": 0.92, stroke: paint, "stroke-width": PANEL.stroke }),
+      line("Favorite cocktail", { x: PANEL_CENTER, size: COCKTAIL_LABEL.size, spacing: COCKTAIL_LABEL.spacing, upper: true, anchor: "middle" }),
+      line(d.cocktail.toUpperCase(), name),
+      line("", name)
     );
+    placeCocktail(panel, [d.cocktail.toUpperCase()]);
+    svg.append(panel);
   }
   return svg;
+}
+
+/** Lay out the cocktail panel for one or two lines of drink, from the bottom up. */
+function placeCocktail(panel, lines) {
+  const [rect, label, first, second] = panel.children;
+  const top = PANEL.bottom - (lines.length === 2 ? 262 : 196);
+  rect.setAttribute("y", top);
+  rect.setAttribute("height", PANEL.bottom - top);
+  label.setAttribute("y", top + 72);
+  first.setAttribute("y", top + 150);
+  first.textContent = lines[0];
+  second.setAttribute("y", top + 150 + COCKTAIL.lineGap);
+  second.textContent = lines[1] ?? "";
+  return top;
 }
 
 /** The fixed navy back: TROPICAL DISTILLERY, crafted in Miami. */
@@ -148,15 +171,33 @@ export async function fitCard(svg) {
   } catch {
     // fall back to whatever font is there
   }
-  const left = [...svg.querySelectorAll("text:not([data-right])")];
-  const right = [...svg.querySelectorAll("text[data-right]")];
-  for (const text of left) shrinkTo(text, MAX_TEXT_WIDTH);
-  if (!right.length) return;
-  // The cocktail and its label each keep clear of the contact line on their row.
-  for (const text of right) {
-    const y = Number(text.getAttribute("y"));
-    const beside = left.filter((t) => Math.abs(Number(t.getAttribute("y")) - y) < 45).map((t) => Number(t.getAttribute("x")) + t.getComputedTextLength());
-    shrinkTo(text, Math.min(COCKTAIL.maxWidth, RIGHT - Math.max(LEFT, ...beside) - 70));
+  const panel = svg.querySelector("[data-cocktail]");
+  let top = Infinity;
+  if (panel) {
+    // The drink on one line if it fits the panel, or split across two
+    // nearest the middle; a single long word shrinks to fit.
+    const inner = PANEL.right - PANEL.left - 2 * PANEL.pad;
+    const [, label, first, second] = panel.children;
+    const whole = panel.dataset.cocktail;
+    top = placeCocktail(panel, [whole]);
+    shrinkTo(first, Infinity);
+    const words = whole.split(" ");
+    if (first.getComputedTextLength() > inner && words.length > 1) {
+      const diff = (at) => Math.abs(words.slice(0, at).join(" ").length - words.slice(at).join(" ").length);
+      let split = 1;
+      for (let i = 2; i < words.length; i += 1) if (diff(i) < diff(split)) split = i;
+      top = placeCocktail(panel, [words.slice(0, split).join(" "), words.slice(split).join(" ")]);
+    }
+    for (const text of [label, first, second]) shrinkTo(text, inner);
+    // both lines of the drink at the same size
+    const size = Math.min(Number(first.getAttribute("font-size")), Number(second.getAttribute("font-size")));
+    for (const text of [first, second]) text.setAttribute("font-size", size);
+  }
+  // Every other line fits the card, and keeps clear of the panel beside it.
+  for (const text of svg.querySelectorAll("text")) {
+    if (panel?.contains(text)) continue;
+    const besidePanel = Number(text.getAttribute("y")) > top - 15;
+    shrinkTo(text, besidePanel ? PANEL.left - PANEL.clear - Number(text.getAttribute("x")) : MAX_TEXT_WIDTH);
   }
 }
 
