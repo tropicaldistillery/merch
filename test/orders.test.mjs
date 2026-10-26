@@ -922,7 +922,9 @@ describe("business cards", () => {
     assert.deepEqual(Object.keys(readCardDetails({ name: " ", title: "COO" }).errors), ["name", "phone"]);
     assert.deepEqual(readCardDetails({ name: "Sam", email: "sam@" }).errors, { email: "Enter an email like name@tropicaldistillery.com." });
     assert.deepEqual(readCardDetails({ name: "Sam", phone: "305 555 0100" }).errors, {}, "a phone number is enough");
-    assert.equal(cardText(value), `Allie Mindermann · ${"x".repeat(60)} · (954) 600-3005 · allie@tropicaldistillery.com · 2141 NW 10th Ave, Miami, FL 33127 · tropicaldistillery.com`);
+    assert.equal(cardText(value), `Allie Mindermann · ${"x".repeat(60)} · (954) 600-3005 · allie@tropicaldistillery.com · 2141 NW 10th Ave, Miami, FL 33127 · http://www.tropicaldistillery.com`, "websites print as http://www.…");
+    assert.equal(readCardDetails({ name: "Sam", phone: "305", website: "https://JFHadens.com/" }).value.website, "https://www.jfhadens.com");
+    assert.equal(readCardDetails({ name: "Sam", phone: "305", website: "shop.tropicaldistillery.com" }).value.website, "http://shop.tropicaldistillery.com");
   });
 
   it("keeps each person's cards on their own line, with their details", () => {

@@ -26,6 +26,7 @@ import {
   PROFIT_PER_CASE_CENTS,
   cardHolderKey,
   formatMoney,
+  formatWebsite,
   imageFor,
   isCardItem,
   itemImages,
@@ -256,7 +257,7 @@ function cardDialog(item, { variant, quantity = 1, line = null, onAdded } = {}) 
       type: CARD_INPUT_TYPES[field.id] ?? "text",
       maxlength: String(field.max),
       autocomplete: { name: "name", title: "organization-title", phone: "tel", email: "email", address: "street-address", website: "url" }[field.id],
-      value: start[field.id] ?? "",
+      value: field.id === "website" ? formatWebsite(start.website) : start[field.id] ?? "",
       spellcheck: field.id === "name" || field.id === "title" ? "true" : "false",
     })
   );
@@ -316,6 +317,10 @@ function cardDialog(item, { variant, quantity = 1, line = null, onAdded } = {}) 
   const dialog = el("dialog", { class: "confirm card-dialog", "aria-labelledby": "card-dialog-title" }, el("div", { class: "card-dialog-body" }, form, preview));
 
   form.addEventListener("input", draw);
+  // Websites print as http://www.…: show it that way once they've typed it.
+  inputs.find((input) => input.name === "website").addEventListener("change", (event) => {
+    event.target.value = formatWebsite(event.target.value);
+  });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     clearFieldErrors(form);

@@ -4075,7 +4075,7 @@ dialog.password-dialog .field {
 
 /* ------------------------------------------------------ business cards */
 
-/* Stand-ins for the PSD's LEMON MILK and SF Pro Display (see card.js). */
+/* Jost, for the PSD's LEMON MILK name and the details (see card.js). */
 @font-face {
   font-family: "Card Name";
   src: url("/assets/fonts/card-name-jost-600.woff") format("woff");
@@ -4085,7 +4085,7 @@ dialog.password-dialog .field {
 
 @font-face {
   font-family: "Card Text";
-  src: url("/assets/fonts/card-text-inter-400.woff") format("woff");
+  src: url("/assets/fonts/card-text-jost-400.woff") format("woff");
   font-display: block;
 }
 

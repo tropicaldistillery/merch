@@ -65,8 +65,22 @@ export const CARD_FIELDS = [
 
 export const CARD_DEFAULTS = {
   address: "2141 NW 10th Ave, Miami, FL 33127",
-  website: "tropicaldistillery.com",
+  website: "http://www.tropicaldistillery.com",
 };
+
+/**
+ * A website the way the cards print it: "tropicaldistillery.com" or
+ * "www.tropicaldistillery.com" becomes "http://www.tropicaldistillery.com".
+ * A scheme someone typed (https) is kept, and so is any other subdomain.
+ */
+export function formatWebsite(raw) {
+  const text = String(raw ?? "").trim();
+  const match = /^(?:(https?):\/\/)?(www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)(\/\S*)?$/i.exec(text);
+  if (!match) return text;
+  const [, scheme = "http", www, host, path = ""] = match;
+  const bare = host.split(".").length === 2;
+  return `${scheme.toLowerCase()}://${www || bare ? "www." : ""}${host.toLowerCase()}${path === "/" ? "" : path}`;
+}
 
 export function isCardItem(item) {
   return item?.customize === "business-card";
@@ -90,6 +104,7 @@ export function readCardDetails(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
   const value = {};
   for (const field of CARD_FIELDS) value[field.id] = String(src[field.id] ?? "").replace(/\s+/g, " ").trim().slice(0, field.max);
+  value.website = formatWebsite(value.website).slice(0, CARD_FIELDS.find((f) => f.id === "website").max);
   const errors = {};
   if (!value.name) errors.name = "Enter the name for the card.";
   if (!value.phone && !value.email) errors.phone = "Add a phone number or an email.";

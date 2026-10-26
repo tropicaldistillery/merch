@@ -15,7 +15,7 @@ const PT = 72 / DPI;
 
 const FONTS = [
   { family: "Card Name", url: "/assets/fonts/card-name-jost-600.woff" },
-  { family: "Card Text", url: "/assets/fonts/card-text-inter-400.woff" },
+  { family: "Card Text", url: "/assets/fonts/card-text-jost-400.woff" },
 ];
 
 function loadImage(src) {

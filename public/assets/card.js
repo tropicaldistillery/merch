@@ -3,9 +3,12 @@
 // navy back. The same drawing is the shop's live preview and the print
 // proof, so what someone sees is what goes to the printer.
 //
-// The PSD sets the name in LEMON MILK Medium and the rest in SF Pro Display;
-// those can't be served on the web, so the card uses Jost SemiBold and Inter (both
-// open-licensed, hosted with the store) at the PSD's sizes and positions.
+// The PSD sets the name in LEMON MILK Medium and the rest in SF Pro Display.
+// LEMON MILK can't be served on the web, so the name is in Jost SemiBold; the
+// details are in Jost Regular too, the geometric type of the brand (the
+// TROPICAL DISTILLERY lettering and tagline on the back), rather than SF Pro.
+// Both are open-licensed and hosted with the store; the lines sit where the
+// PSD has them.
 
 import { CARD_FIELDS } from "./shared.js";
 
@@ -18,16 +21,18 @@ const LEFT = 100;
 const MAX_TEXT_WIDTH = 1900;
 const INK = "#3b3b3b";
 
-// Each line's baseline, size and font, measured off the PSD. The contact
-// lines stack from the phone's baseline, so a blank one leaves no gap.
+// Each line's baseline, size and font, from the PSD. The details are a size
+// up from the PSD's (Jost's lowercase is shorter than SF Pro's), so they read
+// the same. The contact lines stack from the phone's baseline, so a blank one
+// leaves no gap.
 const NAME = { x: 103, y: 656, size: 101, font: "Card Name", spacing: "-0.028em" };
-const TITLE = { y: 723, size: 63, font: "Card Text", spacing: "-0.019em" };
-const CONTACT_TOP = 864;
+const TITLE = { y: 726, size: 70, font: "Card Text", spacing: "0.01em" };
+const CONTACT_TOP = 866;
 const CONTACT = {
-  phone: { size: 72, spacing: "0.005em", gap: 70 },
-  email: { size: 57, spacing: "-0.023em", gap: 70 },
-  address: { size: 57, spacing: "-0.006em", gap: 71 },
-  website: { size: 57, spacing: "-0.025em", gap: 70 },
+  phone: { size: 80, spacing: "0.01em", gap: 70 },
+  email: { size: 64, spacing: "0.01em", gap: 72 },
+  address: { size: 64, spacing: "0.01em", gap: 71 },
+  website: { size: 64, spacing: "0.01em", gap: 71 },
 };
 
 function node(tag, attrs = {}, text) {
@@ -43,7 +48,7 @@ function line(text, { x = LEFT, y, size, font = "Card Text", spacing = "0", uppe
     {
       x,
       y,
-      "font-family": `"${font}", ${font === "Card Name" ? "Jost, Futura" : "Inter"}, system-ui, sans-serif`,
+      "font-family": `"${font}", Jost, Futura, system-ui, sans-serif`,
       "font-size": size,
       "letter-spacing": spacing,
       fill: INK,
