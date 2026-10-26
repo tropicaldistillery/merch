@@ -20,6 +20,9 @@ export const CARD_HEIGHT = 1200;
 const LEFT = 100;
 const MAX_TEXT_WIDTH = 1900;
 const INK = "#3b3b3b";
+// The title takes the banner's colours, pink first: pink, purple, blue.
+const TITLE_GRADIENT = ["#c94486", "#784c7f", "#499fce"];
+let gradients = 0;
 
 // Each line's baseline, size and font, from the PSD. The details are a size
 // up from the PSD's (Jost's lowercase is shorter than SF Pro's), so they read
@@ -42,7 +45,7 @@ function node(tag, attrs = {}, text) {
   return n;
 }
 
-function line(text, { x = LEFT, y, size, font = "Card Text", spacing = "0", upper = false }) {
+function line(text, { x = LEFT, y, size, font = "Card Text", spacing = "0", upper = false, fill = INK }) {
   return node(
     "text",
     {
@@ -51,7 +54,7 @@ function line(text, { x = LEFT, y, size, font = "Card Text", spacing = "0", uppe
       "font-family": `"${font}", Jost, Futura, system-ui, sans-serif`,
       "font-size": size,
       "letter-spacing": spacing,
-      fill: INK,
+      fill,
       // Unhinted, so a line measures the same at any size it's shown at.
       "text-rendering": "geometricPrecision",
       "data-size": size,
@@ -80,7 +83,14 @@ export function cardFront(details = {}, { print = false, label = "" } = {}) {
     })
   );
   if (d.name) svg.append(line(d.name, { ...NAME, upper: true }));
-  if (d.title) svg.append(line(d.title, TITLE));
+  if (d.title) {
+    // A gradient across the title's own width; ids are unique for pages with several cards.
+    const id = `bcard-title-${(gradients += 1)}`;
+    const gradient = node("linearGradient", { id, x1: 0, y1: 0, x2: 1, y2: 0 });
+    TITLE_GRADIENT.forEach((color, i) => gradient.append(node("stop", { offset: i / (TITLE_GRADIENT.length - 1), "stop-color": color })));
+    svg.append(node("defs", {}, undefined), line(d.title, { ...TITLE, fill: `url(#${id})` }));
+    svg.querySelector("defs").append(gradient);
+  }
   let y = CONTACT_TOP;
   let first = true;
   for (const id of ["phone", "email", "address", "website"]) {
