@@ -64,22 +64,21 @@ export const CARD_FIELDS = [
   { id: "cocktail", label: "Favorite cocktail", max: 40 },
 ];
 
-// The favorite cocktails to pick from on a business card, with the J.F.
-// Haden's liqueur each is made with (left out where it isn't set); anything
-// else can be typed in.
+// The favorite cocktails to pick from on a business card, with what each is
+// made with; anything else can be typed in.
 export const CARD_COCKTAILS = [
-  { name: "Pouncey Special", liqueur: null },
-  { name: "Espresso Martini", liqueur: "Espresso Liqueur" },
-  { name: "Key Lime Pie Martini", liqueur: "Key Lime Pie Liqueur" },
-  { name: "Key Lime Pie Colada", liqueur: "Key Lime Pie Liqueur" },
-  { name: "Lychee Martini", liqueur: "Lychee Liqueur" },
-  { name: "Orange Martini", liqueur: "Orange Liqueur" },
-  { name: "Spicy Mango Margarita", liqueur: "Mango Liqueur" },
-  { name: "Skinny Margarita", liqueur: null },
-  { name: "Mango Mule", liqueur: "Mango Liqueur" },
-  { name: "Cosmopolitan", liqueur: "Orange Liqueur" },
-  { name: "Citrus Drop Martini", liqueur: "Citrus Liqueur" },
-  { name: "Iced Coffee", liqueur: "Espresso Liqueur" },
+  { name: "Pouncey Special", madeWith: "Twin P Whiskey" },
+  { name: "Espresso Martini", madeWith: "J.F. Haden's Espresso Liqueur" },
+  { name: "Key Lime Pie Martini", madeWith: "J.F. Haden's Key Lime Pie Liqueur" },
+  { name: "Key Lime Pie Colada", madeWith: "J.F. Haden's Key Lime Pie Liqueur" },
+  { name: "Lychee Martini", madeWith: "J.F. Haden's Lychee Liqueur" },
+  { name: "Orange Martini", madeWith: "J.F. Haden's Orange Liqueur" },
+  { name: "Spicy Mango Margarita", madeWith: "J.F. Haden's Mango Liqueur" },
+  { name: "Skinny Margarita", madeWith: "Casa Loco Tequila and J.F. Haden's Citrus Liqueur" },
+  { name: "Mango Mule", madeWith: "J.F. Haden's Mango Liqueur" },
+  { name: "Cosmopolitan", madeWith: "J.F. Haden's Orange Liqueur" },
+  { name: "Citrus Drop Martini", madeWith: "J.F. Haden's Citrus Liqueur" },
+  { name: "Iced Coffee", madeWith: "J.F. Haden's Espresso Liqueur" },
 ];
 
 export const CARD_DEFAULTS = {
