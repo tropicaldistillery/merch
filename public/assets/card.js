@@ -124,7 +124,7 @@ const WORDMARK = [
 ];
 const TAGLINE = { text: "CRAFTED IN MIAMI · OWNED BY THE POUNCEY TWINS", x: 114, y: 900, size: 62, spacing: "0.06em" };
 export const INSTAGRAM = ["@j.f.hadens", "@twinpwhiskey", "@tropicaldistillery"];
-const HANDLES = { x: 200, y: 1030, size: 58, spacing: "0.01em", gap: 34 };
+const HANDLES = { x: 200, y: 1100, size: 58, spacing: "0.01em", gap: 34 };
 const GLYPH = { x: 112, size: 58 };
 
 // Instagram's glyph, outlined on a 24-unit grid.
