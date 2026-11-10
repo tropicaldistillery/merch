@@ -2,8 +2,9 @@
 // Vistaprint's: one PDF per side at their full-bleed size for a 3.5 x 2 in
 // card (3.61 x 2.11 in: the 3.5 x 2 in card plus 0.055 in all round, which is
 // trimmed off), at 600 dpi. They're made here in the browser from the same
-// drawing as the proof. The artwork has no bleed of its own, so its edges
-// are mirrored out into it; the text stays well inside the safe area.
+// drawing as the proof: each side's artwork with its type over it. The
+// artwork has no bleed of its own, so its edges are mirrored out into it; the
+// type stays well inside the safe area.
 
 import { CARD_HEIGHT, CARD_WIDTH, cardBack, cardFront, fitCard } from "./card.js";
 
@@ -50,9 +51,9 @@ function embeddedFonts() {
   return fontCss;
 }
 
-// The card's text, fitted exactly as on the proof, as an image to draw.
-async function textLayer(details) {
-  const svg = cardFront(details, { print: true });
+// A side's type and icons, fitted exactly as on the proof, as an image to
+// draw over its artwork.
+async function textLayer(svg) {
   svg.querySelector("image")?.remove();
   svg.setAttribute("width", CARD_WIDTH);
   svg.setAttribute("height", CARD_HEIGHT);
@@ -151,15 +152,16 @@ export function jpegPdf(jpeg, { width, height, bleed, title }) {
 
 /** One side of a card, `front` or `back`, as a print-ready PDF. */
 export async function cardSidePdf(details, side) {
-  const art = (side === "front" ? cardFront({}, { print: true }) : cardBack({ print: true })).querySelector("image").getAttribute("href");
-  const [background, text] = await Promise.all([loadImage(art), side === "front" ? textLayer(details) : null]);
+  const svg = side === "front" ? cardFront(details, { print: true }) : cardBack({ print: true });
+  const art = svg.querySelector("image").getAttribute("href");
+  const [background, text] = await Promise.all([loadImage(art), textLayer(svg)]);
   const canvas = document.createElement("canvas");
   canvas.width = FULL_WIDTH;
   canvas.height = FULL_HEIGHT;
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingQuality = "high";
   drawArtwork(ctx, background);
-  if (text) ctx.drawImage(text, BLEED, BLEED, CARD_WIDTH, CARD_HEIGHT);
+  ctx.drawImage(text, BLEED, BLEED, CARD_WIDTH, CARD_HEIGHT);
   const jpeg = await canvasJpeg(canvas);
   return jpegPdf(jpeg, { width: FULL_WIDTH, height: FULL_HEIGHT, bleed: BLEED, title: `Business card for ${details.name}, ${side}` });
 }

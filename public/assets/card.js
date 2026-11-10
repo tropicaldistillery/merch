@@ -114,9 +114,35 @@ export function cardFront(details = {}, { print = false, label = "" } = {}) {
   return svg;
 }
 
-/** The fixed navy back: TROPICAL DISTILLERY, crafted in Miami. */
+// The back: TROPICAL DISTILLERY in two lines of Jost the same width, the
+// tagline in pink, and the Instagram handles along the bottom, over the navy
+// artwork with the palm in the bottom right corner.
+const PINK = "#ef6aa8";
+const WORDMARK = [
+  { text: "TROPICAL", y: 440, size: 428.4 },
+  { text: "DISTILLERY", y: 790, size: 395.5 },
+];
+const TAGLINE = { text: "CRAFTED IN MIAMI · OWNED BY THE POUNCEY TWINS", x: 114, y: 900, size: 62, spacing: "0.06em" };
+export const INSTAGRAM = ["@j.f.hadens", "@twinpwhiskey", "@tropicaldistillery"];
+const HANDLES = { x: 200, y: 1030, size: 58, spacing: "0.01em", gap: 34 };
+const GLYPH = { x: 112, size: 58 };
+
+// Instagram's glyph, outlined on a 24-unit grid.
+function instagramGlyph() {
+  const top = HANDLES.y - 0.36 * HANDLES.size - GLYPH.size / 2;
+  const g = node("g", { fill: "none", stroke: PINK, "stroke-width": 2, transform: `translate(${GLYPH.x} ${top.toFixed(1)}) scale(${GLYPH.size / 24})`, "aria-hidden": "true" });
+  g.append(node("rect", { x: 2.5, y: 2.5, width: 19, height: 19, rx: 5.5 }), node("circle", { cx: 12, cy: 12, r: 4.6 }), node("circle", { cx: 17.4, cy: 6.6, r: 1.25, fill: PINK, stroke: "none" }));
+  return g;
+}
+
+/** The back, the same on every card. `print` uses the full-resolution artwork. */
 export function cardBack({ print = false } = {}) {
-  const svg = node("svg", { viewBox: `0 0 ${CARD_WIDTH} ${CARD_HEIGHT}`, class: "bcard bcard-back", role: "img", "aria-label": "Back of the card: Tropical Distillery, crafted in Miami, owned by the Pouncey twins" });
+  const svg = node("svg", {
+    viewBox: `0 0 ${CARD_WIDTH} ${CARD_HEIGHT}`,
+    class: "bcard bcard-back",
+    role: "img",
+    "aria-label": `Back of the card: Tropical Distillery, crafted in Miami, owned by the Pouncey twins. On Instagram: ${INSTAGRAM.join(", ")}`,
+  });
   svg.append(
     node("image", {
       href: `/assets/business-card/${print ? "back" : "back-preview"}.jpg`,
@@ -127,6 +153,21 @@ export function cardBack({ print = false } = {}) {
       preserveAspectRatio: "none",
     })
   );
+  for (const word of WORDMARK) {
+    // a touch of outline makes Jost Regular as heavy as the old lettering
+    const text = line(word.text, { x: LEFT - 2, y: word.y, size: word.size, fill: "#ffffff" });
+    text.setAttribute("stroke", "#ffffff");
+    text.setAttribute("stroke-width", 5);
+    text.setAttribute("stroke-linejoin", "round");
+    svg.append(text);
+  }
+  svg.append(line(TAGLINE.text, { ...TAGLINE, fill: PINK }), instagramGlyph());
+  const handles = line("", { ...HANDLES, fill: "#ffffff" });
+  INSTAGRAM.forEach((handle, i) => {
+    if (i) handles.append(node("tspan", { dx: HANDLES.gap, fill: PINK }, "·"));
+    handles.append(node("tspan", i ? { dx: HANDLES.gap } : {}, handle));
+  });
+  svg.append(handles);
   return svg;
 }
 
