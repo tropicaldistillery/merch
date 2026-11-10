@@ -1,7 +1,8 @@
 Business card fonts (served with the store)
 
-card-name-jost-600.woff   Jost SemiBold, for the name
-card-text-jost-400.woff   Jost Regular, for the title and contact details
+card-name-jost-700.woff   Jost Bold, for the name
+card-bold-jost-600.woff   Jost SemiBold, for the email
+card-text-jost-400.woff   Jost Regular, for the title and the other contact details
   Copyright 2020 The Jost Project Authors (https://github.com/indestructible-type/Jost)
 
 Licensed under the SIL Open Font License, Version 1.1:

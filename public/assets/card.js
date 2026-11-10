@@ -3,12 +3,12 @@
 // navy back. The same drawing is the shop's live preview and the print
 // proof, so what someone sees is what goes to the printer.
 //
-// The PSD sets the name in LEMON MILK Medium and the rest in SF Pro Display.
-// LEMON MILK can't be served on the web, so the name is in Jost SemiBold; the
-// details are in Jost Regular too, the geometric type of the brand (the
-// TROPICAL DISTILLERY lettering and tagline on the back), rather than SF Pro.
-// Both are open-licensed and hosted with the store; the lines sit where the
-// PSD has them.
+// The name is in capitals in Jost Bold, the title under it in Jost Regular,
+// and each contact line has its icon beside it in blue: phone, email (in
+// Jost SemiBold, so it stands out), address and website. The PSD set the
+// name in LEMON MILK, which can't be served on the web; Jost is the geometric
+// type of the brand (the TROPICAL DISTILLERY lettering on the back), open-
+// licensed and hosted with the store.
 
 import { CARD_FIELDS } from "./shared.js";
 
@@ -17,38 +17,37 @@ export { CARD_DEFAULTS, CARD_FIELDS } from "./shared.js";
 const SVG = "http://www.w3.org/2000/svg";
 export const CARD_WIDTH = 2100;
 export const CARD_HEIGHT = 1200;
-const LEFT = 100;
+const LEFT = 112;
 const RIGHT = 2000;
-const MAX_TEXT_WIDTH = 1900;
-const INK = "#3b3b3b";
-// The banner's colours, pink first: pink, purple, blue. They fill the title
-// (or the name: see ACCENT).
-const GRADIENT = ["#c94486", "#784c7f", "#499fce"];
-export const ACCENT = "title";
-let gradients = 0;
+const INK = "#222222";
+const ICON_BLUE = "#1b4f9c";
 
-// Each line's baseline, size and font, from the PSD. The details are a size
-// up from the PSD's (Jost's lowercase is shorter than SF Pro's), so they read
-// the same. The contact lines stack from the phone's baseline, so a blank one
-// leaves no gap.
-const NAME = { x: 103, y: 656, size: 101, font: "Card Name", spacing: "-0.028em" };
-const TITLE = { y: 726, size: 70, font: "Card Text", spacing: "0.01em" };
-const CONTACT_TOP = 866;
+// Each line's baseline, size and font. The contact lines stack from the
+// first one's baseline, so a blank one leaves no gap.
+const NAME = { y: 662, size: 110, font: "Card Name", spacing: "0.005em" };
+const TITLE = { y: 738, size: 66, font: "Card Text", spacing: "0.005em" };
+const CONTACT_TOP = 868;
+const CONTACT_GAP = 86;
+const CONTACT_X = 232;
 const CONTACT = {
-  phone: { size: 80, spacing: "0.01em", gap: 70 },
-  // the email in the name's bold weight, so it stands out
-  email: { size: 62, font: "Card Name", spacing: "0", gap: 72 },
-  address: { size: 64, spacing: "0.01em", gap: 71 },
-  website: { size: 64, spacing: "0.01em", gap: 71 },
+  phone: { size: 58, spacing: "0.01em" },
+  email: { size: 56, font: "Card Bold", spacing: "0" },
+  address: { size: 58, spacing: "0.01em" },
+  website: { size: 58, spacing: "0.01em" },
 };
-// The favourite cocktail has its own area in the bottom right corner: a
-// white panel outlined in the gradient, with a small FAVORITE COCKTAIL label
-// over the drink in capitals in the name's font, on two lines when it's long.
-// Contact lines beside the panel keep clear of it.
-const PANEL = { left: 1430, right: RIGHT, bottom: 1120, radius: 36, stroke: 6, pad: 40, clear: 60 };
-const COCKTAIL = { size: 62, font: "Card Name", spacing: "-0.01em", lineGap: 70 };
-const COCKTAIL_LABEL = { size: 36, spacing: "0.16em" };
-const PANEL_CENTER = (PANEL.left + PANEL.right) / 2;
+
+// Material icons (Apache License 2.0), drawn on a 24-unit grid; each sits
+// centred on its line's lowercase letters.
+const ICON_SIZE = 54;
+const ICON_CENTER = 150;
+const ICONS = {
+  phone:
+    "M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z",
+  email: "M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8l8 5 8-5v10zm-8-7L4 6h16l-8 5z",
+  address: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
+  website:
+    "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z",
+};
 
 function node(tag, attrs = {}, text) {
   const n = document.createElementNS(SVG, tag);
@@ -57,13 +56,12 @@ function node(tag, attrs = {}, text) {
   return n;
 }
 
-function line(text, { x = LEFT, y, size, font = "Card Text", spacing = "0", upper = false, fill = INK, anchor = "start" }) {
+function line(text, { x = LEFT, y, size, font = "Card Text", spacing = "0", upper = false, fill = INK }) {
   return node(
     "text",
     {
       x,
       y,
-      ...(anchor === "start" ? {} : { "text-anchor": anchor }),
       "font-family": `"${font}", Jost, Futura, system-ui, sans-serif`,
       "font-size": size,
       "letter-spacing": spacing,
@@ -76,11 +74,18 @@ function line(text, { x = LEFT, y, size, font = "Card Text", spacing = "0", uppe
   );
 }
 
-/**
- * The card's personal side. `print` uses the full-resolution artwork;
- * `accent` is the line in the gradient, "title" or "name".
- */
-export function cardFront(details = {}, { print = false, label = "", accent = ACCENT } = {}) {
+function icon(id, baseline) {
+  const top = baseline - 0.36 * CONTACT[id].size - ICON_SIZE / 2;
+  return node("path", {
+    d: ICONS[id],
+    fill: ICON_BLUE,
+    transform: `translate(${ICON_CENTER - ICON_SIZE / 2} ${top.toFixed(1)}) scale(${ICON_SIZE / 24})`,
+    "aria-hidden": "true",
+  });
+}
+
+/** The card's personal side. `print` uses the full-resolution artwork. */
+export function cardFront(details = {}, { print = false, label = "" } = {}) {
   const d = Object.fromEntries(CARD_FIELDS.map((f) => [f.id, String(details[f.id] ?? "").trim()]));
   const svg = node("svg", {
     viewBox: `0 0 ${CARD_WIDTH} ${CARD_HEIGHT}`,
@@ -98,52 +103,15 @@ export function cardFront(details = {}, { print = false, label = "", accent = AC
       preserveAspectRatio: "none",
     })
   );
-  // One gradient for the card, spread across each line it fills; ids are
-  // unique for pages with several cards.
-  const id = `bcard-gradient-${(gradients += 1)}`;
-  const gradient = node("linearGradient", { id, x1: 0, y1: 0, x2: 1, y2: 0 });
-  GRADIENT.forEach((color, i) => gradient.append(node("stop", { offset: i / (GRADIENT.length - 1), "stop-color": color })));
-  svg.append(node("defs"));
-  svg.querySelector("defs").append(gradient);
-  const paint = `url(#${id})`;
-
-  if (d.name) svg.append(line(d.name, { ...NAME, upper: true, fill: accent === "name" ? paint : INK }));
-  if (d.title) svg.append(line(d.title, { ...TITLE, fill: accent === "name" ? INK : paint }));
+  if (d.name) svg.append(line(d.name, { ...NAME, upper: true }));
+  if (d.title) svg.append(line(d.title, TITLE));
   let y = CONTACT_TOP;
-  let first = true;
   for (const id of ["phone", "email", "address", "website"]) {
     if (!d[id]) continue;
-    if (!first) y += CONTACT[id].gap;
-    svg.append(line(d[id], { y, size: CONTACT[id].size, font: CONTACT[id].font, spacing: CONTACT[id].spacing }));
-    first = false;
-  }
-  if (d.cocktail) {
-    const panel = node("g", { "data-cocktail": d.cocktail.toUpperCase() });
-    const name = { x: PANEL_CENTER, size: COCKTAIL.size, font: COCKTAIL.font, spacing: COCKTAIL.spacing, anchor: "middle" };
-    panel.append(
-      node("rect", { x: PANEL.left, width: PANEL.right - PANEL.left, rx: PANEL.radius, fill: "#ffffff", "fill-opacity": 0.92, stroke: paint, "stroke-width": PANEL.stroke }),
-      line("Favorite cocktail", { x: PANEL_CENTER, size: COCKTAIL_LABEL.size, spacing: COCKTAIL_LABEL.spacing, upper: true, anchor: "middle" }),
-      line(d.cocktail.toUpperCase(), name),
-      line("", name)
-    );
-    placeCocktail(panel, [d.cocktail.toUpperCase()]);
-    svg.append(panel);
+    svg.append(icon(id, y), line(d[id], { x: CONTACT_X, y, ...CONTACT[id] }));
+    y += CONTACT_GAP;
   }
   return svg;
-}
-
-/** Lay out the cocktail panel for one or two lines of drink, from the bottom up. */
-function placeCocktail(panel, lines) {
-  const [rect, label, first, second] = panel.children;
-  const top = PANEL.bottom - (lines.length === 2 ? 262 : 196);
-  rect.setAttribute("y", top);
-  rect.setAttribute("height", PANEL.bottom - top);
-  label.setAttribute("y", top + 72);
-  first.setAttribute("y", top + 150);
-  first.textContent = lines[0];
-  second.setAttribute("y", top + 150 + COCKTAIL.lineGap);
-  second.textContent = lines[1] ?? "";
-  return top;
 }
 
 /** The fixed navy back: TROPICAL DISTILLERY, crafted in Miami. */
@@ -168,38 +136,11 @@ export function cardBack({ print = false } = {}) {
  */
 export async function fitCard(svg) {
   try {
-    await Promise.all([document.fonts.load('101px "Card Name"'), document.fonts.load('57px "Card Text"')]);
+    await Promise.all([document.fonts.load('110px "Card Name"'), document.fonts.load('56px "Card Bold"'), document.fonts.load('58px "Card Text"')]);
   } catch {
     // fall back to whatever font is there
   }
-  const panel = svg.querySelector("[data-cocktail]");
-  let top = Infinity;
-  if (panel) {
-    // The drink on one line if it fits the panel, or split across two
-    // nearest the middle; a single long word shrinks to fit.
-    const inner = PANEL.right - PANEL.left - 2 * PANEL.pad;
-    const [, label, first, second] = panel.children;
-    const whole = panel.dataset.cocktail;
-    top = placeCocktail(panel, [whole]);
-    shrinkTo(first, Infinity);
-    const words = whole.split(" ");
-    if (first.getComputedTextLength() > inner && words.length > 1) {
-      const diff = (at) => Math.abs(words.slice(0, at).join(" ").length - words.slice(at).join(" ").length);
-      let split = 1;
-      for (let i = 2; i < words.length; i += 1) if (diff(i) < diff(split)) split = i;
-      top = placeCocktail(panel, [words.slice(0, split).join(" "), words.slice(split).join(" ")]);
-    }
-    for (const text of [label, first, second]) shrinkTo(text, inner);
-    // both lines of the drink at the same size
-    const size = Math.min(Number(first.getAttribute("font-size")), Number(second.getAttribute("font-size")));
-    for (const text of [first, second]) text.setAttribute("font-size", size);
-  }
-  // Every other line fits the card, and keeps clear of the panel beside it.
-  for (const text of svg.querySelectorAll("text")) {
-    if (panel?.contains(text)) continue;
-    const besidePanel = Number(text.getAttribute("y")) > top - 15;
-    shrinkTo(text, besidePanel ? PANEL.left - PANEL.clear - Number(text.getAttribute("x")) : MAX_TEXT_WIDTH);
-  }
+  for (const text of svg.querySelectorAll("text")) shrinkTo(text, RIGHT - Number(text.getAttribute("x")));
 }
 
 function shrinkTo(text, max) {

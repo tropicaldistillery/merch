@@ -14,7 +14,8 @@ const FULL_HEIGHT = CARD_HEIGHT + 2 * BLEED;
 const PT = 72 / DPI;
 
 const FONTS = [
-  { family: "Card Name", url: "/assets/fonts/card-name-jost-600.woff" },
+  { family: "Card Name", url: "/assets/fonts/card-name-jost-700.woff" },
+  { family: "Card Bold", url: "/assets/fonts/card-bold-jost-600.woff" },
   { family: "Card Text", url: "/assets/fonts/card-text-jost-400.woff" },
 ];
 

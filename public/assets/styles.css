@@ -4075,10 +4075,17 @@ dialog.password-dialog .field {
 
 /* ------------------------------------------------------ business cards */
 
-/* Jost, for the PSD's LEMON MILK name and the details (see card.js). */
+/* Jost, for the PSD's LEMON MILK name, the email and the details (see card.js). */
 @font-face {
   font-family: "Card Name";
-  src: url("/assets/fonts/card-name-jost-600.woff") format("woff");
+  src: url("/assets/fonts/card-name-jost-700.woff") format("woff");
+  font-weight: 400 700;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Card Bold";
+  src: url("/assets/fonts/card-bold-jost-600.woff") format("woff");
   font-weight: 400 700;
   font-display: block;
 }

@@ -61,24 +61,6 @@ export const CARD_FIELDS = [
   { id: "email", label: "Email", max: 80 },
   { id: "address", label: "Address", max: 90 },
   { id: "website", label: "Website", max: 60 },
-  { id: "cocktail", label: "Favorite cocktail", max: 40 },
-];
-
-// The favorite cocktails to pick from on a business card, with what each is
-// made with; anything else can be typed in.
-export const CARD_COCKTAILS = [
-  { name: "Pouncey Special", madeWith: "Twin P Whiskey" },
-  { name: "Espresso Martini", madeWith: "J.F. Haden's Espresso Liqueur" },
-  { name: "Key Lime Pie Martini", madeWith: "J.F. Haden's Key Lime Pie Liqueur" },
-  { name: "Key Lime Pie Colada", madeWith: "J.F. Haden's Key Lime Pie Liqueur" },
-  { name: "Lychee Martini", madeWith: "J.F. Haden's Lychee Liqueur" },
-  { name: "Orange Martini", madeWith: "J.F. Haden's Orange Liqueur" },
-  { name: "Spicy Mango Margarita", madeWith: "J.F. Haden's Mango Liqueur" },
-  { name: "Skinny Margarita", madeWith: "Casa Loco Tequila and J.F. Haden's Citrus Liqueur" },
-  { name: "Mango Mule", madeWith: "J.F. Haden's Mango Liqueur" },
-  { name: "Cosmopolitan", madeWith: "J.F. Haden's Orange Liqueur" },
-  { name: "Citrus Drop Martini", madeWith: "J.F. Haden's Citrus Liqueur" },
-  { name: "Iced Coffee", madeWith: "J.F. Haden's Espresso Liqueur" },
 ];
 
 export const CARD_DEFAULTS = {
@@ -132,7 +114,7 @@ export function readCardDetails(raw) {
 
 /** Every detail on one line, for exports and the printer: "Allie Mindermann · COO · (954)…". */
 export function cardText(card) {
-  return CARD_FIELDS.map((field) => (card?.[field.id] && field.id === "cocktail" ? `Favorite cocktail: ${card.cocktail}` : card?.[field.id]))
+  return CARD_FIELDS.map((field) => card?.[field.id])
     .filter(Boolean)
     .join(" · ");
 }
