@@ -1086,6 +1086,40 @@ export function applyCardPerPerson(db) {
   return changed;
 }
 
+/**
+ * Put the customizable business cards back in the store, once: added again
+ * if they were deleted, shown again if they were hidden, and an item of the
+ * same name made customizable if an admin had put in their own.
+ */
+export function needsCardsBack(db) {
+  return !db.meta?.cardsBack;
+}
+
+export function applyCardsBack(db) {
+  const seed = SEED_CATALOG.find((i) => i.id === "td-business-cards");
+  const name = seed.name.toLowerCase();
+  const item = db.catalog.find((i) => i.id === seed.id) ?? db.catalog.find((i) => String(i.name).trim().toLowerCase() === name);
+  const changed = [];
+  if (!item) {
+    const back = structuredClone(seed);
+    back.sku = generateSku(back.brand, back.category, db.catalog.map((i) => i.sku));
+    const at = db.catalog.findIndex((i) => i.id === "td-booklet");
+    db.catalog.splice(at >= 0 ? at + 1 : db.catalog.length, 0, back);
+    changed.push(`added them back (${back.sku})`);
+  } else {
+    if (item.active === false) {
+      item.active = true;
+      changed.push("showed them again");
+    }
+    if (item.customize !== seed.customize) {
+      item.customize = seed.customize;
+      changed.push("made them customizable again");
+    }
+  }
+  db.meta.cardsBack = 1;
+  return changed;
+}
+
 /** The sample bottles' limit of 4 per person for each account, once. */
 export function needsBottleAccountLimit(db) {
   return !db.meta?.bottleAccountLimit;

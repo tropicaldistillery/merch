@@ -39,6 +39,8 @@ import {
   applyCardPricing,
   needsCardPerPerson,
   applyCardPerPerson,
+  needsCardsBack,
+  applyCardsBack,
   normalizeItem,
   publicItem,
   bulkEditCatalog,
@@ -921,6 +923,36 @@ describe("starter items added to existing stores", () => {
     assert.equal(applyCardPerPerson({ meta: {}, catalog: [] }), false, "a store without the cards");
     assert.equal(needsCardPerPerson(initialState()), false);
     assert.equal(quantityRuleText({ maxPerOrder: 1 }), "1 per order");
+  });
+
+  it("puts the customizable business cards back, once, whether deleted, hidden or replaced", () => {
+    // deleted: added back after the booklet, at today's price, customizable
+    const deleted = { meta: {}, catalog: structuredClone(SEED_CATALOG).filter((i) => i.id !== "td-business-cards") };
+    assert.equal(needsCardsBack(deleted), true);
+    const [added] = applyCardsBack(deleted);
+    assert.match(added, /^added them back \(TD-PRI-\d{3}\)$/);
+    const ids = deleted.catalog.map((i) => i.id);
+    assert.equal(ids[ids.indexOf("td-booklet") + 1], "td-business-cards");
+    const back = deleted.catalog.find((i) => i.id === "td-business-cards");
+    assert.deepEqual([back.customize, back.costCents, back.active], ["business-card", 11299, true]);
+    assert.equal(new Set(deleted.catalog.map((i) => i.sku)).size, deleted.catalog.length);
+    assert.equal(needsCardsBack(deleted), false);
+    assert.deepEqual(applyCardsBack(deleted), [], "and nothing to do the second time");
+
+    // hidden: shown again
+    const hidden = { meta: {}, catalog: structuredClone(SEED_CATALOG) };
+    hidden.catalog.find((i) => i.id === "td-business-cards").active = false;
+    assert.deepEqual(applyCardsBack(hidden), ["showed them again"]);
+    assert.equal(hidden.catalog.find((i) => i.id === "td-business-cards").active, true);
+
+    // an admin's own plain "Business Cards": made customizable, not duplicated
+    const own = { meta: {}, catalog: structuredClone(SEED_CATALOG).filter((i) => i.id !== "td-business-cards") };
+    own.catalog.push({ ...structuredClone(SEED_CATALOG.find((i) => i.id === "td-booklet")), id: "my-cards", name: "Business cards ", sku: "TD-PRI-099" });
+    assert.deepEqual(applyCardsBack(own), ["made them customizable again"]);
+    assert.equal(own.catalog.filter((i) => /business cards/i.test(i.name)).length, 1);
+    assert.equal(own.catalog.find((i) => i.id === "my-cards").customize, "business-card");
+
+    assert.equal(needsCardsBack(initialState()), false, "a new store has them already");
   });
 
   it("limits each sample bottle to 4 per person for each account, once", () => {

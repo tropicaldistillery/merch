@@ -30,6 +30,7 @@ import {
   applySampleTrim,
   applyBottleAccountLimit,
   applyCardPerPerson,
+  applyCardsBack,
   applyCardPricing,
   applyPoloColors,
   applySeedPhotos,
@@ -45,6 +46,7 @@ import {
   needsSampleTrim,
   needsBottleAccountLimit,
   needsCardPerPerson,
+  needsCardsBack,
   needsCardPricing,
   needsPoloColors,
   needsSeedPhotos,
@@ -369,6 +371,11 @@ export async function createApp({ store, config, notify = () => {}, mailer = nul
   if (needsCardPerPerson(initial)) {
     const changed = await store.mutate((db) => applyCardPerPerson(db));
     console.log(`[catalog] business cards: 1 box per person${changed ? ", up to 5 people's in an order" : ""}`);
+    initial = await store.read();
+  }
+  if (needsCardsBack(initial)) {
+    const changed = await store.mutate((db) => applyCardsBack(db));
+    console.log(`[catalog] business cards: ${changed.length ? changed.join(", ") : "already in the store, customizable"}`);
     initial = await store.read();
   }
   const secret = config.sessionSecret || initial.meta.sessionSecret;

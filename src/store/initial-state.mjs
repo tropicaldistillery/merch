@@ -26,6 +26,7 @@ export function initialState() {
       // and with business cards at Vistaprint's price, 1 box a person
       cardPricing: 1,
       cardPerPerson: 1,
+      cardsBack: 1,
     },
     catalog: structuredClone(SEED_CATALOG),
     orders: [],
