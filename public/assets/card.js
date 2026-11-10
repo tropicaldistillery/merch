@@ -36,7 +36,8 @@ const TITLE = { y: 726, size: 70, font: "Card Text", spacing: "0.01em" };
 const CONTACT_TOP = 866;
 const CONTACT = {
   phone: { size: 80, spacing: "0.01em", gap: 70 },
-  email: { size: 64, spacing: "0.01em", gap: 72 },
+  // the email in the name's bold weight, so it stands out
+  email: { size: 62, font: "Card Name", spacing: "0", gap: 72 },
   address: { size: 64, spacing: "0.01em", gap: 71 },
   website: { size: 64, spacing: "0.01em", gap: 71 },
 };
@@ -113,7 +114,7 @@ export function cardFront(details = {}, { print = false, label = "", accent = AC
   for (const id of ["phone", "email", "address", "website"]) {
     if (!d[id]) continue;
     if (!first) y += CONTACT[id].gap;
-    svg.append(line(d[id], { y, size: CONTACT[id].size, spacing: CONTACT[id].spacing }));
+    svg.append(line(d[id], { y, size: CONTACT[id].size, font: CONTACT[id].font, spacing: CONTACT[id].spacing }));
     first = false;
   }
   if (d.cocktail) {
