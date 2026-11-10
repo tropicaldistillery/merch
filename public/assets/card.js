@@ -115,8 +115,8 @@ export function cardFront(details = {}, { print = false, label = "" } = {}) {
 }
 
 // The back: TROPICAL DISTILLERY in two lines of Jost the same width, the
-// tagline in pink, and the Instagram handles along the bottom, over the navy
-// artwork with the palm in the bottom right corner.
+// tagline in pink, and the Instagram handles along the bottom, over plain
+// navy artwork.
 const PINK = "#ef6aa8";
 const WORDMARK = [
   { text: "TROPICAL", y: 440, size: 428.4 },
